@@ -1,0 +1,11 @@
+/* 最低限の見た目（土台の段階） */
+:root { --bg: #ecf0ee; --ink: #17221e; --accent: #1d5e51; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0f1513; --ink: #e3ece8; --accent: #62b4a1; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic UI", system-ui, sans-serif; }
+.app { max-width: 520px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+.top { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 16px; background: var(--accent); color: #fff; }
+.top h1 { margin: 0; font-size: 17px; }
+.ver { font-size: 12px; opacity: .85; }
+.main { flex: 1; padding: 16px; }
+.foot { text-align: center; font-size: 11.5px; padding: 12px 16px; opacity: .7; }
