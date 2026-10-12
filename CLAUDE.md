@@ -27,19 +27,19 @@
 
 起動時に GAS から取得し、端末内に保存する。GAS の URL と合言葉は端末の設定画面で入力する（コードに書かない）。
 
-```jsonc
-{
-  "version": 3,
-  "job": { "title": "…", "year": 2026 },
-  "options": { "vigor": ["1又は2", "3", "4"], /* ①〜⑧の選択肢 */ },
-  "noteChips": [ { "t": "ボタンの文字", "db": "一覧表の言い回し", "kind": "n|s", "photo": "写真名", "fullOnly": false } ],
-  "treatPrune": ["…"], "treatOther": ["…"],
-  "species": { "list": ["…"], "replace": { "旧名": "新名" }, "notice": { "名前": "注意文" } },
-  "rules": [ { "type": "ratioThreshold", "id": "…", "num": "height", "den": "trunkDiameter", "threshold": 50, "message": "…", "suggest": { "treat": "…" } } ],
-  "dbFormat": { "sheets": [ { "type": "park|street", "headerRow": 1, "dataRow": 3, "columns": { "treeNo": "見出し文字", /* … */ } } ], "hdFormula": "ROUND(({h}/({g}/3.14)),0)" },
-  "fieldSheet": { "templateId": "…", "rowsPerSheet": 10, "layout": { /* 列幅・行高・選択肢の配置 */ } }
-}
-```
+設定の形（全項目）は `test/fixtures/sample-config.json`（架空の値）を見本とする。主な項目：
+
+| 項目 | 内容 |
+|---|---|
+| `version` | 設定の版（`src/core/config.js` の `CONFIG_VERSION` と一致させる） |
+| `options` / `checks` / `details` | 選択肢・点検項目・「有」のとき追加で入れる項目 |
+| `calc` | 株立の係数、円周率、枝長/枝径の上限と表記 |
+| `noteChips` / `dbNote` | 特記の定型文と、一覧表用の言い回し |
+| `treat` | 処置の選択肢と文のつなぎ方 |
+| `species` | 樹種の一覧・置き換え表 |
+| `photo` | 必要な写真の判定 |
+| `rules` | 判定支援の規則（種類は `src/core/rules.js` の `RULE_TYPES`） |
+| `dbFormat` / `fieldSheet` | 一覧表・野帳の書式（Excel 出力の移植時に追加） |
 
 - 設定の形式を変えたら `version` を上げ、読み込み時に検証する。不正な設定は使わず前の版で動かす。
 - テスト用の設定・台帳は `test/fixtures/` に**架空のデータ**で置く（実在の番号・地名を使わない）。
