@@ -23,6 +23,11 @@ function main() {
   const fromFile = existsSync('.forbidden-words.txt') ? readFileSync('.forbidden-words.txt', 'utf8') : '';
   const words = parseWords(process.env.FORBIDDEN_WORDS || fromFile);
   if (!words.length) {
+    // GitHub Actions（CI）ではリスト未登録を失敗にする。チェックが黙って省略されるのを防ぐため
+    if (process.env.CI) {
+      console.error('禁止語リスト（シークレット FORBIDDEN_WORDS）が登録されていません。');
+      process.exit(1);
+    }
     console.warn('禁止語リストがありません（.forbidden-words.txt か FORBIDDEN_WORDS）。チェックを省略します。');
     return;
   }
