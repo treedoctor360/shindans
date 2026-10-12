@@ -1,6 +1,7 @@
 // 設定画面：調査情報、設定ファイル・野帳の原本・台帳の読み込み
 import { useState } from 'react';
 import { loadConfigText, importLedger, saveTemplate } from '../store/state.js';
+import ServerSection from './ServerSection.jsx';
 
 // 今日の日付 "2099-04-05"（端末の時刻で）
 export const todayYmd = (d = new Date()) =>
@@ -84,6 +85,8 @@ export default function SettingsView({ state, update, config, setConfig, toast }
         </div>
         <p className="hint">木を保存するとき、この日付と調査者をその木に記録します。</p>
       </div>
+
+      <ServerSection state={state} update={update} config={config} setConfig={setConfig} toast={toast} />
 
       <div className="sec">
         <h2>設定ファイル</h2>

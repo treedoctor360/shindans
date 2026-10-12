@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { initialState, loadAll, saveState } from '../store/state.js';
+import { markSent, sendUnsent, unsentTrees } from '../store/sync.js';
 
 export function useAppState() {
   const [state, setState] = useState(initialState);
@@ -64,5 +65,40 @@ export function useAppState() {
     [flush],
   );
 
-  return { state, update, config, setConfig, ready, saveError };
+  // ---------- サーバーへの送信 ----------
+  // 端末に保存してから送る。失敗しても入力は端末に残り、次の機会（保存のたび・電波が戻ったとき・起動時）に送り直す
+  const configRef = useRef(config);
+  configRef.current = config;
+  const sending = useRef(false);
+  const [sendStatus, setSendStatus] = useState({ busy: false, error: '' });
+  const send = useCallback(async () => {
+    const cfg = configRef.current;
+    const s = latest.current;
+    if (sending.current || !cfg || !s.server?.url || !unsentTrees(s).length) return null;
+    sending.current = true;
+    setSendStatus({ busy: true, error: '' });
+    try {
+      await flush(); // 先に端末へ保存
+      const r = await sendUnsent(s, cfg);
+      await update((cur) => ({ ...markSent(cur, r.marks), server: { ...cur.server, lastSent: new Date().toISOString() } }), { now: true });
+      setSendStatus({ busy: false, error: '' });
+      return r;
+    } catch (e) {
+      setSendStatus({ busy: false, error: e.message || '送信できませんでした' });
+      return null;
+    } finally {
+      sending.current = false;
+    }
+  }, [flush, update]);
+
+  // 起動時と、電波が戻ったときに送り直す
+  useEffect(() => {
+    if (!ready) return undefined;
+    send();
+    const onOnline = () => send();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [ready, send]);
+
+  return { state, update, config, setConfig, ready, saveError, send, sendStatus };
 }

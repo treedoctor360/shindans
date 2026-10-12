@@ -5,6 +5,7 @@ import { toHalf } from '../core/text.js';
 import { dbValues, exportDb } from '../excel/dbExport.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
 import { loadLedgerFile, loadTemplate } from '../store/state.js';
+import { fetchAll, mergeServerTrees, unsentTrees } from '../store/sync.js';
 import { activeGroup } from './ListView.jsx';
 import { todayYmd } from './SettingsView.jsx';
 
@@ -19,6 +20,10 @@ function download(filename, bytes) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+const fmtTime = (iso) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
 const yymmdd = () => todayYmd().replace(/-/g, '').slice(2);
 // ファイル名に使えない文字を除く
 const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '').trim();
@@ -43,7 +48,7 @@ function cellText(t, k, v) {
   return v ?? '';
 }
 
-export default function OutView({ state, config: cfg, toast }) {
+export default function OutView({ state, update, config: cfg, toast, send, sendStatus }) {
   const [busy, setBusy] = useState('');
   const [check, setCheck] = useState(null); // { title, errors }
   if (!cfg || !state.trees.length) {
@@ -99,6 +104,23 @@ export default function OutView({ state, config: cfg, toast }) {
       );
     });
 
+  const unsent = unsentTrees(state).length;
+  const onSend = async () => {
+    const r = await send?.();
+    if (r) toast(`${r.saved}本を送信しました${r.conflicts.length ? `（サーバーの方が新しかった${r.conflicts.length}本は送っていません）` : ''}`);
+  };
+  const onFetch = () =>
+    run('サーバーから取得', async () => {
+      const serverTrees = await fetchAll(state, cfg);
+      let counts;
+      await update((s) => {
+        const m = mergeServerTrees(s.trees, serverTrees, cfg);
+        counts = m;
+        return { ...s, trees: m.trees, server: { ...s.server, lastFetched: new Date().toISOString() } };
+      }, { now: true });
+      toast(`取得しました（追加${counts.added}本・更新${counts.updated}本・この端末の方を残した${counts.kept}本）`);
+    });
+
   const onCopy = async () => {
     const head = ['入力元', '樹木番号', ...cols.map((c) => c[1])];
     const rows = shown.map((t) => {
@@ -152,8 +174,25 @@ export default function OutView({ state, config: cfg, toast }) {
       </div>
 
       <div className="sec">
-        <h2>サーバーへ送信</h2>
-        <p className="hint">次の段階で作ります。</p>
+        <h2>サーバー</h2>
+        {!state.server?.url ? (
+          <p className="hint">「設定」でサーバーの URL と合言葉を入れると、保存のたびに自動で送信します。</p>
+        ) : (
+          <>
+            <div className="lbl" data-testid="send-status">
+              アプリで入力 {mine.length}本 ／ 未送信 {unsent}本
+              <small>{state.server.lastSent ? `最後に送信：${fmtTime(state.server.lastSent)}` : ''}</small>
+            </div>
+            {sendStatus?.error && <div className="alert warn">送信できませんでした：{sendStatus.error}（入力は端末に残っています。電波のある所でもう一度送ってください）</div>}
+            <button type="button" className="btn big" disabled={!unsent || sendStatus?.busy} onClick={onSend} data-testid="send">
+              {sendStatus?.busy ? '送信中…' : `未送信の${unsent}本を送信`}
+            </button>
+            <button type="button" className="btn big" disabled={!!busy} onClick={onFetch} data-testid="fetch">
+              {busy === 'サーバーから取得' ? '取得中…' : 'サーバーから入力データを取得（事務所の PC 用）'}
+            </button>
+            <p className="hint">取得すると、スマホで入力した木がこの端末に入ります。この端末でまだ送っていない新しい入力は上書きしません。</p>
+          </>
+        )}
       </div>
 
       <div className="sec">

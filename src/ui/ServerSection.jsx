@@ -1,0 +1,102 @@
+// 設定画面の「サーバー」欄：URL と合言葉、接続の確認、設定・原本・台帳の受け渡し
+import { useState } from 'react';
+import { idbGet } from '../store/idb.js';
+import { importLedger, loadConfigText, saveTemplate } from '../store/state.js';
+import { callServer, getFile, putFile } from '../store/sync.js';
+import { todayYmd } from './SettingsView.jsx';
+
+export default function ServerSection({ state, update, config, setConfig, toast }) {
+  const [busy, setBusy] = useState('');
+  const sv = state.server || {};
+  const setServer = (k, v) => update((s) => ({ ...s, server: { ...s.server, [k]: v.trim() } }));
+
+  const run = async (name, fn) => {
+    setBusy(name);
+    try {
+      await fn();
+    } catch (e) {
+      toast(e.message || `${name}できませんでした`);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const onPing = () =>
+    run('接続の確認', async () => {
+      await callServer(sv, { action: 'ping' });
+      toast('サーバーにつながりました');
+    });
+
+  // この端末の設定・原本・台帳を、サーバーに置く（事務所の PC から）
+  const onPut = () =>
+    run('サーバーに置く', async () => {
+      if (!config) throw new Error('先に設定ファイルを読み込んでください');
+      const enc = new TextEncoder();
+      await putFile(sv, 'config', 'config.json', enc.encode(JSON.stringify(config)).buffer);
+      const tpl = await idbGet('template');
+      if (tpl) await putFile(sv, 'template', tpl.name, tpl.buffer);
+      const ledger = await idbGet('ledger');
+      if (ledger) await putFile(sv, 'ledger', ledger.name, ledger.buffer);
+      toast(`サーバーに置きました（設定${tpl ? '・原本' : ''}${ledger ? '・台帳' : ''}）`);
+    });
+
+  // サーバーから設定・原本・台帳を受け取る（スマホで）
+  const onGet = () =>
+    run('サーバーから受け取る', async () => {
+      const got = [];
+      let cfg = config;
+      const c = await getFile(sv, 'config');
+      if (c) {
+        const r = await loadConfigText(new TextDecoder().decode(c.buffer), config);
+        if (r.errors.length) throw new Error(`サーバーの設定ファイルに誤りがあります：${r.errors[0]}`);
+        cfg = r.config;
+        setConfig(cfg);
+        got.push('設定');
+      }
+      const tpl = await getFile(sv, 'template');
+      if (tpl) {
+        await saveTemplate(tpl.name, tpl.buffer);
+        await update((s) => ({ ...s, templateName: tpl.name }), { now: true });
+        got.push('原本');
+      }
+      const ledger = await getFile(sv, 'ledger');
+      if (ledger && cfg) {
+        const r = await importLedger(state, ledger.name, ledger.buffer, cfg, todayYmd());
+        await update((s) => ({ ...s, trees: r.state.trees, ledgerInfo: r.state.ledgerInfo }), { now: true });
+        got.push(`台帳（${r.stats.all}本）`);
+      }
+      toast(got.length ? `受け取りました：${got.join('・')}` : 'サーバーにはまだ何も置かれていません');
+    });
+
+  const ready = !!(sv.url && sv.pass);
+  return (
+    <div className="sec">
+      <h2>サーバー</h2>
+      <div className="row">
+        <label className="lbl" htmlFor="s-url">
+          URL <small>サーバーの公開時に表示されるもの（https://script.google.com/…/exec）</small>
+        </label>
+        <input type="text" id="s-url" inputMode="url" autoComplete="off" value={sv.url || ''} onChange={(e) => setServer('url', e.target.value)} />
+      </div>
+      <div className="row">
+        <label className="lbl" htmlFor="s-pass">
+          合言葉
+        </label>
+        <input type="password" id="s-pass" autoComplete="off" value={sv.pass || ''} onChange={(e) => setServer('pass', e.target.value)} />
+      </div>
+      <p className="hint">URL と合言葉は、この端末の中にだけ保存します。</p>
+      <button type="button" className="btn" disabled={!ready || !!busy} onClick={onPing}>
+        {busy === '接続の確認' ? '確認中…' : '接続を確認する'}
+      </button>
+      <button type="button" className="btn big" disabled={!ready || !!busy} onClick={onGet} data-testid="server-get">
+        {busy === 'サーバーから受け取る' ? '受け取り中…' : 'サーバーから設定・原本・台帳を受け取る'}
+      </button>
+      <button type="button" className="btn big" disabled={!ready || !!busy || !config} onClick={onPut} data-testid="server-put">
+        {busy === 'サーバーに置く' ? '送信中…' : 'この端末の設定・原本・台帳をサーバーに置く'}
+      </button>
+      <p className="hint">
+        事務所の PC で設定・原本・台帳を読み込み、「サーバーに置く」を押します。スマホでは「サーバーから受け取る」を押すだけで、同じものが使えます。台帳を置き直したら、スマホでもう一度受け取ってください（アプリで入力した内容は消えません）。
+      </p>
+    </div>
+  );
+}

@@ -8,7 +8,7 @@ import { alertsOf, missingFields } from '../core/rules.js';
 import { num, toHalf } from '../core/text.js';
 import { composeTreat } from '../core/treat.js';
 import { isDead, isLocked } from '../core/tree.js';
-import { normalizeField, pressAlertAction, pressOption, saveTree, toggleTreat, updateTree } from '../store/actions.js';
+import { normalizeField, pressAlertAction, pressOption, saveTree, toggleTreat, touched, updateTree } from '../store/actions.js';
 import { activeGroup } from './ListView.jsx';
 
 const MODE_TEXT = { 'full+weak': '全景＋弱点写真', shared: '全景と共用', fullOnly: '全景だけ（写真で見えない弱点のみ）' };
@@ -56,7 +56,7 @@ function Alerts({ list, onAct }) {
   );
 }
 
-export default function FormView({ state, update, config: cfg, toast }) {
+export default function FormView({ state, update, config: cfg, toast, send }) {
   const [showAllChips, setShowAllChips] = useState(false);
   const [missingAsk, setMissingAsk] = useState(null); // 保存しようとしたときの未入力の一覧
 
@@ -76,7 +76,8 @@ export default function FormView({ state, update, config: cfg, toast }) {
   const idx = ts.indexOf(t);
   const readOnly = t.source === 'ledger';
   const locked = isLocked(t, cfg);
-  const change = (fn, opt) => update((s) => updateTree({ ...s, currentId: t.id, group }, t.id, fn), opt);
+  // 入力済みの木を直したら、送り直しの印を付ける
+  const change = (fn, opt) => update((s) => updateTree({ ...s, currentId: t.id, group }, t.id, (x) => touched(fn(x))), opt);
   const setField = (k, v) => change((x) => ({ ...x, [k]: v, ...(k === 'dbNote' ? { dbNoteManual: true } : {}) }));
   const blurField = (k) => change((x) => normalizeField(x, k, cfg));
   const press = (field, v) => change((x) => pressOption(x, field, v, cfg));
@@ -100,7 +101,7 @@ export default function FormView({ state, update, config: cfg, toast }) {
       return;
     }
     setMissingAsk(null);
-    update(() => r.state, { now: true });
+    update(() => r.state, { now: true }).then(() => send?.()); // 端末に保存してから、裏でサーバーへ送る
     toast(`${toHalf(t.treeNo) || 'この木'} を保存しました`);
     window.scrollTo(0, 0);
   };

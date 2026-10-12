@@ -23,14 +23,21 @@ export function initialState() {
     currentId: '',
     ledgerInfo: null, // { name, date }
     templateName: '',
+    // サーバー（GAS）：URL と合言葉はこの端末にだけ保存する。deviceId はこの端末の印（送信元の記録用）
+    server: { url: '', pass: '', deviceId: '', lastSent: '', lastFetched: '' },
   };
 }
+
+// この端末の印（ランダムな文字）
+const newDeviceId = () => Math.random().toString(36).slice(2, 10);
 
 // 古い形の状態を今の形に直す
 export function migrate(s) {
   const base = initialState();
-  if (!s || typeof s !== 'object') return base;
-  return { ...base, ...s, session: { ...base.session, ...(s.session || {}) }, stateVersion: STATE_VERSION };
+  if (!s || typeof s !== 'object') s = {};
+  const server = { ...base.server, ...(s.server || {}) };
+  if (!server.deviceId) server.deviceId = newDeviceId();
+  return { ...base, ...s, session: { ...base.session, ...(s.session || {}) }, server, stateVersion: STATE_VERSION };
 }
 
 // 端末から読み込む
