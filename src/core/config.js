@@ -5,7 +5,7 @@
 import { RULE_TYPES } from './rules.js';
 
 // このアプリが読める設定の版。形式を変えたら上げる
-export const CONFIG_VERSION = 2; // 2: dbFormat（台帳・一覧表の列）を追加
+export const CONFIG_VERSION = 3; // 2: dbFormat（台帳の列）を追加 / 3: 一覧表への書き戻しの項目を追加
 
 const LEVELS = ['info', 'warn', 'danger'];
 
@@ -145,6 +145,14 @@ function validateDbFormat(f, need, e) {
   if (f.parenKeys != null)
     need(isObj(f.parenKeys) && Object.entries(f.parenKeys).every(([k, p]) => has(k) && isStr(p?.field)), 'dbFormat.parenKeys の形が違います');
   if (f.replace != null) need(isObj(f.replace) && Object.values(f.replace).every(isObj), 'dbFormat.replace の形が違います');
+  // 書き戻し
+  need(isArr(f.writeKeys) && f.writeKeys.length > 0 && f.writeKeys.every(has), 'dbFormat.writeKeys は columns にあるキーの一覧にしてください');
+  need(has(f.serialKey) && typeof f.newSerial === 'string', 'dbFormat.serialKey・newSerial（一覧表にない木を足すときの通し番号欄）が必要です');
+  if (f.serialFor != null) need(isObj(f.serialFor), 'dbFormat.serialFor の形が違います');
+  if (f.heightRatioFormula != null)
+    need(isStr(f.heightRatioFormula) && f.heightRatioFormula.includes('{height}') && f.heightRatioFormula.includes('{girth}'), 'dbFormat.heightRatioFormula には {height} と {girth} が必要です');
+  if (f.parenKeys != null)
+    need(Object.values(f.parenKeys).every((p) => isStr(p.when) && (p.alias == null || isObj(p.alias))), 'dbFormat.parenKeys には when（例「有」）が必要です');
 }
 
 // 新しい設定が正しければそれを、不正なら前の設定を使う

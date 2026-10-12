@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "job": {
     "title": "架空の点検業務",
     "year": 2099
@@ -399,16 +399,48 @@
     "parenKeys": {
       "deadBranch": {
         "field": "deadBranchCount",
-        "strip": "本"
+        "strip": "本",
+        "when": "有",
+        "blank": "?"
       },
       "fungus": {
-        "field": "fungusName"
+        "field": "fungusName",
+        "when": "有",
+        "blank": "名前不明",
+        "alias": {
+          "不明": "名前不明"
+        }
       }
     },
     "replace": {
       "initialNeeded": {
         "〇": "要"
       }
+    },
+    "writeKeys": [
+      "date",
+      "inspector",
+      "species",
+      "height",
+      "girth",
+      "heightRatio",
+      "branchRatio",
+      "vigor",
+      "lean",
+      "deadBranch",
+      "decay",
+      "fungus",
+      "note",
+      "initialNeeded",
+      "grade",
+      "treat",
+      "fellingReason",
+      "photo"
+    ],
+    "heightRatioFormula": "ROUND(({height}/({girth}/3.14)),0)",
+    "newSerial": "追加",
+    "serialFor": {
+      "残存": "残存"
     }
   }
 }

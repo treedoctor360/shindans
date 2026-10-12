@@ -98,6 +98,7 @@ export function mergeLedger(trees, rows, cfg) {
     t.ledgerRow = { sheet: row.sheetName, row: row.rowNumber };
     // 場所などの情報は毎回台帳から写す
     for (const k of f.infoKeys) if (k in v) t[k] = str(k);
+    t.ledgerSpecies = str('species'); // 書き戻すときの照合用（アプリで樹種を直しても、これは台帳のまま）
     if (!t.species) t.species = str('species');
     const st = f.serialStatus?.[str(f.serialKey)];
     if (st) t.status = st;

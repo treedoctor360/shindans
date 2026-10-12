@@ -27,6 +27,8 @@ export function blankTree(fields = {}) {
     status: '',
     done: false, // 入力が終わった木か
     source: 'app', // 'app' = アプリで入力 / 'ledger' = 台帳で入力済み
+    date: '', // 調査日 "2099-04-05"（保存したときの調査情報）
+    inspector: '', // 調査者（保存したときの調査情報）
     height: '',
     girths: [''],
     branchLen: '',

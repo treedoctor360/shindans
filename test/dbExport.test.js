@@ -1,0 +1,206 @@
+// 一覧表への書き戻しと、書き戻し後の照合のテスト（架空の台帳を使う）
+import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
+import { describe, expect, it } from 'vitest';
+import cfgJson from './fixtures/sample-config.json';
+import { validateConfig } from '../src/core/config.js';
+import { cellValue } from '../src/excel/cell.js';
+import { dbValues, exportDb, verifyDb } from '../src/excel/dbExport.js';
+import { mergeLedger, readLedger } from '../src/excel/ledger.js';
+import { fixBorderXml, sheetFiles } from '../src/excel/xlsxFix.js';
+import { makeLedger } from './helpers/makeLedger.js';
+
+const cfg = structuredClone(cfgJson);
+
+// 台帳を読み込んだ状態から始める
+async function setup() {
+  const buf = await makeLedger();
+  const { rows } = await readLedger(buf, cfg);
+  const { trees } = mergeLedger([], rows, cfg);
+  return { buf, trees };
+}
+
+// アプリで入力した木（AB002：台帳4行目）
+const entry = {
+  done: true,
+  date: '2099-05-06',
+  inspector: '試験 二郎・試験 三子',
+  species: 'ミホンカエデ',
+  height: '１０',
+  girths: ['0.3', '0.2'], // 株立 → (0.5)×0.8 = 0.4
+  branchLen: '200',
+  branchDia: '8', // 25（上限30未満なので数値のまま）
+  vigor: '並',
+  lean: '無',
+  deadBranch: '有',
+  deadBranchCount: '2',
+  decay: '小',
+  fungus: '有',
+  fungusName: '不明',
+  notes: '・枝の偏り\n・根元の割れ 幅2cm',
+  initialNeeded: '否',
+  grade: 'C',
+  treatSel: ['枯れ枝'],
+  treatFree: '',
+};
+
+const load = async (buf) => {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  return wb;
+};
+const val = (wb, sheet, addr) => cellValue(wb.getWorksheet(sheet).getCell(addr));
+
+describe('一覧表に書く値', () => {
+  it('見本の設定（書き戻しの項目を含む）は正しい', () => expect(validateConfig(cfg)).toEqual({ ok: true, errors: [] }));
+
+  it('「有(…)」の形、株立の幹周、枝長/枝径、特記・処置の組み立て', async () => {
+    const { trees } = await setup();
+    const t = { ...trees.find((x) => x.treeNo === 'AB002'), ...entry };
+    const v = dbValues(t, cfg);
+    expect(v).toMatchObject({
+      inspector: '試験 二郎・試験 三子', height: 10, girth: 0.4, heightRatio: 79, branchRatio: 25,
+      deadBranch: '有(2本)', fungus: '有(名前不明)', decay: '小', note: '枝の偏りあり。', grade: 'C', treat: '枯れ枝剪定', photo: '有',
+      fellingReason: null,
+    });
+    expect(v.date.toISOString()).toBe('2099-05-06T00:00:00.000Z');
+  });
+
+  it('枯死の木は点検項目を空欄、詳しい診断「要」なら健全度を空欄、本数がなければ「?」', () => {
+    const v1 = dbValues({ ...entry, vigor: '枯' }, cfg);
+    expect([v1.lean, v1.deadBranch, v1.fungus, v1.branchRatio]).toEqual([null, null, null, '-']);
+    expect(dbValues({ ...entry, initialNeeded: '要' }, cfg).grade).toBeNull();
+    expect(dbValues({ ...entry, deadBranchCount: '' }, cfg).deadBranch).toBe('有(?本)');
+  });
+});
+
+describe('一覧表への書き戻し', () => {
+  it('アプリで入力した木の行だけに書き、照合に通る（他のセル・設定にない列は元のまま）', async () => {
+    const { buf, trees } = await setup();
+    const mine = trees.map((t) => (t.treeNo === 'AB002' ? { ...t, ...entry } : t));
+    const r = await exportDb(buf, mine, cfg);
+    expect(r.errors).toEqual([]);
+    expect(r.stats).toEqual({ written: 1, appended: 0, skippedLedgerDone: [] });
+
+    const wb = await load(r.buffer);
+    const ws = wb.getWorksheet('公園');
+    expect(ws.getCell('J4').value).toEqual({ formula: 'ROUND((H4/(I4/3.14)),0)', result: 79 });
+    expect(val(wb, '公園', 'L4')).toBe('並');
+    expect(val(wb, '公園', 'N4')).toBe('有(2本)');
+    expect(val(wb, '公園', 'W4')).toBe('残しておくメモ');
+    expect(val(wb, '公園', 'D4')).toBe('ＡＢ００２'); // 番号の列は書き換えない
+    // 読み直すと、台帳で入力済みの木として取り込める
+    const again = mergeLedger([], (await readLedger(r.buffer, cfg)).rows, cfg).trees.find((t) => t.treeNo === 'AB002');
+    expect(again).toMatchObject({ source: 'ledger', vigor: '並', deadBranch: '有', deadBranchCount: '2', fungusName: '名前不明', ledgerDate: '2099-05-06' });
+  });
+
+  it('罫線の色「自動」を付け直す', async () => {
+    const { buf, trees } = await setup();
+    const r = await exportDb(buf, trees, cfg);
+    const styles = await (await JSZip.loadAsync(r.buffer)).file('xl/styles.xml').async('string');
+    expect(styles).not.toMatch(/<(left|right|top|bottom) style="[A-Za-z]+"\/>/);
+  });
+
+  it('台帳にない木は末尾に足す（通し番号は状態に応じて）', async () => {
+    const { buf, trees } = await setup();
+    const extra = [
+      { ...entry, id: 'n1', siteType: 'park', treeNo: 'ZZ901', dupIndex: 1, source: 'app', parkCode: 'K05', parkName: '架空公園', status: '' },
+      { ...entry, id: 'n2', siteType: 'park', treeNo: 'ZZ902', dupIndex: 1, source: 'app', parkCode: 'K05', parkName: '架空公園', status: '残存' },
+    ];
+    const r = await exportDb(buf, [...trees, ...extra], cfg);
+    expect(r.errors).toEqual([]);
+    expect(r.stats.appended).toBe(2);
+    const wb = await load(r.buffer);
+    expect(['A7', 'D7', 'C7', 'B7'].map((a) => val(wb, '公園', a))).toEqual(['追加', 'ZZ901', '架空公園', 'K05']);
+    expect(['A8', 'D8'].map((a) => val(wb, '公園', a))).toEqual(['残存', 'ZZ902']);
+  });
+
+  it('台帳で入力済みの木・台帳側で入力済みになっていた木は書かない', async () => {
+    const { buf, trees } = await setup();
+    // AB001 は台帳で入力済み。アプリ側で入力済みにしていても、台帳を正として書かない
+    const mine = trees.map((t) => (t.treeNo === 'AB001' && t.siteType === 'park' && t.dupIndex === 1 ? { ...t, ...entry, source: 'app' } : t));
+    const r = await exportDb(buf, mine, cfg);
+    expect(r.errors).toEqual([]);
+    expect(r.stats).toEqual({ written: 0, appended: 0, skippedLedgerDone: ['AB001'] });
+  });
+
+  it('番号が重複している木は「何本目か」の行に書く', async () => {
+    const { buf, trees } = await setup();
+    const mine = trees.map((t) => (t.treeNo === 'AB001' && t.dupIndex === 2 ? { ...t, ...entry } : t));
+    const r = await exportDb(buf, mine, cfg);
+    expect(r.errors).toEqual([]);
+    const wb = await load(r.buffer);
+    expect(val(wb, '公園', 'L6')).toBe('並'); // 2本目（6行目）
+    expect(val(wb, '公園', 'L3')).toBe('良'); // 1本目は元のまま
+  });
+
+  it('場所の名前が台帳と違えば、書かずに止める', async () => {
+    const { buf, trees } = await setup();
+    const mine = trees.map((t) => (t.treeNo === 'AB002' ? { ...t, ...entry, parkName: '違う公園' } : t));
+    const r = await exportDb(buf, mine, cfg);
+    expect(r.buffer).toBeNull();
+    expect(r.errors.join('\n')).toMatch(/AB002.*場所/);
+  });
+
+  it('読み込んだ後に台帳の行が入れ替わっていたら、書かずに止める（樹種で気付く）', async () => {
+    const { buf, trees } = await setup();
+    const mine = trees.map((t) => (t.treeNo === 'AB002' ? { ...t, ...entry } : t));
+    const wb = await load(buf);
+    wb.getWorksheet('公園').getCell('E4').value = '別の樹種'; // 4行目が別の木に変わった
+    const r = await exportDb(await wb.xlsx.writeBuffer(), mine, cfg);
+    expect(r.buffer).toBeNull();
+    expect(r.errors.join('\n')).toMatch(/樹種/);
+  });
+
+  it('アプリで樹種を直していても、照合は読み込んだときの樹種で行う', async () => {
+    const { buf, trees } = await setup();
+    const mine = trees.map((t) => (t.treeNo === 'AB002' ? { ...t, ...entry, species: 'テストノキ' } : t));
+    const r = await exportDb(buf, mine, cfg);
+    expect(r.errors).toEqual([]);
+    expect(val(await load(r.buffer), '公園', 'E4')).toBe('テストノキ');
+  });
+});
+
+describe('書き戻し後の照合（不具合を見逃さないか）', () => {
+  // 正しく書き出したあと、ファイルをわざと壊して照合にかける
+  async function tampered(change) {
+    const { buf, trees } = await setup();
+    const mine = trees.map((t) => (t.treeNo === 'AB002' ? { ...t, ...entry } : t));
+    const r = await exportDb(buf, mine, cfg);
+    const wb = await load(r.buffer);
+    change(wb.getWorksheet('公園'));
+    return verifyDb(await wb.xlsx.writeBuffer(), buf, r.plan, cfg);
+  }
+
+  it('書いた値の誤り', async () => {
+    expect((await tampered((ws) => (ws.getCell('N4').value = '有(3本)'))).join('\n')).toMatch(/AB002：deadBranch/);
+  });
+  it('樹高/幹径の式の誤り（別の行を参照）', async () => {
+    expect((await tampered((ws) => (ws.getCell('J4').value = { formula: 'ROUND((H5/(I5/3.14)),0)', result: 79 }))).join('\n')).toMatch(/式/);
+  });
+  it('書いていない行の変化（1行ずれて書いた場合など）', async () => {
+    expect((await tampered((ws) => (ws.getCell('L5').value = '並'))).join('\n')).toMatch(/5行目12列目/);
+  });
+  it('書いた行の、書いていない列の変化', async () => {
+    expect((await tampered((ws) => (ws.getCell('W4').value = null))).join('\n')).toMatch(/4行目23列目/);
+  });
+  it('番号の行の増減', async () => {
+    const errs = await tampered((ws) => (ws.getCell('D9').value = 'AB002'));
+    expect(errs.join('\n')).toMatch(/AB002：行が2行/);
+  });
+  it('何も壊していなければ合格', async () => expect(await tampered(() => {})).toEqual([]));
+});
+
+describe('xlsx の補正', () => {
+  it('色のない罫線に「自動」を付ける', () => {
+    expect(fixBorderXml('<left style="thin"/><top style="thin"><color rgb="FF000000"/></top>')).toBe(
+      '<left style="thin"><color auto="1"/></left><top style="thin"><color rgb="FF000000"/></top>',
+    );
+  });
+  it('シートの並び順と中のファイルの対応を取る', async () => {
+    const zip = await JSZip.loadAsync(await makeLedger());
+    const files = await sheetFiles(zip);
+    expect(files.map((x) => x.name)).toEqual(['公園', '道路', '集計']);
+    for (const x of files) expect(zip.file(x.file)).not.toBeNull();
+  });
+});
