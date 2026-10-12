@@ -104,6 +104,13 @@ export function alertsOf(tree, cfg) {
       msg: `台帳で入力済みの木です（${monthDay(tree.ledgerDate)} ${tree.ledgerInspector || ''}）。値は台帳から読み込んだもので、変更できません。`,
       acts: [{ type: 'resurvey', label: '再調査として入力し直す' }],
     });
+  if (tree.ledgerDuplicate)
+    a.push({
+      id: 'ledgerDuplicate',
+      lv: 'warn',
+      msg: `台帳に同じ番号の行が${tree.ledgerDuplicate}行あります（この木は${tree.dupIndex || 1}行目）。現地の番号札と、場所・樹種が台帳と合っているか確認してください。`,
+      acts: [],
+    });
   if (tree.appBackup)
     a.push({
       id: 'appBackup',

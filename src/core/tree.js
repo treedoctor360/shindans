@@ -22,8 +22,10 @@ export function blankTree(fields = {}) {
   return {
     id: '',
     treeNo: '',
+    dupIndex: 1, // 台帳で番号が重複しているとき、上から何本目か
     species: '',
     status: '',
+    done: false, // 入力が終わった木か
     source: 'app', // 'app' = アプリで入力 / 'ledger' = 台帳で入力済み
     height: '',
     girths: [''],
