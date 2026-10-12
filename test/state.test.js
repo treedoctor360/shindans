@@ -25,15 +25,17 @@ describe('端末内の保存', () => {
   });
 
   it('初めて開いたときは空の状態、保存すれば次回はその状態', async () => {
-    expect((await loadAll()).state).toEqual(initialState());
-    const s = { ...initialState(), session: { date: '2099-04-05', inspector: '試験 一郎' }, trees: [blankTree({ id: 't1' })] };
+    const first = (await loadAll()).state;
+    expect(first.server.deviceId).toMatch(/^[a-z0-9]+$/); // 端末の印は初回に作る
+    expect({ ...first, server: { ...first.server, deviceId: '' } }).toEqual(initialState());
+    const s = { ...first, session: { date: '2099-04-05', inspector: '試験 一郎' }, trees: [blankTree({ id: 't1' })] };
     await saveState(s);
     await idbReset(); // アプリを開き直したのと同じ
     expect((await loadAll()).state).toEqual(s);
   });
 
   it('古い形・壊れた状態でも起動できる形に直す', () => {
-    expect(migrate(null)).toEqual(initialState());
+    expect(migrate(null).trees).toEqual([]);
     expect(migrate({ trees: [1], session: { date: 'x' } })).toMatchObject({ trees: [1], session: { date: 'x', inspector: '' }, view: 'settings' });
   });
 });

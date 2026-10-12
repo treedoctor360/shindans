@@ -17,6 +17,9 @@ export function updateTree(state, id, fn) {
   return { ...state, trees: state.trees.map((t) => (t.id === id ? fn(t) : t)) };
 }
 
+// 入力済みの木を直したとき：送り直しが必要な印を付ける
+export const touched = (t, now = new Date().toISOString()) => (t.done && t.source === 'app' ? { ...t, sent: false, updatedAt: now } : t);
+
 // 選択ボタンを押した：同じものをもう一度押すと解除
 export function pressOption(t, field, v, cfg) {
   if (field === 'photoOverride') {
@@ -63,7 +66,7 @@ export function nextTodo(state, cfg) {
 
 // 保存：入力済みにして、調査日・調査者を記録し、次の未入力の木へ移る
 // 返す形：{ state, missing（未入力の項目）, saved（保存したか） }
-export function saveTree(state, cfg, { force = false } = {}) {
+export function saveTree(state, cfg, { force = false, now = new Date().toISOString() } = {}) {
   const t = currentTree(state);
   if (!t || t.source === 'ledger') return { state, missing: [], saved: false };
   const missing = missingFields(t, cfg);
@@ -73,6 +76,7 @@ export function saveTree(state, cfg, { force = false } = {}) {
     done: true,
     sent: false,
     source: 'app',
+    updatedAt: now, // サーバーで新しい・古いを比べるため
     date: state.session.date,
     inspector: state.session.inspector,
   }));

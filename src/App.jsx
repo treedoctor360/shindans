@@ -55,6 +55,11 @@ export default function App() {
         </div>
       </header>
 
+      {app.config && state.server?.url && app.sendStatus?.error && state.view !== 'out' && (
+        <div className="alert warn" style={{ margin: '12px 16px 0' }}>
+          未送信の入力があります（{app.sendStatus.error}）。端末には保存済みです。
+        </div>
+      )}
       {saveError && (
         <div className="alert danger" role="alert" style={{ margin: '12px 16px 0' }}>
           {saveError}
