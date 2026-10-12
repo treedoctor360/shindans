@@ -1,5 +1,8 @@
 // 画面の骨組み：上の調査情報バー、中の画面、下のタブ
 import { useCallback, useRef, useState } from 'react';
+import { groupLabel } from './core/groups.js';
+import FormView from './ui/FormView.jsx';
+import ListView, { activeGroup } from './ui/ListView.jsx';
 import SettingsView from './ui/SettingsView.jsx';
 import { useAppState } from './ui/useAppState.js';
 import { APP_VERSION } from './version.js';
@@ -58,6 +61,7 @@ export default function App() {
           <span className="proto">v{APP_VERSION}</span>
         </div>
         <div className="meta" data-testid="top-meta">
+          {app.config && state.trees.length ? `${groupLabel(state.trees, activeGroup(state, app.config), app.config)}　` : ''}
           {slashDate(s.date)}　{s.inspector}
         </div>
       </header>
@@ -70,8 +74,8 @@ export default function App() {
 
       <main>
         {state.view === 'settings' && <SettingsView {...app} toast={toast} />}
-        {state.view === 'list' && <Placeholder name="一覧" />}
-        {state.view === 'form' && <Placeholder name="入力" />}
+        {state.view === 'list' && <ListView {...app} />}
+        {state.view === 'form' && <FormView key={state.currentId} {...app} toast={toast} />}
         {state.view === 'out' && <Placeholder name="出力" />}
       </main>
       <footer>© 2026– Koh Kitsukawa. All rights reserved.</footer>

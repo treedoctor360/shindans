@@ -54,7 +54,7 @@ export default function SettingsView({ state, update, config, setConfig, toast }
     setBusy(true);
     try {
       const r = await importLedger(state, file.name, await file.arrayBuffer(), config, todayYmd());
-      await update((st) => ({ ...st, trees: r.state.trees, ledgerInfo: r.state.ledgerInfo }));
+      await update((st) => ({ ...st, trees: r.state.trees, ledgerInfo: r.state.ledgerInfo, group: st.group || '' }), { now: true });
       const st = r.stats;
       toast(
         `${st.all}本を読み込みました（台帳で入力済み${st.done}本）` +

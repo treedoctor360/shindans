@@ -25,18 +25,44 @@ export function useAppState() {
       .finally(() => setReady(true));
   }, []);
 
-  // 状態を変える。fn は「今の状態 → 新しい状態」を返す関数
-  const update = useCallback(async (fn) => {
-    const next = fn(latest.current);
-    latest.current = next;
-    setState(next);
+  // 端末への保存。文字を打つたびに全部を書くと重いので、最後の変更から 300ミリ秒後にまとめて保存する。
+  // 画面を閉じる・裏に回すときは、待たずにすぐ保存する。
+  const timer = useRef(null);
+  const flush = useCallback(async () => {
+    clearTimeout(timer.current);
+    timer.current = null;
     try {
-      await saveState(next);
+      await saveState(latest.current);
       setSaveError('');
     } catch (e) {
       setSaveError(`端末に保存できませんでした：${e.message}`);
     }
   }, []);
+  useEffect(() => {
+    const now = () => timer.current && flush();
+    const onHide = () => document.visibilityState === 'hidden' && now();
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', now);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', now);
+    };
+  }, [flush]);
+
+  // 状態を変える。fn は「今の状態 → 新しい状態」を返す関数
+  //  { now: true } を付けると、待たずにすぐ保存する（「保存」ボタンなど大事な操作）
+  const update = useCallback(
+    (fn, { now = false } = {}) => {
+      const next = fn(latest.current);
+      latest.current = next;
+      setState(next);
+      clearTimeout(timer.current);
+      if (now) return flush();
+      timer.current = setTimeout(flush, 300);
+      return Promise.resolve();
+    },
+    [flush],
+  );
 
   return { state, update, config, setConfig, ready, saveError };
 }

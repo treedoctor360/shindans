@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "job": {
     "title": "架空の点検業務",
     "year": 2099
@@ -36,6 +36,10 @@
       "B",
       "C",
       "D"
+    ],
+    "initialNeeded": [
+      "否",
+      "要"
     ]
   },
   "calc": {
@@ -79,13 +83,20 @@
         "eq": "有"
       },
       "field": "fungusName",
-      "label": "キノコの名前"
+      "label": "キノコの名前",
+      "chips": [
+        "ツヨイタケ",
+        "コワイタケ",
+        "不明"
+      ]
     }
   ],
   "initial": {
     "label": "詳しい診断の必要性",
     "yes": "要",
-    "no": "否"
+    "no": "否",
+    "waitLabel": "詳しい診断待ち",
+    "pill": "詳細"
   },
   "noteChips": [
     {
@@ -349,12 +360,14 @@
       {
         "type": "park",
         "label": "公園",
-        "identify": "parkName"
+        "identify": "parkName",
+        "code": "parkCode"
       },
       {
         "type": "street",
         "label": "道路",
-        "identify": "routeName"
+        "identify": "routeName",
+        "code": "routeNo"
       }
     ],
     "columns": {
@@ -621,5 +634,33 @@
         ]
       }
     ]
-  }
+  },
+  "statusOptions": [
+    {
+      "v": "",
+      "label": "台帳"
+    },
+    {
+      "v": "新規",
+      "label": "新規"
+    },
+    {
+      "v": "残存",
+      "label": "残存"
+    },
+    {
+      "v": "札なし",
+      "label": "札なし"
+    }
+  ],
+  "newTreeStatus": "新規",
+  "gradeText": {
+    "A": "とても良い",
+    "B": "良い",
+    "C": "ふつう",
+    "D": "悪い"
+  },
+  "gradeHint": "迷ったら一つ上の段階を選びます（架空の説明）",
+  "noteChipsShow": 4,
+  "treeNoPlaceholder": "AB123"
 }
