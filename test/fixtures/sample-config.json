@@ -1,49 +1,164 @@
 {
-  "version": 1,
-  "job": { "title": "架空の点検業務", "year": 2099 },
+  "version": 3,
+  "job": {
+    "title": "架空の点検業務",
+    "year": 2099
+  },
   "deadVigor": "枯",
   "vigorLabel": "樹勢",
   "gradeLabel": "健全度",
   "options": {
-    "vigor": ["良", "並", "枯"],
-    "lean": ["無", "有"],
-    "deadBranch": ["無", "少", "有"],
-    "decay": ["無", "小", "有"],
-    "fungus": ["無", "有"],
-    "grade": ["A", "B", "C", "D"]
+    "vigor": [
+      "良",
+      "並",
+      "枯"
+    ],
+    "lean": [
+      "無",
+      "有"
+    ],
+    "deadBranch": [
+      "無",
+      "少",
+      "有"
+    ],
+    "decay": [
+      "無",
+      "小",
+      "有"
+    ],
+    "fungus": [
+      "無",
+      "有"
+    ],
+    "grade": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ]
   },
-  "calc": { "multiStemFactor": 0.8, "pi": 3.14, "branchCap": 30, "branchCapLabel": "30倍以上", "deadLabel": "-" },
+  "calc": {
+    "multiStemFactor": 0.8,
+    "pi": 3.14,
+    "branchCap": 30,
+    "branchCapLabel": "30倍以上",
+    "deadLabel": "-"
+  },
   "checks": [
-    { "key": "lean", "label": "傾斜" },
-    { "key": "deadBranch", "label": "枯れ枝" },
-    { "key": "decay", "label": "腐朽" },
-    { "key": "fungus", "label": "キノコ" }
+    {
+      "key": "lean",
+      "label": "傾斜"
+    },
+    {
+      "key": "deadBranch",
+      "label": "枯れ枝"
+    },
+    {
+      "key": "decay",
+      "label": "腐朽"
+    },
+    {
+      "key": "fungus",
+      "label": "キノコ"
+    }
   ],
   "details": [
-    { "when": { "field": "deadBranch", "eq": "有" }, "field": "deadBranchCount", "label": "枯れ枝の本数", "required": true },
-    { "when": { "field": "fungus", "eq": "有" }, "field": "fungusName", "label": "キノコの名前" }
+    {
+      "when": {
+        "field": "deadBranch",
+        "eq": "有"
+      },
+      "field": "deadBranchCount",
+      "label": "枯れ枝の本数",
+      "required": true
+    },
+    {
+      "when": {
+        "field": "fungus",
+        "eq": "有"
+      },
+      "field": "fungusName",
+      "label": "キノコの名前"
+    }
   ],
-  "initial": { "label": "詳しい診断の必要性", "yes": "要", "no": "否" },
+  "initial": {
+    "label": "詳しい診断の必要性",
+    "yes": "要",
+    "no": "否"
+  },
   "noteChips": [
-    { "t": "枝が道にはみ出す", "db": "はみ出し枝", "kind": "n", "photo": "はみ出し枝" },
-    { "t": "枝の偏り", "kind": "n" },
-    { "t": "根元の割れ", "kind": "n", "photo": "根元の割れ" },
-    { "t": "支柱が不要", "db": "支柱は不要。", "kind": "s", "photo": "支柱" },
-    { "t": "叩くと音が変", "kind": "s", "fullOnly": true },
-    { "t": "比率超過だが剪定不要", "db": "比率は超えているが剪定不要。", "kind": "s" },
-    { "t": "つる巻き付き(切れる)", "db": "つる巻き付き", "kind": "n", "photo": "つる" },
-    { "t": "つる巻き付き(切れない)", "db": "つる巻き付き", "kind": "n", "photo": "つる" }
+    {
+      "t": "枝が道にはみ出す",
+      "db": "はみ出し枝",
+      "kind": "n",
+      "photo": "はみ出し枝"
+    },
+    {
+      "t": "枝の偏り",
+      "kind": "n"
+    },
+    {
+      "t": "根元の割れ",
+      "kind": "n",
+      "photo": "根元の割れ"
+    },
+    {
+      "t": "支柱が不要",
+      "db": "支柱は不要。",
+      "kind": "s",
+      "photo": "支柱"
+    },
+    {
+      "t": "叩くと音が変",
+      "kind": "s",
+      "fullOnly": true
+    },
+    {
+      "t": "比率超過だが剪定不要",
+      "db": "比率は超えているが剪定不要。",
+      "kind": "s"
+    },
+    {
+      "t": "つる巻き付き(切れる)",
+      "db": "つる巻き付き",
+      "kind": "n",
+      "photo": "つる"
+    },
+    {
+      "t": "つる巻き付き(切れない)",
+      "db": "つる巻き付き",
+      "kind": "n",
+      "photo": "つる"
+    }
   ],
-  "dbNote": { "nounJoin": "、", "nounSuffix": "あり。" },
+  "dbNote": {
+    "nounJoin": "、",
+    "nounSuffix": "あり。"
+  },
   "treat": {
-    "prune": ["枯れ枝", "縮小", "はみ出し枝"],
-    "other": ["伐採", "支柱撤去", "つる除去"],
+    "prune": [
+      "枯れ枝",
+      "縮小",
+      "はみ出し枝"
+    ],
+    "other": [
+      "伐採",
+      "支柱撤去",
+      "つる除去"
+    ],
     "pruneSuffix": "剪定",
     "join": "・"
   },
   "species": {
-    "list": ["テストノキ", "ミホンカエデ", "カクウザクラ"],
-    "replace": { "キュウメイノキ": "テストノキ" }
+    "list": [
+      "テストノキ",
+      "ミホンカエデ",
+      "カクウザクラ"
+    ],
+    "replace": {
+      "キュウメイノキ": "テストノキ"
+    }
   },
   "photo": {
     "fullName": "全景",
@@ -53,47 +168,279 @@
     "flagYes": "有",
     "flagNo": "無",
     "weak": [
-      { "field": "deadBranch", "eq": "有", "name": "枯れ枝" },
-      { "field": "decay", "eq": "有", "name": "腐朽" },
-      { "field": "fungus", "eq": "有", "name": "キノコ" }
+      {
+        "field": "deadBranch",
+        "eq": "有",
+        "name": "枯れ枝"
+      },
+      {
+        "field": "decay",
+        "eq": "有",
+        "name": "腐朽"
+      },
+      {
+        "field": "fungus",
+        "eq": "有",
+        "name": "キノコ"
+      }
     ],
     "shared": [
-      { "field": "vigor", "eq": "枯", "name": "枯死" },
-      { "field": "lean", "eq": "有", "name": "傾斜" }
+      {
+        "field": "vigor",
+        "eq": "枯",
+        "name": "枯死"
+      },
+      {
+        "field": "lean",
+        "eq": "有",
+        "name": "傾斜"
+      }
     ],
-    "fullOnly": [{ "field": "decay", "eq": "小" }]
+    "fullOnly": [
+      {
+        "field": "decay",
+        "eq": "小"
+      }
+    ]
   },
   "rules": [
-    { "id": "treeNo", "type": "treeNoPattern", "level": "warn", "pattern": "^[A-Z]{2}\\d{3}$", "message": "番号の形がいつもと違います。" },
-    { "id": "noTag", "type": "statusNotice", "level": "info", "status": "札なし", "message": "番号札のない木です。" },
-    { "id": "maple", "type": "speciesNotice", "level": "info", "pattern": "カエデ", "unless": "ミホン", "message": "{species}は種名まで記録します。" },
     {
-      "id": "ratio", "type": "ratioAtLeast", "level": "warn",
+      "id": "treeNo",
+      "type": "treeNoPattern",
+      "level": "warn",
+      "pattern": "^[A-Z]{2}\\d{3}$",
+      "message": "番号の形がいつもと違います。"
+    },
+    {
+      "id": "noTag",
+      "type": "statusNotice",
+      "level": "info",
+      "status": "札なし",
+      "message": "番号札のない木です。"
+    },
+    {
+      "id": "maple",
+      "type": "speciesNotice",
+      "level": "info",
+      "pattern": "カエデ",
+      "unless": "ミホン",
+      "message": "{species}は種名まで記録します。"
+    },
+    {
+      "id": "ratio",
+      "type": "ratioAtLeast",
+      "level": "warn",
       "items": [
-        { "ratio": "height", "threshold": 60, "label": "樹高/幹径" },
-        { "ratio": "branch", "threshold": 30, "label": "枝長/枝径" }
+        {
+          "ratio": "height",
+          "threshold": 60,
+          "label": "樹高/幹径"
+        },
+        {
+          "ratio": "branch",
+          "threshold": 30,
+          "label": "枝長/枝径"
+        }
       ],
       "unlessTreat": "縮小",
       "message": "{reasons}。縮小剪定を検討してください。",
       "actions": [
-        { "type": "addTreat", "value": "縮小", "label": "処置に縮小剪定を入れる" },
-        { "type": "addNote", "value": "比率超過だが剪定不要", "label": "剪定不要", "dismiss": true }
+        {
+          "type": "addTreat",
+          "value": "縮小",
+          "label": "処置に縮小剪定を入れる"
+        },
+        {
+          "type": "addNote",
+          "value": "比率超過だが剪定不要",
+          "label": "剪定不要",
+          "dismiss": true
+        }
       ]
     },
-    { "id": "strongFungus", "type": "contains", "level": "danger", "when": { "field": "fungus", "eq": "有" }, "field": "fungusName", "anyOf": ["ツヨイタケ", "コワイタケ"], "message": "{value}に注意してください。" },
     {
-      "id": "initialConflict", "type": "conflict", "level": "warn",
-      "when": { "field": "initialNeeded", "eq": "否" },
+      "id": "strongFungus",
+      "type": "contains",
+      "level": "danger",
+      "when": {
+        "field": "fungus",
+        "eq": "有"
+      },
+      "field": "fungusName",
+      "anyOf": [
+        "ツヨイタケ",
+        "コワイタケ"
+      ],
+      "message": "{value}に注意してください。"
+    },
+    {
+      "id": "initialConflict",
+      "type": "conflict",
+      "level": "warn",
+      "when": {
+        "field": "initialNeeded",
+        "eq": "否"
+      },
       "hits": [
-        { "field": "fungus", "eq": "有", "label": "キノコあり" },
-        { "field": "decay", "eq": "有", "label": "腐朽あり" }
+        {
+          "field": "fungus",
+          "eq": "有",
+          "label": "キノコあり"
+        },
+        {
+          "field": "decay",
+          "eq": "有",
+          "label": "腐朽あり"
+        }
       ],
       "message": "{hits}ですが、詳しい診断が「否」です。"
     },
-    { "id": "vineCut", "type": "noteSuggestsTreat", "level": "info", "note": "つる巻き付き(切れる)", "treat": "つる除去", "message": "つるは切れるので、処置に入れられます。", "actions": [{ "type": "addTreat", "value": "つる除去", "label": "処置につる除去を入れる" }] },
-    { "id": "noWater", "type": "treatForbidden", "level": "warn", "pattern": "水やり", "message": "「水やり」は処置に書きません。" },
-    { "id": "fellReason", "type": "treatRequires", "level": "danger", "pattern": "伐採", "field": "fellingReason", "label": "伐採理由", "message": "伐採の理由を入力してください。" },
-    { "id": "gradeTreat", "type": "gradeNeedsTreat", "level": "warn", "grades": ["D"], "message": "健全度{grade}ですが処置が空欄です。" },
-    { "id": "photoOver", "type": "photoOver", "level": "warn", "message": "弱点写真は{max}枚までです。" }
-  ]
+    {
+      "id": "vineCut",
+      "type": "noteSuggestsTreat",
+      "level": "info",
+      "note": "つる巻き付き(切れる)",
+      "treat": "つる除去",
+      "message": "つるは切れるので、処置に入れられます。",
+      "actions": [
+        {
+          "type": "addTreat",
+          "value": "つる除去",
+          "label": "処置につる除去を入れる"
+        }
+      ]
+    },
+    {
+      "id": "noWater",
+      "type": "treatForbidden",
+      "level": "warn",
+      "pattern": "水やり",
+      "message": "「水やり」は処置に書きません。"
+    },
+    {
+      "id": "fellReason",
+      "type": "treatRequires",
+      "level": "danger",
+      "pattern": "伐採",
+      "field": "fellingReason",
+      "label": "伐採理由",
+      "message": "伐採の理由を入力してください。"
+    },
+    {
+      "id": "gradeTreat",
+      "type": "gradeNeedsTreat",
+      "level": "warn",
+      "grades": [
+        "D"
+      ],
+      "message": "健全度{grade}ですが処置が空欄です。"
+    },
+    {
+      "id": "photoOver",
+      "type": "photoOver",
+      "level": "warn",
+      "message": "弱点写真は{max}枚までです。"
+    }
+  ],
+  "dbFormat": {
+    "headerRow": 1,
+    "dataRow": 3,
+    "sheets": [
+      {
+        "type": "park",
+        "label": "公園",
+        "identify": "parkName"
+      },
+      {
+        "type": "street",
+        "label": "道路",
+        "identify": "routeName"
+      }
+    ],
+    "columns": {
+      "serial": "^連番",
+      "treeNo": "^木の番号$",
+      "parkCode": "^公園コード$",
+      "parkName": "^公園名$",
+      "routeNo": "^道路番号$",
+      "routeName": "^道路名$",
+      "place": "^場所$",
+      "date": "^調査日$",
+      "inspector": "^調査者$",
+      "species": "^樹種$",
+      "height": "^樹高$",
+      "girth": "^幹周$",
+      "heightRatio": "^樹高/幹径$",
+      "branchRatio": "^枝長/枝径$",
+      "vigor": "樹勢$",
+      "lean": "傾斜$",
+      "deadBranch": "枯れ枝$",
+      "decay": "腐朽$",
+      "fungus": "キノコ$",
+      "note": "特記",
+      "initialNeeded": "^詳しい診断",
+      "grade": "^健全度$",
+      "treat": "^処置$",
+      "fellingReason": "^伐採理由$",
+      "photo": "^写真$"
+    },
+    "infoKeys": [
+      "parkCode",
+      "parkName",
+      "routeNo",
+      "routeName",
+      "place"
+    ],
+    "doneKey": "vigor",
+    "serialKey": "serial",
+    "serialStatus": {
+      "残存": "残存"
+    },
+    "parenKeys": {
+      "deadBranch": {
+        "field": "deadBranchCount",
+        "strip": "本",
+        "when": "有",
+        "blank": "?"
+      },
+      "fungus": {
+        "field": "fungusName",
+        "when": "有",
+        "blank": "名前不明",
+        "alias": {
+          "不明": "名前不明"
+        }
+      }
+    },
+    "replace": {
+      "initialNeeded": {
+        "〇": "要"
+      }
+    },
+    "writeKeys": [
+      "date",
+      "inspector",
+      "species",
+      "height",
+      "girth",
+      "heightRatio",
+      "branchRatio",
+      "vigor",
+      "lean",
+      "deadBranch",
+      "decay",
+      "fungus",
+      "note",
+      "initialNeeded",
+      "grade",
+      "treat",
+      "fellingReason",
+      "photo"
+    ],
+    "heightRatioFormula": "ROUND(({height}/({girth}/3.14)),0)",
+    "newSerial": "追加",
+    "serialFor": {
+      "残存": "残存"
+    }
+  }
 }
