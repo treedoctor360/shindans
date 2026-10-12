@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { groupLabel } from './core/groups.js';
 import FormView from './ui/FormView.jsx';
 import ListView, { activeGroup } from './ui/ListView.jsx';
+import OutView from './ui/OutView.jsx';
 import SettingsView from './ui/SettingsView.jsx';
 import { useAppState } from './ui/useAppState.js';
 import { APP_VERSION } from './version.js';
@@ -19,18 +20,6 @@ const slashDate = (ymd) => {
   const [y, m, d] = String(ymd || '').split('-');
   return y ? `${y}/${+m}/${+d}` : '';
 };
-
-// 次の段階で作る画面の仮置き
-function Placeholder({ name }) {
-  return (
-    <section className="view">
-      <div className="sec">
-        <h2>{name}</h2>
-        <p className="hint">この画面は次の段階で作ります。</p>
-      </div>
-    </section>
-  );
-}
 
 export default function App() {
   const app = useAppState();
@@ -76,7 +65,7 @@ export default function App() {
         {state.view === 'settings' && <SettingsView {...app} toast={toast} />}
         {state.view === 'list' && <ListView {...app} />}
         {state.view === 'form' && <FormView key={state.currentId} {...app} toast={toast} />}
-        {state.view === 'out' && <Placeholder name="出力" />}
+        {state.view === 'out' && <OutView {...app} toast={toast} />}
       </main>
       <footer>© 2026– Koh Kitsukawa. All rights reserved.</footer>
 

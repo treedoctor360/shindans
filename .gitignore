@@ -22,3 +22,7 @@ config*.json
 Thumbs.db
 .vscode/
 .idea/
+
+# 画面テストの結果
+test-results/
+playwright-report/

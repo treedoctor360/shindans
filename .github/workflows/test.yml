@@ -29,7 +29,10 @@ jobs:
           # 禁止語リストはシークレットに登録（リポジトリには置かない）
           FORBIDDEN_WORDS: ${{ secrets.FORBIDDEN_WORDS }}
 
-      - name: テスト
+      - name: 画面テスト用のブラウザの準備
+        run: npx playwright install --with-deps chromium
+
+      - name: テスト（計算・Excel の部品テストと、画面を自動で操作するテスト）
         run: npm test
 
       - name: ビルド（公開用ファイルが作れるか）
