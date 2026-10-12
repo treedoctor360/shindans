@@ -1,6 +1,6 @@
 # 自動テスト：GitHub に送る（push）たび・プルリクエストのたびに、GitHub のサーバーで実行する
-# この段階では公開（GitHub Pages）はしない。全部通るかどうかだけを確かめる
-name: テスト
+# main に取り込んだときだけ、テストが全部通ったら GitHub Pages に公開する（通らなければ公開しない）
+name: テストと公開
 
 on:
   push:
@@ -35,5 +35,30 @@ jobs:
       - name: テスト（計算・Excel の部品テストと、画面を自動で操作するテスト）
         run: npm test
 
-      - name: ビルド（公開用ファイルが作れるか）
+      - name: ビルド（公開用ファイルを作る）
         run: npm run build
+
+      - name: 公開用ファイルを次の段階に渡す（main のときだけ）
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  # 公開：上の「test」が全部通ったときだけ動く
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: GitHub Pages に公開
+        id: deployment
+        uses: actions/deploy-pages@v4
