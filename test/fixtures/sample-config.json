@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "job": {
     "title": "架空の点検業務",
     "year": 2099
@@ -442,5 +442,184 @@
     "serialFor": {
       "残存": "残存"
     }
+  },
+  "fieldSheet": {
+    "rowsPerSheet": 3,
+    "firstRow": 4,
+    "rowsPerTree": 2,
+    "templateRows": 9,
+    "templateCols": 14,
+    "charPx": 8,
+    "defaultColWidth": 9,
+    "optionFontPt": 10,
+    "optionLinePt": 12.5,
+    "font": "MS Gothic",
+    "penColor": "FF1F3D99",
+    "prevLabel": "前回:",
+    "statusLabels": {
+      "残存": "残存",
+      "新規": "今回新規"
+    },
+    "header": {
+      "title": "B1",
+      "inspector": "H1",
+      "date": "K1",
+      "dateTemplate": "{y}年{m}月{d}日",
+      "eraOffset": 2000,
+      "defaultEraYear": 99,
+      "multiLabel": "行ごとに記載",
+      "multiDateSuffix": "ほか"
+    },
+    "cells": {
+      "treeNo": "A",
+      "species": "A",
+      "height": "B",
+      "girth": "C",
+      "branch": "D",
+      "note": "I",
+      "initial": "J",
+      "treat": "L",
+      "reason": "M"
+    },
+    "optionCols": [
+      {
+        "col": "E",
+        "field": "vigor",
+        "opts": [
+          {
+            "v": "良",
+            "lines": [
+              "良"
+            ]
+          },
+          {
+            "v": "並",
+            "lines": [
+              "並"
+            ]
+          },
+          {
+            "v": "枯",
+            "lines": [
+              "枯"
+            ]
+          }
+        ]
+      },
+      {
+        "col": "F",
+        "field": "deadBranch",
+        "opts": [
+          {
+            "v": "無",
+            "lines": [
+              "無"
+            ]
+          },
+          {
+            "v": "少",
+            "lines": [
+              "少"
+            ]
+          },
+          {
+            "v": "有",
+            "lines": [
+              "有",
+              "({deadBranchCount}本)"
+            ],
+            "blank": "　"
+          }
+        ]
+      },
+      {
+        "col": "G",
+        "field": "fungus",
+        "opts": [
+          {
+            "v": "無",
+            "lines": [
+              "無"
+            ]
+          },
+          {
+            "v": "有",
+            "lines": [
+              "有",
+              "({fungusName})"
+            ],
+            "blank": "　　",
+            "default": "不明",
+            "wrap": 3
+          }
+        ]
+      },
+      {
+        "col": "H",
+        "field": "lean",
+        "opts": [
+          {
+            "v": "無",
+            "lines": [
+              "無"
+            ]
+          },
+          {
+            "v": "有",
+            "lines": [
+              "有"
+            ]
+          }
+        ]
+      },
+      {
+        "col": "K",
+        "field": "grade",
+        "opts": [
+          {
+            "v": "A",
+            "lines": [
+              "A"
+            ]
+          },
+          {
+            "v": "B",
+            "lines": [
+              "B"
+            ]
+          },
+          {
+            "v": "C",
+            "lines": [
+              "C"
+            ]
+          },
+          {
+            "v": "D",
+            "lines": [
+              "D"
+            ]
+          }
+        ]
+      },
+      {
+        "col": "N",
+        "field": "photo",
+        "opts": [
+          {
+            "v": "無",
+            "lines": [
+              "無"
+            ]
+          },
+          {
+            "v": "有",
+            "lines": [
+              "有"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

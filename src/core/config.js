@@ -5,7 +5,7 @@
 import { RULE_TYPES } from './rules.js';
 
 // このアプリが読める設定の版。形式を変えたら上げる
-export const CONFIG_VERSION = 3; // 2: dbFormat（台帳の列）を追加 / 3: 一覧表への書き戻しの項目を追加
+export const CONFIG_VERSION = 4; // 2: dbFormat（台帳の列）/ 3: 一覧表への書き戻し / 4: fieldSheet（野帳）
 
 const LEVELS = ['info', 'warn', 'danger'];
 
@@ -117,6 +117,7 @@ export function validateConfig(cfg) {
   }
 
   validateDbFormat(cfg.dbFormat, need, e);
+  validateFieldSheet(cfg.fieldSheet, need);
 
   return { ok: e.length === 0, errors: e };
 }
@@ -161,4 +162,27 @@ export function chooseConfig(next, previous) {
   const r = validateConfig(next);
   if (r.ok) return { config: next, errors: [] };
   return { config: previous ?? null, errors: r.errors };
+}
+
+// 野帳の書式
+const isCol = (v) => typeof v === 'string' && /^[A-Z]{1,2}$/.test(v);
+const isAddr = (v) => typeof v === 'string' && /^[A-Z]{1,2}\d+$/.test(v);
+function validateFieldSheet(fs, need) {
+  if (!need(isObj(fs), 'fieldSheet（野帳の書式）がありません')) return;
+  const ints = ['rowsPerSheet', 'firstRow', 'rowsPerTree', 'templateRows', 'templateCols'];
+  need(ints.every((k) => Number.isInteger(fs[k]) && fs[k] > 0), `fieldSheet の ${ints.join('・')} は正の整数にしてください`);
+  need(isNum(fs.charPx) && isNum(fs.defaultColWidth) && isNum(fs.optionFontPt) && isNum(fs.optionLinePt), 'fieldSheet の charPx・defaultColWidth・optionFontPt・optionLinePt は数にしてください');
+  need(isStr(fs.font) && /^[0-9A-F]{8}$/i.test(fs.penColor || ''), 'fieldSheet の font・penColor（例 FF1F3D99）が必要です');
+  const h = fs.header;
+  need(isObj(h) && isAddr(h.title) && isAddr(h.inspector) && isAddr(h.date) && isStr(h.dateTemplate) && isNum(h.eraOffset) && isStr(h.multiLabel), 'fieldSheet.header の形が違います');
+  const keys = ['treeNo', 'species', 'height', 'girth', 'branch', 'note', 'initial', 'treat', 'reason'];
+  need(isObj(fs.cells) && keys.every((k) => isCol(fs.cells[k])), `fieldSheet.cells には ${keys.join('・')} の列が必要です`);
+  need(
+    isArr(fs.optionCols) && fs.optionCols.every((oc) => isCol(oc?.col) && isStr(oc.field) && isArr(oc.opts) && oc.opts.length > 0 && oc.opts.every((o) => typeof o?.v === 'string' && isArr(o.lines) && o.lines.length > 0)),
+    'fieldSheet.optionCols の形が違います（col・field・opts[{ v, lines }]）',
+  );
+  if (isArr(fs.optionCols)) {
+    const cols = fs.optionCols.map((oc) => oc?.col);
+    need(new Set(cols).size === cols.length, 'fieldSheet.optionCols の列が重複しています');
+  }
 }
