@@ -5,7 +5,7 @@
 import { RULE_TYPES } from './rules.js';
 
 // このアプリが読める設定の版。形式を変えたら上げる
-export const CONFIG_VERSION = 4; // 2: dbFormat（台帳の列）/ 3: 一覧表への書き戻し / 4: fieldSheet（野帳）
+export const CONFIG_VERSION = 5; // 2: dbFormat（台帳の列）/ 3: 一覧表への書き戻し / 4: fieldSheet（野帳）/ 5: 入力画面の選択肢
 
 const LEVELS = ['info', 'warn', 'danger'];
 
@@ -118,6 +118,7 @@ export function validateConfig(cfg) {
 
   validateDbFormat(cfg.dbFormat, need, e);
   validateFieldSheet(cfg.fieldSheet, need);
+  validateScreen(cfg, need);
 
   return { ok: e.length === 0, errors: e };
 }
@@ -185,4 +186,19 @@ function validateFieldSheet(fs, need) {
     const cols = fs.optionCols.map((oc) => oc?.col);
     need(new Set(cols).size === cols.length, 'fieldSheet.optionCols の列が重複しています');
   }
+}
+
+// 入力画面の選択肢など
+function validateScreen(cfg, need) {
+  const o = cfg.options;
+  if (!need(isObj(o), 'options（選択肢）がありません')) return;
+  const keys = ['vigor', 'initialNeeded', 'grade', ...(isArr(cfg.checks) ? cfg.checks.map((c) => c?.key) : [])];
+  for (const k of keys) need(isArr(o[k]) && o[k].length > 0 && o[k].every((v) => typeof v === 'string'), `options.${k}（選択肢の一覧）がありません`);
+  if (isArr(o.vigor)) need(o.vigor.includes(cfg.deadVigor), 'options.vigor に deadVigor の値が入っていません');
+  if (isArr(o.initialNeeded) && isObj(cfg.initial)) need(o.initialNeeded.includes(cfg.initial.yes) && o.initialNeeded.includes(cfg.initial.no), 'options.initialNeeded に initial.yes・no の値が必要です');
+  if (cfg.statusOptions != null)
+    need(isArr(cfg.statusOptions) && cfg.statusOptions.every((x) => typeof x?.v === 'string' && isStr(x.label)), 'statusOptions は [{ v, label }] の一覧にしてください');
+  if (cfg.gradeText != null) need(isObj(cfg.gradeText), 'gradeText の形が違います');
+  if (cfg.noteChipsShow != null) need(Number.isInteger(cfg.noteChipsShow) && cfg.noteChipsShow > 0, 'noteChipsShow は正の整数にしてください');
+  if (isArr(cfg.details)) cfg.details.forEach((d, i) => d?.chips != null && need(isArr(d.chips) && d.chips.every(isStr), `details[${i}].chips は文字の一覧にしてください`));
 }
