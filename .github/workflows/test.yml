@@ -1,0 +1,36 @@
+# 自動テスト：GitHub に送る（push）たび・プルリクエストのたびに、GitHub のサーバーで実行する
+# この段階では公開（GitHub Pages）はしない。全部通るかどうかだけを確かめる
+name: テスト
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリの取得
+        uses: actions/checkout@v4
+
+      - name: Node.js の準備
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 部品のインストール
+        run: npm ci
+
+      - name: 公開前の禁止語チェック
+        run: npm run check:words
+        env:
+          # 禁止語リストはシークレットに登録（リポジトリには置かない）
+          FORBIDDEN_WORDS: ${{ secrets.FORBIDDEN_WORDS }}
+
+      - name: テスト
+        run: npm test
+
+      - name: ビルド（公開用ファイルが作れるか）
+        run: npm run build
