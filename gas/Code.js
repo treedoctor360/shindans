@@ -4,68 +4,106 @@
 //  手順は gas/README.md を参照。
 //
 //  受け付ける操作（すべて POST。本文は JSON の文字）
-//    { action: 'ping' }                         … 合言葉の確認
-//    { action: 'upsert', year, deviceId, trees }  … 木のデータを保存（同じIDは上書き。新しいものだけ）
-//    { action: 'list', year }                     … 保存してある木の一覧
-//    { action: 'putFile', kind, name, base64 }    … 設定・原本・台帳のファイルを置く（事務所のPCから）
-//    { action: 'getFile', kind }                  … 置いたファイルを取り出す（スマホから）
+//    { action: 'ping' }                            … 合言葉の確認
+//    { action: 'push', year, deviceId, records }   … 記録を保存する（版番号を確かめてから）
+//    { action: 'pull', year, since }               … 通し番号 since より後に変わった記録を返す
+//    { action: 'putFile', kind, name, base64 }     … 設定・原本・台帳のファイルを置く（事務所のPCから）
+//    { action: 'getFile', kind }                   … 置いたファイルを取り出す（スマホから）
 //  どの操作にも pass（合言葉）を付ける。合言葉はスクリプトのプロパティ PASSPHRASE に入れる。
+//
+//  記録（record）の種類
+//    tree    … 木1本の入力内容（調査者が書く）
+//    sticky  … 付箋（事務の質問・修正案と、調査者の返事）
+//    confirm … 確定の印（事務が付ける）
+//  記録ごとに版番号（rev）を持つ。送る側は「自分が最後に見た版（baseRev）」を付けて送り、
+//  サーバーの版と違えば（＝他の人が先に変えていれば）上書きせずに断る（conflict）。
+//  保存するたびに通し番号（seq）を振り、「前回から変わった記録だけ」を受け取れるようにする。
+//  保存した記録は、履歴のシートにも1行ずつ足していく（いつ・誰が・何を）。
 // =============================================================
 
-var SHEET_NAME = 'trees';
-var HEADER = ['ID', '樹木番号', '何本目', '種類', '場所', '更新日時', '受信日時', '端末', 'データ'];
+var RECORD_SHEET = 'records';
+var HISTORY_SHEET = 'history';
+// 列：0 ID / 1 年度 / 2 種類 / 3 木のID / 4 版 / 5 通し番号 / 6 更新日時（端末） / 7 受信日時 / 8 端末 / 9 人 / 10 データ
+var HEADER = ['ID', '年度', '種類', '木のID', '版', '通し番号', '更新日時', '受信日時', '端末', '人', 'データ'];
+var HISTORY_HEADER = ['受信日時', 'ID', '種類', '木のID', '版', '人', '端末', 'データ'];
+var KINDS = ['tree', 'sticky', 'confirm'];
 var FILE_KINDS = ['config', 'template', 'ledger'];
 
 // ---------- 計算だけの部分（テストで Node から呼べるように、Google の機能を使わない） ----------
 
-// 木のID：年度・シートの種類・番号・何本目
-function treeId(t, year) {
-  return [year, t.siteType || '', String(t.treeNo || '').trim(), t.dupIndex || 1].join('|');
-}
-
-// 保存してある行（見出しを除く）に、届いた木を反映する
-// 同じIDで、届いた方が新しい（更新日時が同じか後）なら上書き。古ければ取り込まない（conflicts に入れる）
-// 返す形：{ updates: [{ index, row }], appends: [row], saved: [id], conflicts: [id] }
-function planUpsert(rows, trees, year, now, deviceId) {
+// 届いた記録を、保存してある行に当てはめる計画を立てる
+//  rows：保存してある行（見出しを除く）
+//  返す形：{ updates: [{ index, row }], appends: [row], history: [row], results: [...] }
+//   results の1件：{ id, ok: true, rev, seq } または { id, conflict: true, rev, seq, by, updatedAt, data }
+function planPush(rows, records, year, now, deviceId) {
   var byId = {};
-  for (var i = 0; i < rows.length; i++) byId[rows[i][0]] = i;
-  var out = { updates: [], appends: [], saved: [], conflicts: [] };
-  var seen = {};
-  for (var k = 0; k < trees.length; k++) {
-    var t = trees[k];
-    if (!t || !String(t.treeNo || '').trim()) continue;
-    var id = treeId(t, year);
-    if (seen[id]) continue; // 同じ送信の中の重複は最初のものだけ
-    seen[id] = true;
-    var row = [id, String(t.treeNo).trim(), t.dupIndex || 1, t.siteType || '', t.groupName || '', t.updatedAt || '', now, deviceId || '', JSON.stringify(t)];
-    if (byId[id] === undefined) {
+  var maxSeq = 0;
+  for (var i = 0; i < rows.length; i++) {
+    byId[rows[i][0]] = i;
+    maxSeq = Math.max(maxSeq, Number(rows[i][5]) || 0);
+  }
+  var out = { updates: [], appends: [], history: [], results: [] };
+  var appendedAt = {};
+  for (var k = 0; k < records.length; k++) {
+    var r = records[k];
+    if (!r || !r.id || KINDS.indexOf(r.kind) < 0) {
+      out.results.push({ id: (r && r.id) || '', error: '記録の形が違います' });
+      continue;
+    }
+    var idx = byId[r.id];
+    var appendIdx = appendedAt[r.id];
+    var cur = idx !== undefined ? rows[idx] : appendIdx !== undefined ? out.appends[appendIdx] : null;
+    var curRev = cur ? Number(cur[4]) || 0 : 0;
+    if ((Number(r.baseRev) || 0) !== curRev) {
+      var data = null;
+      try {
+        data = cur ? JSON.parse(cur[10]) : null;
+      } catch (e) {
+        data = null;
+      }
+      out.results.push({ id: r.id, conflict: true, rev: curRev, seq: cur ? Number(cur[5]) || 0 : 0, by: cur ? cur[9] : '', updatedAt: cur ? cur[6] : '', data: data });
+      continue;
+    }
+    var rev = curRev + 1;
+    var seq = ++maxSeq;
+    var row = [r.id, String(year), r.kind, r.treeId || '', rev, seq, r.updatedAt || '', now, deviceId || '', r.by || '', JSON.stringify(r.data)];
+    if (idx !== undefined) {
+      out.updates.push({ index: idx, row: row });
+      rows[idx] = row; // 同じ送信の中で続けて同じ記録が来ても正しく比べられるように
+    } else if (appendIdx !== undefined) {
+      out.appends[appendIdx] = row;
+    } else {
+      appendedAt[r.id] = out.appends.length;
       out.appends.push(row);
-      out.saved.push(id);
-      continue;
     }
-    var old = rows[byId[id]];
-    if (String(old[5] || '') > String(t.updatedAt || '')) {
-      out.conflicts.push(id); // サーバーの方が新しい
-      continue;
-    }
-    out.updates.push({ index: byId[id], row: row });
-    out.saved.push(id);
+    out.history.push([now, r.id, r.kind, r.treeId || '', rev, r.by || '', deviceId || '', JSON.stringify(r.data)]);
+    out.results.push({ id: r.id, ok: true, rev: rev, seq: seq });
   }
   return out;
 }
 
-// 保存してある行から、その年度の木を取り出す
-function listTrees(rows, year) {
+// 通し番号 since より後に変わった、その年度の記録
+function listSince(rows, year, since) {
   var out = [];
+  var maxSeq = Number(since) || 0;
   for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i][0]).split('|')[0] !== String(year)) continue;
+    var r = rows[i];
+    if (String(r[1]) !== String(year)) continue;
+    var seq = Number(r[5]) || 0;
+    if (seq <= (Number(since) || 0)) continue;
+    var data = null;
     try {
-      out.push(JSON.parse(rows[i][8]));
+      data = JSON.parse(r[10]);
     } catch (e) {
-      // 壊れた行は飛ばす
+      continue; // 壊れた行は飛ばす
     }
+    out.push({ id: r[0], kind: r[2], treeId: r[3], rev: Number(r[4]) || 0, seq: seq, updatedAt: r[6], by: r[9], data: data });
+    maxSeq = Math.max(maxSeq, seq);
   }
-  return out;
+  out.sort(function (a, b) {
+    return a.seq - b.seq;
+  });
+  return { records: out, lastSeq: maxSeq };
 }
 
 // ---------- Google の機能を使う部分 ----------
@@ -93,8 +131,12 @@ function handle(req) {
   if (req.pass !== pass) return { ok: false, error: '合言葉が違います' };
 
   if (req.action === 'ping') return { ok: true };
-  if (req.action === 'list') return { ok: true, trees: listTrees(readRows(), req.year) };
-  if (req.action === 'upsert') return withLock(function () { return upsert(req); });
+  if (req.action === 'pull') {
+    if (!req.year) return { ok: false, error: '年度がありません' };
+    var l = listSince(readRows(), req.year, req.since);
+    return { ok: true, records: l.records, lastSeq: l.lastSeq };
+  }
+  if (req.action === 'push') return withLock(function () { return push(req); });
   if (req.action === 'putFile') return withLock(function () { return putFile(req, props); });
   if (req.action === 'getFile') return getFile(req, props);
   return { ok: false, error: '知らない操作です：' + req.action };
@@ -128,34 +170,39 @@ function spreadsheet() {
   throw new Error('保存先のスプレッドシートが分かりません。スクリプトのプロパティに SPREADSHEET_ID（スプレッドシートの URL の /d/ と /edit の間の文字）を追加してください');
 }
 
-function sheet() {
+// シートを取り出す（なければ見出しを付けて作る）
+function sheetOf(name, header) {
   var ss = spreadsheet();
-  var sh = ss.getSheetByName(SHEET_NAME);
+  var sh = ss.getSheetByName(name);
   if (!sh) {
-    sh = ss.insertSheet(SHEET_NAME);
-    sh.getRange(1, 1, 1, HEADER.length).setValues([HEADER]);
+    sh = ss.insertSheet(name);
+    sh.getRange(1, 1, 1, header.length).setValues([header]);
     sh.setFrozenRows(1);
-    sh.getRange('A:I').setNumberFormat('@'); // すべて文字として保存（日付や数に勝手に変えられないように）
+    sh.getRange(1, 1, sh.getMaxRows(), header.length).setNumberFormat('@'); // すべて文字として保存（日付や数に勝手に変えられないように）
   }
   return sh;
 }
 
 function readRows() {
-  var sh = sheet();
+  var sh = sheetOf(RECORD_SHEET, HEADER);
   var n = sh.getLastRow() - 1;
   return n > 0 ? sh.getRange(2, 1, n, HEADER.length).getValues() : [];
 }
 
-function upsert(req) {
+function push(req) {
   if (!req.year) return { ok: false, error: '年度がありません' };
-  var sh = sheet();
+  var sh = sheetOf(RECORD_SHEET, HEADER);
   var rows = readRows();
-  var plan = planUpsert(rows, req.trees || [], req.year, new Date().toISOString(), req.deviceId);
+  var plan = planPush(rows, req.records || [], req.year, new Date().toISOString(), req.deviceId);
   plan.updates.forEach(function (u) {
     sh.getRange(u.index + 2, 1, 1, HEADER.length).setValues([u.row]);
   });
   if (plan.appends.length) sh.getRange(sh.getLastRow() + 1, 1, plan.appends.length, HEADER.length).setValues(plan.appends);
-  return { ok: true, saved: plan.saved, conflicts: plan.conflicts };
+  if (plan.history.length) {
+    var hs = sheetOf(HISTORY_SHEET, HISTORY_HEADER);
+    hs.getRange(hs.getLastRow() + 1, 1, plan.history.length, HISTORY_HEADER.length).setValues(plan.history);
+  }
+  return { ok: true, results: plan.results };
 }
 
 // ファイルはスプレッドシートと同じフォルダの中の「データ」フォルダに置く
@@ -210,4 +257,4 @@ function getFile(req, props) {
 }
 
 // テスト（Node）から計算部分を読めるようにする。Google の上では module が無いので何もしない
-if (typeof module !== 'undefined') module.exports = { treeId: treeId, planUpsert: planUpsert, listTrees: listTrees };
+if (typeof module !== 'undefined') module.exports = { planPush: planPush, listSince: listSince };

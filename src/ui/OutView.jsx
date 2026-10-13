@@ -5,7 +5,7 @@ import { toHalf } from '../core/text.js';
 import { dbValues, exportDb } from '../excel/dbExport.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
 import { loadLedgerFile, loadTemplate } from '../store/state.js';
-import { fetchAll, mergeServerTrees, unsentTrees } from '../store/sync.js';
+import { unsentCount } from '../store/sync.js';
 import { activeGroup } from './ListView.jsx';
 import { todayYmd } from './SettingsView.jsx';
 
@@ -104,22 +104,16 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
       );
     });
 
-  const unsent = unsentTrees(state).length;
-  const onSend = async () => {
+  const unsent = unsentCount(state);
+  // 送信と受信をまとめて行う
+  const onSync = async () => {
     const r = await send?.();
-    if (r) toast(`${r.saved}本を送信しました${r.conflicts.length ? `（サーバーの方が新しかった${r.conflicts.length}本は送っていません）` : ''}`);
+    if (!r) return;
+    const parts = [`送信${r.saved}件`, `他の端末で変わった木${r.changedTrees.length}本`];
+    if (r.newStickies) parts.push(`新しい付箋${r.newStickies}件`);
+    if (r.conflicts.length) parts.push(`食い違い${r.conflicts.length}本（${r.conflicts.slice(0, 5).join('・')}）`);
+    toast(parts.join('・'));
   };
-  const onFetch = () =>
-    run('サーバーから取得', async () => {
-      const serverTrees = await fetchAll(state, cfg);
-      let counts;
-      await update((s) => {
-        const m = mergeServerTrees(s.trees, serverTrees, cfg);
-        counts = m;
-        return { ...s, trees: m.trees, server: { ...s.server, lastFetched: new Date().toISOString() } };
-      }, { now: true });
-      toast(`取得しました（追加${counts.added}本・更新${counts.updated}本・この端末の方を残した${counts.kept}本）`);
-    });
 
   const onCopy = async () => {
     const head = ['入力元', '樹木番号', ...cols.map((c) => c[1])];
@@ -180,17 +174,16 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
         ) : (
           <>
             <div className="lbl" data-testid="send-status">
-              アプリで入力 {mine.length}本 ／ 未送信 {unsent}本
+              アプリで入力 {mine.length}本 ／ 未送信 {unsent}件
               <small>{state.server.lastSent ? `最後に送信：${fmtTime(state.server.lastSent)}` : ''}</small>
             </div>
             {sendStatus?.error && <div className="alert warn">送信できませんでした：{sendStatus.error}（入力は端末に残っています。電波のある所でもう一度送ってください）</div>}
-            <button type="button" className="btn big" disabled={!unsent || sendStatus?.busy} onClick={onSend} data-testid="send">
-              {sendStatus?.busy ? '送信中…' : `未送信の${unsent}本を送信`}
+            <button type="button" className="btn big" disabled={sendStatus?.busy} onClick={onSync} data-testid="sync">
+              {sendStatus?.busy ? 'やり取り中…' : unsent ? `未送信の${unsent}件を送って、最新を受け取る` : 'サーバーから最新を受け取る'}
             </button>
-            <button type="button" className="btn big" disabled={!!busy} onClick={onFetch} data-testid="fetch">
-              {busy === 'サーバーから取得' ? '取得中…' : 'サーバーから入力データを取得（事務所の PC 用）'}
-            </button>
-            <p className="hint">取得すると、スマホで入力した木がこの端末に入ります。この端末でまだ送っていない新しい入力は上書きしません。</p>
+            <p className="hint">
+              起動時・保存のたび・電波が戻ったときにも自動で行います。他の人が先に直していた木は上書きせず、どちらを使うかを聞きます。
+            </p>
           </>
         )}
       </div>

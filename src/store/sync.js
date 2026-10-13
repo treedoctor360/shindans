@@ -1,12 +1,11 @@
 // サーバー（GAS）とのやり取り
-//  送信：アプリで入力した木のうち、まだ送っていないもの（sent でないもの）を送る
-//  取得：サーバーにある木を受け取り、端末の木に反映する（事務所の PC で使う）
+//  送信（push）・受信（pull）：記録を版番号つきでやり取りする（下の説明を参照）
 //  ファイル：設定・野帳の原本・台帳をサーバーに置く／受け取る
 //
 // 本文は JSON の文字として送る（Content-Type を付けないことで、ブラウザの事前確認なしに送れる）
 
 import { groupKey } from '../core/groups.js';
-import { toHalf } from '../core/text.js';
+import { treeKey } from './review.js';
 
 // サーバーに送る。返す JSON の ok が false なら、その理由で失敗にする
 export async function callServer(server, body, fetchFn = fetch) {
@@ -23,79 +22,204 @@ export async function callServer(server, body, fetchFn = fetch) {
   return data;
 }
 
-// まだ送っていない木
+// ---------- 記録の送受信（版番号つき） ----------
+//
+// サーバーには「記録」を送る。記録の種類は tree（入力内容）・sticky（付箋）・confirm（確定の印）。
+// 送るときは「自分が最後に見た版（baseRev）」を付け、他の人が先に変えていればサーバーが断る（conflict）。
+//  tree の食い違い … 黙って上書きせず、木に conflict を付けて、どちらを使うか人に選んでもらう
+//  sticky の食い違い … 質問・修正案は事務、返事は調査者のものなので、持ち主ごとに合わせて送り直す
+//  confirm の食い違い … 事務どうしの操作なので、サーバーの版に合わせて送り直す
+//
+// 受け取りは「前回から変わった記録だけ」（サーバーの通し番号 lastSeq より後）。
+
+const LOCAL_ONLY = ['id', 'sent', 'rev', 'conflict', 'order'];
+
+// まだ送っていない木（入力済み・アプリで入力・送信待ち）
 export const unsentTrees = (state) => state.trees.filter((t) => t.done && t.source === 'app' && !t.sent);
+const dirtyStickies = (state) => Object.values(state.stickies || {}).filter((x) => x.dirty);
+const dirtyConfirms = (state) => Object.values(state.confirms || {}).filter((x) => x.dirty);
+export const unsentCount = (state) => unsentTrees(state).length + dirtyStickies(state).length + dirtyConfirms(state).length;
 
-// 木を見分ける鍵（端末とサーバーで共通）
-const keyOf = (t) => `${t.siteType || ''}|${toHalf(t.treeNo).trim()}|${t.dupIndex || 1}`;
+const treeData = (t) => {
+  const d = { ...t };
+  LOCAL_ONLY.forEach((k) => delete d[k]);
+  return d;
+};
+const stickyData = (s) => {
+  const { rev, dirty, edited, ...d } = s;
+  return d;
+};
+const confirmData = (c) => {
+  const { rev, dirty, ...d } = c;
+  return d;
+};
 
-// 送信する。返す形：{ marks（送れた木の id → 送った時点の更新日時）, saved, conflicts }
-//  状態は書き換えない。送信の結果は markSent で「その時点の最新の状態」に当てはめる
-export async function sendUnsent(state, cfg, fetchFn = fetch) {
-  const list = unsentTrees(state);
-  if (!list.length) return { marks: new Map(), saved: 0, conflicts: [] };
-  const sheetOf = (t) => cfg.dbFormat.sheets.find((s) => s.type === t.siteType);
-  const payload = list.map((t) => ({ ...t, groupName: t[sheetOf(t)?.identify] || '' }));
-  const r = await callServer(state.server, { action: 'upsert', year: cfg.job.year, deviceId: state.server.deviceId, trees: payload }, fetchFn);
-  const savedIds = new Set(r.saved || []);
-  const idOf = (t) => [cfg.job.year, t.siteType || '', toHalf(t.treeNo).trim(), t.dupIndex || 1].join('|');
-  const marks = new Map(list.filter((t) => savedIds.has(idOf(t))).map((t) => [t.id, t.updatedAt]));
-  return { marks, saved: savedIds.size, conflicts: r.conflicts || [] };
-}
-
-// 送れた木に「送信済み」を付ける。送信中に直した木（更新日時が変わった木）は付けない（次の送信でもう一度送る）
-export function markSent(state, marks) {
-  return { ...state, trees: state.trees.map((t) => (marks.has(t.id) && marks.get(t.id) === t.updatedAt ? { ...t, sent: true } : t)) };
-}
-
-// サーバーの木を端末に反映する
-//  端末にまだ送っていない入力があり、そちらが新しければ端末を残す（上書きしない）
-//  返す形：{ trees, added, updated, kept }
-export function mergeServerTrees(localTrees, serverTrees, cfg) {
-  const out = localTrees.map((t) => ({ ...t }));
-  const index = new Map(out.map((t, i) => [keyOf(t), i]));
-  let added = 0;
-  let updated = 0;
-  let kept = 0;
-  for (const s of serverTrees) {
-    const k = keyOf(s);
-    const incoming = { ...s, sent: true };
-    delete incoming.groupName;
-    if (!index.has(k)) {
-      // 端末にない木（別の端末で追加した木など）は、同じまとまりの最後に入れる
-      const g = groupKey(incoming, cfg);
-      let at = out.length;
-      for (let i = out.length - 1; i >= 0; i--)
-        if (groupKey(out[i], cfg) === g) {
-          at = i + 1;
-          break;
-        }
-      out.splice(at, 0, incoming);
-      index.clear();
-      out.forEach((t, i) => index.set(keyOf(t), i));
-      added++;
-      continue;
-    }
-    const i = index.get(k);
-    const local = out[i];
-    if (local.source === 'ledger') {
-      kept++; // 台帳で入力済みの木は台帳を正とする
-      continue;
-    }
-    if (local.done && !local.sent && String(local.updatedAt || '') > String(s.updatedAt || '')) {
-      kept++;
-      continue;
-    }
-    out[i] = { ...incoming, id: local.id, order: local.order, ledgerRow: local.ledgerRow ?? incoming.ledgerRow };
-    updated++;
+// 送る記録と、送った時点の印（送信中に変わったものは送信済みにしないため）
+export function outbox(state, cfg) {
+  const by = state.user?.name || '';
+  const records = [];
+  const tokens = new Map();
+  for (const t of unsentTrees(state)) {
+    const key = treeKey(t, cfg);
+    if (t.conflict) continue; // 食い違いを人が選ぶまでは送らない
+    records.push({ id: `tree:${key}`, kind: 'tree', treeId: key, baseRev: t.rev || 0, updatedAt: t.updatedAt || '', by, data: treeData(t) });
+    tokens.set(`tree:${key}`, { localId: t.id, token: t.updatedAt });
   }
-  return { trees: out, added, updated, kept };
+  for (const s of dirtyStickies(state)) {
+    records.push({ id: `sticky:${s.id}`, kind: 'sticky', treeId: s.treeId, baseRev: s.rev || 0, updatedAt: s.updatedAt, by, data: stickyData(s) });
+    tokens.set(`sticky:${s.id}`, { localId: s.id, token: s.updatedAt });
+  }
+  for (const c of dirtyConfirms(state)) {
+    records.push({ id: `confirm:${c.treeId}`, kind: 'confirm', treeId: c.treeId, baseRev: c.rev || 0, updatedAt: c.updatedAt, by, data: confirmData(c) });
+    tokens.set(`confirm:${c.treeId}`, { localId: c.treeId, token: c.updatedAt });
+  }
+  return { records, tokens };
 }
 
-// サーバーから木を取得する（反映は mergeServerTrees で、その時点の最新の状態に行う）
-export async function fetchAll(state, cfg, fetchFn = fetch) {
-  const r = await callServer(state.server, { action: 'list', year: cfg.job.year }, fetchFn);
-  return r.trees || [];
+// 送る。状態は書き換えず、結果は applyPush で「その時点の最新の状態」に当てはめる
+export async function push(state, cfg, fetchFn = fetch) {
+  const { records, tokens } = outbox(state, cfg);
+  if (!records.length) return { results: [], tokens };
+  const r = await callServer(state.server, { action: 'push', year: cfg.job.year, deviceId: state.server.deviceId, records }, fetchFn);
+  return { results: r.results || [], tokens };
+}
+
+// 付箋の食い違いを、持ち主ごとに合わせる（送り直す前提で dirty のまま、版はサーバーに合わせる）
+function mergeSticky(local, server, rev) {
+  if (!server) return { ...local, rev };
+  if (local.edited === 'answer') return { ...server, answer: local.answer, updatedAt: local.updatedAt, rev, dirty: true, edited: 'answer' };
+  return { ...server, ...stickyBody(local), answer: server.answer, updatedAt: local.updatedAt, rev, dirty: true, edited: 'body' };
+}
+const stickyBody = (s) => ({ field: s.field, question: s.question, proposal: s.proposal, closed: s.closed, deleted: s.deleted });
+
+// 送った結果を当てはめる。返す形：{ state, saved, conflicts: [木の番号…] }
+export function applyPush(state, results, tokens, cfg) {
+  let trees = state.trees;
+  const stickies = { ...(state.stickies || {}) };
+  const confirms = { ...(state.confirms || {}) };
+  let saved = 0;
+  const conflicts = [];
+  for (const r of results) {
+    const tk = tokens.get(r.id);
+    if (!tk) continue;
+    const kind = r.id.split(':')[0];
+    if (kind === 'tree') {
+      trees = trees.map((t) => {
+        if (t.id !== tk.localId) return t;
+        if (r.ok) {
+          saved++;
+          return { ...t, rev: r.rev, sent: t.updatedAt === tk.token ? true : t.sent };
+        }
+        if (r.conflict) {
+          conflicts.push(t.treeNo);
+          return { ...t, conflict: { rev: r.rev, by: r.by, updatedAt: r.updatedAt, data: r.data } };
+        }
+        return t;
+      });
+    } else if (kind === 'sticky') {
+      const s = stickies[tk.localId];
+      if (!s) continue;
+      if (r.ok) {
+        saved++;
+        stickies[tk.localId] = { ...s, rev: r.rev, dirty: s.updatedAt === tk.token ? false : s.dirty };
+      } else if (r.conflict) stickies[tk.localId] = mergeSticky(s, r.data, r.rev);
+    } else if (kind === 'confirm') {
+      const c = confirms[tk.localId];
+      if (!c) continue;
+      if (r.ok) {
+        saved++;
+        confirms[tk.localId] = { ...c, rev: r.rev, dirty: c.updatedAt === tk.token ? false : c.dirty };
+      } else if (r.conflict) confirms[tk.localId] = { ...c, rev: r.rev, dirty: true };
+    }
+  }
+  return { state: { ...state, trees, stickies, confirms }, saved, conflicts };
+}
+
+// 受け取る（前回から変わった記録だけ）
+export async function pull(state, cfg, fetchFn = fetch) {
+  const r = await callServer(state.server, { action: 'pull', year: cfg.job.year, since: state.server.lastSeq || 0 }, fetchFn);
+  return { records: r.records || [], lastSeq: r.lastSeq || 0 };
+}
+
+// 受け取った記録を当てはめる
+//  返す形：{ state, changedTrees: [木の番号…]（他の端末で変わった木）, newStickies: 件数, conflicts: [木の番号…] }
+export function applyPull(state, records, lastSeq, cfg) {
+  const trees = state.trees.map((t) => ({ ...t }));
+  const index = new Map(trees.map((t, i) => [treeKey(t, cfg), i]));
+  const stickies = { ...(state.stickies || {}) };
+  const confirms = { ...(state.confirms || {}) };
+  const changedTrees = [];
+  const conflicts = [];
+  let newStickies = 0;
+
+  for (const rec of records) {
+    if (rec.kind === 'tree') {
+      const i = index.get(rec.treeId);
+      const incoming = { ...rec.data, rev: rec.rev, sent: true, conflict: null };
+      if (i === undefined) {
+        // 端末にない木（別の端末で追加した木など）は、同じまとまりの最後に入れる
+        const t = { ...incoming, id: `srv:${rec.treeId}` };
+        const g = groupKey(t, cfg);
+        let at = trees.length;
+        for (let j = trees.length - 1; j >= 0; j--)
+          if (groupKey(trees[j], cfg) === g) {
+            at = j + 1;
+            break;
+          }
+        trees.splice(at, 0, t);
+        index.clear();
+        trees.forEach((x, j) => index.set(treeKey(x, cfg), j));
+        changedTrees.push(t.treeNo);
+        continue;
+      }
+      const local = trees[i];
+      if (local.source === 'ledger' && !(local.rev > 0)) continue; // 台帳で入力済みの木は台帳を正とする
+      if (rec.rev <= (local.rev || 0)) continue; // 自分が送ったもの・もう知っている版
+      if (local.conflict && rec.rev <= local.conflict.rev) continue; // 送ったときに既に食い違いとして受け取った版
+      const dirty = local.done && local.source === 'app' && !local.sent;
+      if (dirty) {
+        // 自分にも送っていない修正がある → 黙って上書きしない
+        trees[i] = { ...local, conflict: { rev: rec.rev, by: rec.by, updatedAt: rec.updatedAt, data: rec.data } };
+        conflicts.push(local.treeNo);
+      } else {
+        trees[i] = { ...incoming, id: local.id, order: local.order };
+        changedTrees.push(local.treeNo);
+      }
+    } else if (rec.kind === 'sticky') {
+      const id = rec.data?.id;
+      if (!id) continue;
+      const local = stickies[id];
+      if (local && rec.rev <= (local.rev || 0)) continue;
+      if (!local) newStickies++;
+      stickies[id] = local?.dirty ? mergeSticky(local, rec.data, rec.rev) : { ...rec.data, rev: rec.rev, dirty: false };
+    } else if (rec.kind === 'confirm') {
+      const key = rec.data?.treeId;
+      if (!key) continue;
+      const local = confirms[key];
+      if (local && rec.rev <= (local.rev || 0)) continue;
+      confirms[key] = local?.dirty ? { ...local, rev: rec.rev } : { ...rec.data, rev: rec.rev, dirty: false };
+    }
+  }
+  return {
+    state: { ...state, trees, stickies, confirms, server: { ...state.server, lastSeq: Math.max(state.server.lastSeq || 0, lastSeq) } },
+    changedTrees,
+    newStickies,
+    conflicts,
+  };
+}
+
+// 木の食い違いを解決する
+//  'server' … サーバー（相手）の内容を使う / 'mine' … 自分の内容で上書きする（次の送信で送る）
+export function resolveConflict(state, localId, choice) {
+  return {
+    ...state,
+    trees: state.trees.map((t) => {
+      if (t.id !== localId || !t.conflict) return t;
+      const c = t.conflict;
+      if (choice === 'server') return { ...c.data, id: t.id, order: t.order, rev: c.rev, sent: true, conflict: null };
+      return { ...t, rev: c.rev, sent: false, conflict: null, updatedAt: new Date().toISOString() };
+    }),
+  };
 }
 
 // ArrayBuffer ⇔ base64（ファイルを文字にして送るため）

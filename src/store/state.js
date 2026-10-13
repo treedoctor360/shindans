@@ -11,7 +11,7 @@ import { mergeLedger, readLedger } from '../excel/ledger.js';
 import { idbGet, idbPut } from './idb.js';
 
 // 保存する状態の形の版（形を変えたら上げ、migrate で古い形を直す）
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2; // 2: 確認の流れ（付箋・確定・版番号）を追加
 
 export function initialState() {
   return {
@@ -24,7 +24,10 @@ export function initialState() {
     ledgerInfo: null, // { name, date }
     templateName: '',
     // サーバー（GAS）：URL と合言葉はこの端末にだけ保存する。deviceId はこの端末の印（送信元の記録用）
-    server: { url: '', pass: '', deviceId: '', lastSent: '', lastFetched: '' },
+    server: { url: '', pass: '', deviceId: '', lastSent: '', lastFetched: '', lastSeq: 0 },
+    user: { role: 'surveyor', name: '' }, // この端末を使う人（'surveyor' 調査者 / 'office' 事務）
+    stickies: {}, // 付箋（id → 付箋）
+    confirms: {}, // 確定の印（木の鍵 → 印）
   };
 }
 
@@ -37,7 +40,23 @@ export function migrate(s) {
   if (!s || typeof s !== 'object') s = {};
   const server = { ...base.server, ...(s.server || {}) };
   if (!server.deviceId) server.deviceId = newDeviceId();
-  return { ...base, ...s, session: { ...base.session, ...(s.session || {}) }, server, stateVersion: STATE_VERSION };
+  let trees = s.trees || base.trees;
+  if ((s.stateVersion || 1) < 2 && Array.isArray(trees)) {
+    // 版1から2へ：サーバーの保存の形が変わったので、アプリで入力した木は送り直す
+    trees = trees.map((t) => (t && t.done && t.source === 'app' && !(t.rev > 0) ? { ...t, sent: false } : t));
+    server.lastSeq = 0;
+  }
+  return {
+    ...base,
+    ...s,
+    trees,
+    session: { ...base.session, ...(s.session || {}) },
+    user: { ...base.user, ...(s.user || {}) },
+    stickies: s.stickies || {},
+    confirms: s.confirms || {},
+    server,
+    stateVersion: STATE_VERSION,
+  };
 }
 
 // 端末から読み込む
