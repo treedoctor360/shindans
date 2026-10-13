@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import cfgJson from './fixtures/sample-config.json';
 import { blankTree } from '../src/core/tree.js';
 import { initialState, migrate } from '../src/store/state.js';
-import { addSticky, answerSticky, closeSticky, reviewState, setConfirm, treeKey } from '../src/store/review.js';
+import { addSticky, answerSticky, closeSticky, reviewState, setConfirm, treeKey, treesForDb } from '../src/store/review.js';
 import {
   applyPull,
   applyPush,
@@ -294,6 +294,26 @@ describe('確認の流れ（事務の付箋 → 調査者の返事 → 事務の
     expect(ph2.stickies[id]).toMatchObject({ question: '写真は撮ったか？（全景）', answer: { text: '撮りました' }, dirty: false });
     const pc4 = (await sync(pc3, g)).state;
     expect(pc4.stickies[id]).toMatchObject({ question: '写真は撮ったか？（全景）', answer: { text: '撮りました' } });
+  });
+});
+
+describe('一覧表に書き込む木', () => {
+  const trees = [P('a1', { done: true, sent: true, rev: 1 }), P('a2', { done: true, sent: true, rev: 1 }), P('a3'), P('x1', { source: 'ledger', done: true })];
+  const s = S(trees);
+  const confirmed = setConfirm(s, trees[0], true, cfg);
+
+  it('サーバーを使っているときは、アプリで入力した木のうち確定した木だけ（台帳・未入力の木はそのまま渡す）', () => {
+    const r = treesForDb(confirmed, cfg);
+    expect(r.trees.map((t) => t.id)).toEqual(['a1', 'a3', 'x1']);
+    expect(r.excluded.map((t) => t.id)).toEqual(['a2']);
+  });
+  it('「未確定も含める」なら全部。サーバーを使っていなければ全部', () => {
+    expect(treesForDb(confirmed, cfg, { includeUnconfirmed: true }).excluded).toEqual([]);
+    expect(treesForDb({ ...confirmed, server: { url: '' } }, cfg).excluded).toEqual([]);
+  });
+  it('確定の後で入力が変わった木は書き込まない', () => {
+    const changed = { ...confirmed, trees: confirmed.trees.map((t) => (t.id === 'a1' ? { ...t, rev: 2 } : t)) };
+    expect(treesForDb(changed, cfg).excluded.map((t) => t.id)).toEqual(['a1', 'a2']);
   });
 });
 

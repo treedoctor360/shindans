@@ -82,6 +82,8 @@ test('事務所 → スマホ → 事務所（送信が一度失敗しても、�
   await office.click('.tab:has-text("出力")');
   await office.click('[data-testid=sync]');
   await expect(office.locator('.toast')).toContainText('他の端末で変わった木1本');
+  await expect(office.locator('[data-testid=export-db]')).toBeDisabled(); // まだ確定していないので書き込めない
+  await office.check('[data-testid=with-unconfirmed]'); // 途中経過として書き込む
   const [dl] = await Promise.all([office.waitForEvent('download'), office.click('[data-testid=export-db]')]);
   await expect(office.locator('.toast')).toContainText('検査OK');
   const wb = new ExcelJS.Workbook();
