@@ -71,10 +71,15 @@ export function useAppState() {
   const configRef = useRef(config);
   configRef.current = config;
   const syncing = useRef(false);
+  const again = useRef(false); // やり取りの最中に頼まれたら、終わってからもう一度行う
   const [sendStatus, setSendStatus] = useState({ busy: false, error: '', last: null });
   const send = useCallback(async () => {
     const cfg = configRef.current;
-    if (syncing.current || !cfg || !latest.current.server?.url) return null;
+    if (!cfg || !latest.current.server?.url) return null;
+    if (syncing.current) {
+      again.current = true;
+      return null;
+    }
     syncing.current = true;
     setSendStatus((x) => ({ ...x, busy: true, error: '' }));
     try {
@@ -105,16 +110,28 @@ export function useAppState() {
       return null;
     } finally {
       syncing.current = false;
+      if (again.current) {
+        again.current = false;
+        setTimeout(() => sendRef.current?.(), 0);
+      }
     }
   }, [flush, update]);
+  const sendRef = useRef(null);
+  sendRef.current = send;
 
-  // 起動時と、電波が戻ったときにやり取りする
+  // 起動時・電波が戻ったとき・画面に戻ってきたときにやり取りする
   useEffect(() => {
     if (!ready) return undefined;
     send();
     const onOnline = () => send();
+    // 画面に戻ってきたとき（別のアプリから切り替えたときなど）にも受け取る。事務の返事・付箋に早く気付けるように
+    const onShow = () => document.visibilityState === 'visible' && send();
     window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onShow);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onShow);
+    };
   }, [ready, send]);
 
   return { state, update, config, setConfig, ready, saveError, send, sendStatus };

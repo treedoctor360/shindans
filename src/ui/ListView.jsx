@@ -2,7 +2,9 @@
 import { groupKey, groupKeys, groupLabel, treesOfGroup } from '../core/groups.js';
 import { alertsOf } from '../core/rules.js';
 import { monthDay, toHalf } from '../core/text.js';
+import { useState } from 'react';
 import { addTree } from '../store/actions.js';
+import { REVIEW_LABEL, confirmable, reviewState, setConfirm } from '../store/review.js';
 
 const NO_AREA = '本区画';
 
@@ -21,7 +23,17 @@ const surnames = (s) =>
     .filter(Boolean)
     .join('・');
 
-export default function ListView({ state, update, config: cfg }) {
+// 確認の段階での絞り込み
+const REVIEW_FILTERS = [
+  ['asked', '付箋の返事待ち'],
+  ['answered', '回答済み'],
+  ['submitted', '未確定'],
+  ['confirmed', '確定'],
+  ['conflict', '食い違い'],
+];
+
+export default function ListView({ state, update, config: cfg, send, toast }) {
+  const [askBulk, setAskBulk] = useState(false);
   if (!cfg || !state.trees.length) {
     return (
       <section className="view">
@@ -43,9 +55,32 @@ export default function ListView({ state, update, config: cfg }) {
   const area = areas.includes(state.area) ? state.area : '';
   const filter = state.listFilter || 'all';
   const inArea = (t) => !area || (t.area || NO_AREA) === area;
+  const rsOf = (t) => (t.conflict ? 'conflict' : reviewState(t, state, cfg));
   const list = all
     .filter(inArea)
-    .filter((t) => filter === 'all' || (filter === 'todo' && !t.done) || (filter === 'wait' && treeState(t, cfg) === 'wait'));
+    .filter(
+      (t) =>
+        filter === 'all' ||
+        (filter === 'todo' && !t.done) ||
+        (filter === 'wait' && treeState(t, cfg) === 'wait') ||
+        rsOf(t) === filter,
+    );
+  const useReview = !!state.server?.url;
+  const role = state.user?.role || 'surveyor';
+  const bulk = role === 'office' ? confirmable(all.filter(inArea), state, cfg) : [];
+  const onBulk = () => {
+    const ids = new Set(bulk.map((t) => t.id));
+    update(
+      (s) => {
+        let next = s;
+        for (const t of s.trees.filter((x) => ids.has(x.id))) next = setConfirm(next, t, true, cfg);
+        return next;
+      },
+      { now: true },
+    ).then(() => send?.());
+    toast?.(`${bulk.length}本を確定しました`);
+    setAskBulk(false);
+  };
   const done = all.filter((t) => t.done).length;
   const wait = all.filter((t) => treeState(t, cfg) === 'wait').length;
   const ledgerDone = all.filter((t) => t.source === 'ledger').length;
@@ -110,6 +145,36 @@ export default function ListView({ state, update, config: cfg }) {
           </button>
         ))}
       </div>
+      {useReview && (
+        <div className="filters" data-testid="review-filters">
+          {REVIEW_FILTERS.map(([k, l]) => {
+            const n = all.filter(inArea).filter((t) => rsOf(t) === k).length;
+            return (
+              <button key={k} type="button" className={`chip${filter === k ? ' on' : ''}`} onClick={() => set({ listFilter: k })} data-filter={k}>
+                {l}（{n}）
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {bulk.length > 0 &&
+        (askBulk ? (
+          <div className="alert info">
+            <span>付箋のない提出済みの{bulk.length}本を確定します（{area || 'すべての区画'}）。</span>
+            <div className="acts">
+              <button type="button" className="btn fill" onClick={onBulk} data-testid="bulk-confirm-ok">
+                確定する
+              </button>
+              <button type="button" className="btn" onClick={() => setAskBulk(false)}>
+                やめる
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="btn" onClick={() => setAskBulk(true)} data-testid="bulk-confirm">
+            付箋のない提出済みの{bulk.length}本をまとめて確定
+          </button>
+        ))}
 
       <div className="cards" data-testid="tree-cards">
         {list.map((t) => {
@@ -143,6 +208,9 @@ export default function ListView({ state, update, config: cfg }) {
                 {t.status && <span className="tag new">{statusLabel(t.status)}</span>}
                 {t.planInitial && <span className="tag w">{cfg.initial.pill || '診断'}予定</span>}
                 {nWarn > 0 && <span className="tag w">要確認{nWarn}</span>}
+                {useReview && ['asked', 'answered', 'confirmed', 'conflict'].includes(rsOf(t)) && (
+                  <span className={`tag rs-${rsOf(t)}`}>{rsOf(t) === 'conflict' ? '食い違い' : REVIEW_LABEL[rsOf(t)]}</span>
+                )}
               </span>
             </button>
           );

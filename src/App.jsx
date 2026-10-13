@@ -6,6 +6,7 @@ import ListView, { activeGroup } from './ui/ListView.jsx';
 import OutView from './ui/OutView.jsx';
 import SettingsView from './ui/SettingsView.jsx';
 import { useAppState } from './ui/useAppState.js';
+import { reviewState } from './store/review.js';
 import { APP_VERSION } from './version.js';
 
 const TABS = [
@@ -60,6 +61,31 @@ export default function App() {
           未送信の入力があります（{app.sendStatus.error}）。端末には保存済みです。
         </div>
       )}
+      {app.config && state.server?.url && (() => {
+        // 気付いてほしいこと：調査者には返事待ちの付箋、事務には回答済みの付箋、どちらにも食い違い
+        const role = state.user?.role || 'surveyor';
+        const conflicts = state.trees.filter((t) => t.conflict).length;
+        const want = role === 'office' ? 'answered' : 'asked';
+        const n = state.trees.filter((t) => !t.conflict && reviewState(t, state, app.config) === want).length;
+        if (!conflicts && !n) return null;
+        const msg = [
+          n ? (role === 'office' ? `調査者から返事が来た木が${n}本あります` : `事務から付箋が届いた木が${n}本あります`) : '',
+          conflicts ? `別の端末と食い違っている木が${conflicts}本あります` : '',
+        ]
+          .filter(Boolean)
+          .join('。');
+        return (
+          <button
+            type="button"
+            className="alert info notice"
+            style={{ margin: '12px 16px 0' }}
+            onClick={() => update((s2) => ({ ...s2, view: 'list', listFilter: conflicts ? 'conflict' : want }))}
+            data-testid="review-notice"
+          >
+            {msg}（タップで一覧）
+          </button>
+        );
+      })()}
       {saveError && (
         <div className="alert danger" role="alert" style={{ margin: '12px 16px 0' }}>
           {saveError}
@@ -68,7 +94,7 @@ export default function App() {
 
       <main>
         {state.view === 'settings' && <SettingsView {...app} toast={toast} />}
-        {state.view === 'list' && <ListView {...app} />}
+        {state.view === 'list' && <ListView {...app} toast={toast} />}
         {state.view === 'form' && <FormView key={state.currentId} {...app} toast={toast} />}
         {state.view === 'out' && <OutView {...app} toast={toast} />}
       </main>
