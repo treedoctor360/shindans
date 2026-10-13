@@ -3,7 +3,8 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-export function makeFakeGas({ passphrase = 'ひみつ' } = {}) {
+// bound: スクリプトがスプレッドシートに付いているか（false なら getActiveSpreadsheet が null を返す）
+export function makeFakeGas({ passphrase = 'ひみつ', bound = true } = {}) {
   const props = new Map(passphrase ? [['PASSPHRASE', passphrase]] : []);
   const sheets = new Map();
   const files = new Map();
@@ -51,6 +52,16 @@ export function makeFakeGas({ passphrase = 'ひみつ' } = {}) {
     return f;
   };
 
+  const ss = {
+    getId: () => 'ss',
+    getSheetByName: (n) => sheets.get(n) || null,
+    insertSheet: (n) => {
+      const s = makeSheet();
+      sheets.set(n, s);
+      return s;
+    },
+  };
+
   const context = {
     module: { exports: {} },
     JSON,
@@ -69,15 +80,11 @@ export function makeFakeGas({ passphrase = 'ひみつ' } = {}) {
       }),
     },
     SpreadsheetApp: {
-      getActiveSpreadsheet: () => ({
-        getId: () => 'ss',
-        getSheetByName: (n) => sheets.get(n) || null,
-        insertSheet: (n) => {
-          const s = makeSheet();
-          sheets.set(n, s);
-          return s;
-        },
-      }),
+      getActiveSpreadsheet: () => (bound ? ss : null),
+      openById: (id) => {
+        if (id !== 'ss') throw new Error('スプレッドシートがありません');
+        return ss;
+      },
     },
     DriveApp: {
       getFileById: (id) => {

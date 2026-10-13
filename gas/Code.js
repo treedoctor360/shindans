@@ -111,8 +111,25 @@ function withLock(fn) {
   }
 }
 
+// 保存先のスプレッドシート
+//  スプレッドシートの「拡張機能 → Apps Script」から作ったスクリプトなら、そのスプレッドシート。
+//  ウェブアプリとして呼ばれたときに見つからない場合に備えて、スクリプトのプロパティ SPREADSHEET_ID も見る。
+//  どちらも無ければ、初回に新しいスプレッドシートを作らずに、分かる言葉で知らせる。
+function spreadsheet() {
+  var ss = null;
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  } catch (e) {
+    ss = null;
+  }
+  if (ss) return ss;
+  var id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (id) return SpreadsheetApp.openById(id);
+  throw new Error('保存先のスプレッドシートが分かりません。スクリプトのプロパティに SPREADSHEET_ID（スプレッドシートの URL の /d/ と /edit の間の文字）を追加してください');
+}
+
 function sheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = spreadsheet();
   var sh = ss.getSheetByName(SHEET_NAME);
   if (!sh) {
     sh = ss.insertSheet(SHEET_NAME);
@@ -151,7 +168,7 @@ function dataFolder(props) {
       // 消されていたら作り直す
     }
   }
-  var ssFile = DriveApp.getFileById(SpreadsheetApp.getActiveSpreadsheet().getId());
+  var ssFile = DriveApp.getFileById(spreadsheet().getId());
   var parents = ssFile.getParents();
   var parent = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
   var folder = parent.createFolder('データ');
