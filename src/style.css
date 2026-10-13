@@ -183,3 +183,25 @@ td.n{font-family:var(--num);text-align:right}
 .ok{color:var(--accent);font-weight:700}
 html,body,#root{height:100%;margin:0}
 
+/* 確認（付箋・確定） */
+.review h2{display:flex;align-items:center;gap:8px}
+.rs{font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;border:1px solid var(--line);background:var(--sunk)}
+.rs-asked{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
+.rs-answered{color:var(--info);border-color:var(--info);background:var(--info-soft)}
+.rs-confirmed{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.rs-conflict{color:var(--danger);border-color:var(--danger);background:var(--danger-soft)}
+.sticky{border:1px solid var(--warn);background:var(--warn-soft);border-radius:8px;padding:9px 11px;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.sticky.answered{border-color:var(--info);background:var(--info-soft)}
+.sticky.done{border-color:var(--line);background:var(--sunk);opacity:.75}
+.sticky.new{border-color:var(--line);background:var(--surface)}
+.sticky-head{display:flex;justify-content:space-between;gap:8px}
+.sticky-head small,.sticky-a small,.sticky-prop small{color:var(--muted,inherit);opacity:.8}
+.sticky-q,.sticky-a{margin:0;white-space:pre-wrap}
+.sticky-prop{display:grid;gap:4px}
+.sticky-prop div{display:grid;grid-template-columns:3.5em 1fr;gap:6px}
+.sticky-prop span{white-space:pre-wrap;word-break:break-all}
+.sticky .acts{display:flex;gap:6px;flex-wrap:wrap}
+.sticky textarea,.sticky select{width:100%;box-sizing:border-box}
+.diff{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
+.diff th,.diff td{border:1px solid var(--line);padding:3px 5px;text-align:left;word-break:break-all;vertical-align:top}
+.notice{text-align:left;font:inherit;color:inherit;cursor:pointer}

@@ -10,6 +10,7 @@
 // 送るときに「どちらを書いたか（edited）」を覚えておく。
 
 import { toHalf } from '../core/text.js';
+import { dbNoteOf } from '../core/notes.js';
 import { touched, updateTree } from './actions.js';
 
 // 木の鍵（年度・シートの種類・番号・何本目）。端末とサーバーで共通
@@ -25,6 +26,12 @@ export function reviewFields(cfg) {
   ];
   return base;
 }
+
+// 項目の名前（null は木全体）
+export const fieldLabel = (key, cfg) => (key ? reviewFields(cfg).find((f) => f.key === key)?.label || key : '木全体');
+
+// 項目の今の値（一覧表用の特記は、自動で作った文も含める）
+export const fieldValue = (tree, key, cfg) => (key === 'dbNote' ? dbNoteOf(tree, cfg) : String(tree?.[key] ?? ''));
 
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 const now = () => new Date().toISOString();
@@ -91,6 +98,9 @@ export function setConfirm(state, tree, value, cfg) {
   const c = { ...prev, treeId: key, value: !!value, treeRev: tree.rev || 0, by: state.user?.name || '', at: now(), updatedAt: now(), dirty: true };
   return { ...state, confirms: { ...(state.confirms || {}), [key]: c } };
 }
+
+// まとめて確定できる木（送信済み・付箋がすべて解決・まだ確定していない）
+export const confirmable = (trees, state, cfg) => trees.filter((t) => reviewState(t, state, cfg) === 'submitted' && t.sent && !t.conflict);
 
 // ---------- 調査者の操作 ----------
 

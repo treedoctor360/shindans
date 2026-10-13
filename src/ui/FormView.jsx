@@ -10,6 +10,7 @@ import { composeTreat } from '../core/treat.js';
 import { isDead, isLocked } from '../core/tree.js';
 import { normalizeField, pressAlertAction, pressOption, saveTree, toggleTreat, touched, updateTree } from '../store/actions.js';
 import { activeGroup } from './ListView.jsx';
+import ReviewPanel from './ReviewPanel.jsx';
 
 const MODE_TEXT = { 'full+weak': '全景＋弱点写真', shared: '全景と共用', fullOnly: '全景だけ（写真で見えない弱点のみ）' };
 
@@ -74,7 +75,9 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   if (!t) return <section className="view"><p className="hint">木がありません。</p></section>;
 
   const idx = ts.indexOf(t);
-  const readOnly = t.source === 'ledger';
+  // 台帳で入力済みの木は直せない。事務の端末では、提出された木は直さず付箋で修正案を出す
+  const officeView = state.user?.role === 'office' && t.source === 'app' && t.done;
+  const readOnly = t.source === 'ledger' || officeView;
   const locked = isLocked(t, cfg);
   // 入力済みの木を直したら、送り直しの印を付ける
   const change = (fn, opt) => update((s) => updateTree({ ...s, currentId: t.id, group }, t.id, (x) => touched(fn(x))), opt);
@@ -146,6 +149,9 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
           次の木 →
         </button>
       </div>
+
+      <ReviewPanel t={t} state={state} update={update} config={cfg} toast={toast} send={send} />
+      {officeView && <p className="hint">事務の端末では入力内容を直せません。直してほしいところは付箋の修正案で伝えます。</p>}
 
       <fieldset disabled={readOnly} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className="sec">
