@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { initialState, loadAll, saveState } from '../store/state.js';
-import { markSent, sendUnsent, unsentTrees } from '../store/sync.js';
+import { applyPull, applyPush, pull, push, unsentCount } from '../store/sync.js';
 
 export function useAppState() {
   const [state, setState] = useState(initialState);
@@ -65,33 +65,50 @@ export function useAppState() {
     [flush],
   );
 
-  // ---------- サーバーへの送信 ----------
-  // 端末に保存してから送る。失敗しても入力は端末に残り、次の機会（保存のたび・電波が戻ったとき・起動時）に送り直す
+  // ---------- サーバーとのやり取り（送信と受信） ----------
+  // 端末に保存してから送る。失敗しても入力は端末に残り、次の機会（保存のたび・電波が戻ったとき・起動時）に送り直す。
+  // 送ったあとは、他の端末で変わった記録（事務の付箋・修正など）を受け取る。
   const configRef = useRef(config);
   configRef.current = config;
-  const sending = useRef(false);
-  const [sendStatus, setSendStatus] = useState({ busy: false, error: '' });
+  const syncing = useRef(false);
+  const [sendStatus, setSendStatus] = useState({ busy: false, error: '', last: null });
   const send = useCallback(async () => {
     const cfg = configRef.current;
-    const s = latest.current;
-    if (sending.current || !cfg || !s.server?.url || !unsentTrees(s).length) return null;
-    sending.current = true;
-    setSendStatus({ busy: true, error: '' });
+    if (syncing.current || !cfg || !latest.current.server?.url) return null;
+    syncing.current = true;
+    setSendStatus((x) => ({ ...x, busy: true, error: '' }));
     try {
       await flush(); // 先に端末へ保存
-      const r = await sendUnsent(s, cfg);
-      await update((cur) => ({ ...markSent(cur, r.marks), server: { ...cur.server, lastSent: new Date().toISOString() } }), { now: true });
-      setSendStatus({ busy: false, error: '' });
-      return r;
+      let saved = 0;
+      let conflicts = [];
+      if (unsentCount(latest.current)) {
+        const r = await push(latest.current, cfg);
+        let applied;
+        await update((cur) => {
+          applied = applyPush(cur, r.results, r.tokens, cfg);
+          return { ...applied.state, server: { ...applied.state.server, lastSent: new Date().toISOString() } };
+        }, { now: true });
+        saved = applied.saved;
+        conflicts = applied.conflicts;
+      }
+      const p = await pull(latest.current, cfg);
+      let got;
+      await update((cur) => {
+        got = applyPull(cur, p.records, p.lastSeq, cfg);
+        return { ...got.state, server: { ...got.state.server, lastFetched: new Date().toISOString() } };
+      }, { now: true });
+      const last = { saved, conflicts: [...conflicts, ...got.conflicts], changedTrees: got.changedTrees, newStickies: got.newStickies };
+      setSendStatus({ busy: false, error: '', last });
+      return last;
     } catch (e) {
-      setSendStatus({ busy: false, error: e.message || '送信できませんでした' });
+      setSendStatus((x) => ({ ...x, busy: false, error: e.message || '送信できませんでした' }));
       return null;
     } finally {
-      sending.current = false;
+      syncing.current = false;
     }
   }, [flush, update]);
 
-  // 起動時と、電波が戻ったときに送り直す
+  // 起動時と、電波が戻ったときにやり取りする
   useEffect(() => {
     if (!ready) return undefined;
     send();

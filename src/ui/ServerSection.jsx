@@ -9,6 +9,8 @@ export default function ServerSection({ state, update, config, setConfig, toast 
   const [busy, setBusy] = useState('');
   const sv = state.server || {};
   const setServer = (k, v) => update((s) => ({ ...s, server: { ...s.server, [k]: v.trim() } }));
+  const user = state.user || { role: 'surveyor', name: '' };
+  const setUser = (k, v) => update((s) => ({ ...s, user: { ...s.user, [k]: v } }));
 
   const run = async (name, fn) => {
     setBusy(name);
@@ -72,6 +74,33 @@ export default function ServerSection({ state, update, config, setConfig, toast 
   return (
     <div className="sec">
       <h2>サーバー</h2>
+      <div className="row">
+        <div className="lbl">この端末を使う人</div>
+        <div className="chips" role="radiogroup">
+          {[
+            ['surveyor', '調査者'],
+            ['office', '事務'],
+          ].map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              role="radio"
+              aria-checked={user.role === v}
+              className={`chip${user.role === v ? ' on' : ''}`}
+              onClick={() => setUser('role', v)}
+              data-testid={`role-${v}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="row">
+        <label className="lbl" htmlFor="s-user">
+          名前 <small>付箋や確定に「誰が」として残ります</small>
+        </label>
+        <input type="text" id="s-user" autoComplete="off" value={user.name || ''} onChange={(e) => setUser('name', e.target.value)} />
+      </div>
       <div className="row">
         <label className="lbl" htmlFor="s-url">
           URL <small>サーバーの公開時に表示されるもの（https://script.google.com/…/exec）</small>

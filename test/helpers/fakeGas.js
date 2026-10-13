@@ -17,10 +17,12 @@ export function makeFakeGas({ passphrase = 'ひみつ', bound = true } = {}) {
     const api = {
       cells,
       getLastRow: () => cells.length,
+      getMaxRows: () => Math.max(1000, cells.length),
       getRange: (a, b, c, d) => {
         if (typeof a === 'string') return { setNumberFormat: () => {} };
         const [row, col, nRows, nCols] = [a, b, c ?? 1, d ?? 1];
         return {
+          setNumberFormat: () => {},
           setValues: (vals) => {
             for (let i = 0; i < nRows; i++) {
               while (cells.length < row + i) cells.push([]);

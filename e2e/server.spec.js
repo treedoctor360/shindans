@@ -1,4 +1,4 @@
-// サーバーを通した流れ：事務所 PC が設定・原本・台帳を置く → スマホが受け取って入力・自動送信 → 事務所 PC が取得して出力
+// サーバーを通した流れ：事務所 PC が設定・原本・台帳を置く → スマホが受け取って入力・自動送信 → 事務所 PC が受け取って出力
 // サーバーは「にせの Google」（test/helpers/fakeGas.js）で gas/Code.js をそのまま動かす
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
@@ -74,13 +74,14 @@ test('事務所 → スマホ → 事務所（送信が一度失敗しても、�
   await phoneCtx.setOffline(true);
   await phoneCtx.setOffline(false); // ブラウザに「つながった（online）」を知らせる
   await phone.click('.tab:has-text("出力")');
-  await expect(phone.locator('[data-testid=send-status]')).toContainText('未送信 0本');
-  expect(gas.sheets.get('trees').cells.length).toBe(2); // 見出し＋1本
+  await expect(phone.locator('[data-testid=send-status]')).toContainText('未送信 0件');
+  expect(gas.sheets.get('records').cells.length).toBe(2); // 見出し＋1本
+  expect(gas.sheets.get('history').cells.length).toBe(2); // 履歴も残る
 
   // 事務所の PC：取得して一覧表を出力
   await office.click('.tab:has-text("出力")');
-  await office.click('[data-testid=fetch]');
-  await expect(office.locator('.toast')).toContainText('更新1本');
+  await office.click('[data-testid=sync]');
+  await expect(office.locator('.toast')).toContainText('他の端末で変わった木1本');
   const [dl] = await Promise.all([office.waitForEvent('download'), office.click('[data-testid=export-db]')]);
   await expect(office.locator('.toast')).toContainText('検査OK');
   const wb = new ExcelJS.Workbook();
