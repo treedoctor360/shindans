@@ -117,6 +117,17 @@ describe('送信と取得（にせの Google で通しで確認）', () => {
     await expect(putFile(server, 'other', 'x', new Uint8Array([1]).buffer, g.fetchFn)).rejects.toThrow('種類');
   });
 
+  it('【再発防止】スクリプトからスプレッドシートが見つからないとき：分かる言葉で知らせ、SPREADSHEET_ID があればそれを使う', async () => {
+    const g = makeFakeGas({ bound: false });
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    await expect(putFile(server, 'config', 'c.json', bytes, g.fetchFn)).rejects.toThrow('SPREADSHEET_ID');
+    await expect(sendUnsent(S([P('a1', { done: true, updatedAt: 'x' })]), cfg, g.fetchFn)).rejects.toThrow('SPREADSHEET_ID');
+    g.props.set('SPREADSHEET_ID', 'ss');
+    await putFile(server, 'config', 'c.json', bytes, g.fetchFn);
+    const r = await sendUnsent(S([P('a1', { done: true, updatedAt: 'x' })]), cfg, g.fetchFn);
+    expect(r.saved).toBe(1);
+  });
+
   it('base64 の変換', () => {
     const b = new Uint8Array([0, 1, 254, 255]).buffer;
     expect(new Uint8Array(fromBase64(toBase64(b)))).toEqual(new Uint8Array(b));
