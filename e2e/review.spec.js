@@ -4,6 +4,7 @@
 // サーバーは「にせの Google」（test/helpers/fakeGas.js）で gas/Code.js をそのまま動かす
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
+import ExcelJS from 'exceljs';
 import { makeFakeGas } from '../test/helpers/fakeGas.js';
 import { makeLedger } from '../test/helpers/makeLedger.js';
 import { makeTemplate } from '../test/helpers/makeTemplate.js';
@@ -113,6 +114,17 @@ test('付箋 → 採用 → 確定（事務が書き直さずに、修正案が�
   await pc.click('[data-act=close]');
   await pc.click('[data-testid=confirm]');
   await expect(pc.locator('.review .rs')).toHaveText('確定');
+
+  // 事務：確定した木だけが一覧表に書き込まれる（採用した修正案が入っている）
+  await pc.click('.tab:has-text("出力")');
+  await expect(pc.locator('[data-testid=export-db]')).toContainText('確定した1本');
+  const [dl] = await Promise.all([pc.waitForEvent('download'), pc.click('[data-testid=export-db]')]);
+  await expect(pc.locator('.toast')).toContainText('検査OK');
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(fs.readFileSync(await dl.path()));
+  const row = wb.getWorksheet('公園').getRow(4).values.map((v) => (v && typeof v === 'object' ? v.richText?.map((x) => x.text).join('') ?? v.text : v));
+  expect(row).toContain('ＡＢ００２'); // 台帳の書き方（全角）のまま
+  expect(row).toContain('クズの巻き付きあり');
 
   // スマホにも確定が届く
   await expect.poll(async () => {

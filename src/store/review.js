@@ -121,3 +121,20 @@ export function answerSticky(state, id, { type, text = '' }, cfg) {
   }
   return next;
 }
+
+// ---------- 出力 ----------
+
+// 一覧表に書き込む木を選ぶ。確認の流れを使っているとき（サーバーあり）は、アプリで入力した木のうち確定した木だけ。
+//  includeUnconfirmed：途中経過を見るときなど、未確定の木も含める
+//  返す形：{ trees（出力に渡す全体。除いた木は外してある）, excluded: [除いた木…] }
+export function treesForDb(state, cfg, { includeUnconfirmed = false } = {}) {
+  const useReview = !!state.server?.url;
+  const excluded = [];
+  const trees = state.trees.filter((t) => {
+    if (!useReview || includeUnconfirmed || !t.done || t.source !== 'app') return true;
+    if (reviewState(t, state, cfg) === 'confirmed') return true;
+    excluded.push(t);
+    return false;
+  });
+  return { trees, excluded };
+}

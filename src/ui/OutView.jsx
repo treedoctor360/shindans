@@ -6,6 +6,7 @@ import { dbValues, exportDb } from '../excel/dbExport.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
 import { loadLedgerFile, loadTemplate } from '../store/state.js';
 import { unsentCount } from '../store/sync.js';
+import { treesForDb } from '../store/review.js';
 import { activeGroup } from './ListView.jsx';
 import { todayYmd } from './SettingsView.jsx';
 
@@ -51,6 +52,7 @@ function cellText(t, k, v) {
 export default function OutView({ state, update, config: cfg, toast, send, sendStatus }) {
   const [busy, setBusy] = useState('');
   const [check, setCheck] = useState(null); // { title, errors }
+  const [withUnconfirmed, setWithUnconfirmed] = useState(false); // 未確定の木も一覧表に書き込むか（途中経過の確認用）
   if (!cfg || !state.trees.length) {
     return (
       <section className="view">
@@ -64,6 +66,9 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   const mine = state.trees.filter((t) => t.done && t.source === 'app');
   const shown = groupTrees.filter((t) => t.done);
   const cols = columns(cfg);
+  const useReview = !!state.server?.url;
+  const db = treesForDb(state, cfg, { includeUnconfirmed: withUnconfirmed });
+  const dbCount = mine.length - db.excluded.length;
 
   const run = async (name, fn) => {
     setBusy(name);
@@ -94,13 +99,14 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
     run('一覧表の出力', async () => {
       const ledger = await loadLedgerFile();
       if (!ledger) throw new Error('台帳がありません。「設定」で読み込んでください');
-      const r = await exportDb(ledger.buffer.slice(0), state.trees, cfg);
+      const r = await exportDb(ledger.buffer.slice(0), db.trees, cfg);
       if (r.errors.length) return setCheck({ title: '一覧表の出力検査', errors: r.errors });
       download(`${safeName(ledger.name.replace(/\.xls[xm]$/i, ''))}_入力反映_${yymmdd()}.xlsx`, r.buffer);
       const st = r.stats;
       toast(
         `検査OK。${st.written + st.appended}本を書き込みました（既存の行${st.written}・追加${st.appended}）。他の行は変わっていません` +
-          (st.skippedLedgerDone.length ? `。台帳で入力済みの${st.skippedLedgerDone.length}本は書き込んでいません` : ''),
+          (st.skippedLedgerDone.length ? `。台帳で入力済みの${st.skippedLedgerDone.length}本は書き込んでいません` : '') +
+          (db.excluded.length ? `。未確定の${db.excluded.length}本は書き込んでいません` : ''),
       );
     });
 
@@ -155,11 +161,29 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
           {busy === '野帳の出力' ? '作成中…' : `野帳（Excel）を出力：${gname}`}
         </button>
         <p className="hint">
-          野帳の原本に書き込みます。選んだ項目は○で囲みます（白黒印刷でも分かります）。未入力の木も番号・樹種が入るので、紙の野帳としても印刷できます。保存する前に、書き出したファイルを読み直して全件照合します。
+          野帳の原本に書き込みます（確定していない木も含めて、入力どおりに出します）。選んだ項目は○で囲みます（白黒印刷でも分かります）。未入力の木も番号・樹種が入るので、紙の野帳としても印刷できます。保存する前に、書き出したファイルを読み直して全件照合します。
         </p>
-        <button type="button" className="btn big" disabled={!!busy || !mine.length} onClick={onDb} data-testid="export-db">
-          {busy === '一覧表の出力' ? '作成中…' : `一覧表に書き込んで出力（アプリで入力した${mine.length}本）`}
+        <button type="button" className="btn big" disabled={!!busy || !dbCount} onClick={onDb} data-testid="export-db">
+          {busy === '一覧表の出力'
+            ? '作成中…'
+            : useReview && !withUnconfirmed
+              ? `一覧表に書き込んで出力（確定した${dbCount}本）`
+              : `一覧表に書き込んで出力（アプリで入力した${dbCount}本）`}
         </button>
+        {useReview && (
+          <>
+            <label className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="checkbox" checked={withUnconfirmed} onChange={(e) => setWithUnconfirmed(e.target.checked)} data-testid="with-unconfirmed" />
+              未確定の木も書き込む（途中経過の確認用。提出用には使わない）
+            </label>
+            {!withUnconfirmed && db.excluded.length > 0 && (
+              <p className="hint" data-testid="excluded">
+                まだ確定していない{db.excluded.length}本は書き込みません（{db.excluded.slice(0, 8).map((t) => toHalf(t.treeNo)).join('・')}
+                {db.excluded.length > 8 ? 'ほか' : ''}）。
+              </p>
+            )}
+          </>
+        )}
         <p className="hint">
           {state.ledgerInfo
             ? `読み込んだ「${state.ledgerInfo.name}」の該当する行に書き込みます。台帳にない木は末尾に足します。元のファイルは変わりません。`
