@@ -2,8 +2,9 @@
 //  何百ファイルでも、まとめて選ぶ（またはフォルダごと選ぶ）だけでよい。
 //  読み込んだ要点と写真は、この端末に置き、「サーバーに置く」でスマホに渡す。元の Excel はサーバーに上げない
 import { useState } from 'react';
-import { readKarteBook } from '../excel/karte.js';
-import { buildPrevious, savePrevious } from '../store/previous.js';
+import { karteSpecs, readKarteBook } from '../excel/karte.js';
+import { buildPrevious, clearPrevious, loadAllPrevious, prevCount, savePrevious } from '../store/previous.js';
+import { compressPhoto } from './compressPhoto.js';
 import { usePrevIndex } from './usePrevious.js';
 
 // 複数ファイルを選ぶボタン（folder=true ならフォルダごと）
@@ -34,7 +35,9 @@ export default function PrevSection({ config: cfg, toast }) {
   const [progress, setProgress] = useState('');
   const [problems, setProblems] = useState([]);
   const label = cfg?.previous?.label || '前回';
-  const can = !!cfg?.previous?.karte;
+  const specs = cfg ? karteSpecs(cfg) : [];
+  const can = specs.length > 0;
+  const [askClear, setAskClear] = useState(false);
 
   const onFiles = async (files) => {
     const all = [];
@@ -45,6 +48,8 @@ export default function PrevSection({ config: cfg, toast }) {
         setProgress(`読み込み中 ${i + 1} / ${files.length}：${files[i].name}`);
         try {
           const r = await readKarteBook(await files[i].arrayBuffer(), cfg, files[i].name);
+          // 写真は小さくしてから持つ（スマホに入れる量を減らす）
+          for (const t of r.trees) t.photos = await Promise.all(t.photos.map((p) => compressPhoto(p)));
           all.push(...r.trees);
           skipped.push(...r.skipped);
         } catch (e) {
@@ -57,11 +62,16 @@ export default function PrevSection({ config: cfg, toast }) {
         return;
       }
       setProgress('端末に保存中…');
-      const p = buildPrevious(all);
+      // 前に読み込んだ分に足す（同じ木・同じ種類のカルテは、今回の方に入れ替える）
+      const p = buildPrevious(all, new Date().toISOString(), specs.map((x) => x.id), await loadAllPrevious());
       await savePrevious(p);
-      const nPhotos = Object.values(p.index.packs).reduce((n, x) => n + x.count, 0);
+      const nPhotos = all.reduce((n, t) => n + t.photos.length, 0);
+      const kinds = specs.map((x) => [x.title || x.id, all.filter((t) => t.kind === x.id).length]).filter(([, n]) => n);
       setProblems([...bad, ...(p.duplicates.length ? [`同じ木のカルテが2つ以上（後から読んだ方を使います）：${p.duplicates.join('・')}`] : [])]);
-      toast(`${files.length}ファイルから${Object.keys(p.index.karte).length}本分を読み込みました（写真${nPhotos}枚）。「サーバーに置く」でスマホに渡せます`);
+      toast(
+        `${files.length}ファイルから読み込みました（${kinds.map(([k, n]) => `${k}${n}本`).join('・')}、写真${nPhotos}枚）。` +
+          `合わせて${prevCount(p.index)}本分あります。「サーバーに置く」でスマホに渡せます`,
+      );
       if (skipped.length) console.info('カルテでないシート', skipped);
     } finally {
       setProgress('');
@@ -74,7 +84,7 @@ export default function PrevSection({ config: cfg, toast }) {
       <div className="hint" data-testid="prev-status">
         {index ? (
           <>
-            <span className="ok">読み込み済み</span>：{Object.keys(index.karte || {}).length}本・{Object.keys(index.packs || {}).length}か所（
+            <span className="ok">読み込み済み</span>：{prevCount(index)}本・{Object.keys(index.packs || {}).length}か所（
             {String(index.updated || '').slice(0, 10)}）
           </>
         ) : (
@@ -97,11 +107,38 @@ export default function PrevSection({ config: cfg, toast }) {
             </div>
           )}
           <p className="hint">
-            事務所の PC で行います。読み込むと、入力画面にその木の{label}の弱点・評価・写真が出ます。読み直すと、前の分と入れ替わります（全部のファイルをまとめて選んでください）。スマホでは「サーバーから受け取る」で受け取ります。
+            事務所の PC で行います。読み込むと、入力画面にその木の{label}の弱点・評価・写真・図が出ます。読めるカルテ：{specs.map((x) => x.title || x.id).join('・')}。
+            何回かに分けて読み込めます（同じ木・同じ種類のカルテは、新しく読んだ方に入れ替えます）。スマホでは「サーバーから受け取る」で受け取ります。
           </p>
+          {index &&
+            (askClear ? (
+              <div className="alert warn">
+                <span>この端末の{label}の調査を全部消します（サーバーの分は、次に「サーバーに置く」を押すまで残ります）。</span>
+                <div className="acts">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={async () => {
+                      await clearPrevious();
+                      setAskClear(false);
+                      toast(`${label}の調査を消しました`);
+                    }}
+                  >
+                    消す
+                  </button>
+                  <button type="button" className="btn" onClick={() => setAskClear(false)}>
+                    やめる
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" className="btn" onClick={() => setAskClear(true)}>
+                {label}の調査を消して読み込み直す
+              </button>
+            ))}
         </>
       ) : (
-        <p className="hint">設定ファイルにカルテの読み方（previous.karte）がないため、使えません。</p>
+        <p className="hint">設定ファイルにカルテの読み方（previous.kartes）がないため、使えません。</p>
       )}
     </div>
   );

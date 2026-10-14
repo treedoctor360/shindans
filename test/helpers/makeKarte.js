@@ -51,6 +51,7 @@ function addTree(wb, { no, code = 'K01', place = '架空公園', species = 'テ�
   ws.mergeCells('G9:I9');
 
   set('A15', '見た目の評価');
+  set('E15', '飾り'); // 評価の欄から除く言葉
   set('B15', '生育');
   set('C15', 'B');
   set('B16', '危険度');
@@ -68,10 +69,42 @@ function addTree(wb, { no, code = 'K01', place = '架空公園', species = 'テ�
   return ws;
 }
 
-// 架空のカルテのファイル。trees：[{ no, code, place, species, withPhoto }]
+// 「周りの様子」の種類のカルテ（1本1シート）
+//  日付は Excel の通し番号（44482）、写真は同じ行に左右に並び、見出しは上の行。3枚目は写真のすぐ下に名前がある
+function addPlace(wb, { no, code = 'K01', place = '架空公園' }) {
+  const ws = wb.addWorksheet(`${no}-周り`);
+  const set = (addr, v) => (ws.getCell(addr).value = v);
+  set('A1', '周りの様子');
+  set('A2', '調べた日：');
+  set('B2', 44482);
+  set('A3', '木の番号');
+  set('B3', no);
+  set('A4', '場所コード');
+  set('B4', code);
+  set('C4', place);
+  set('A6', '配置の図');
+  set('K6', '周りの写真');
+  set('A20', 'まわり');
+  set('B20', '人の通行');
+  set('C20', '□無　■有');
+  set('D20', '歩く人');
+  set('B21', '建物');
+  set('C21', '■無　□有');
+  set('B22', '土地の使われ方');
+  set('C22', '□畑　■住宅地');
+  set('A30', '写真');
+  set('D35', '根元の様子');
+  const id = wb.addImage({ buffer: TINY_JPEG, extension: 'jpeg' });
+  ws.addImage(id, 'A7:H15');
+  ws.addImage(id, 'K7:R15');
+  ws.addImage(id, 'D31:H34');
+  return ws;
+}
+
+// 架空のカルテのファイル。trees：[{ no, code, place, species, withPhoto, kind }]（kind：'place' なら「周りの様子」）
 export async function makeKarte(trees = [{ no: 'AB001' }, { no: 'AB002', species: 'ミホンカエデ', withPhoto: false }]) {
   const wb = new ExcelJS.Workbook();
-  for (const t of trees) addTree(wb, t);
+  for (const t of trees) (t.kind === 'place' ? addPlace : addTree)(wb, t);
   wb.addWorksheet('一覧').addRow(['カルテではないシート']);
   return wb.xlsx.writeBuffer();
 }
