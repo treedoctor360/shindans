@@ -6,7 +6,7 @@
 // 端末内では IndexedDB の別の場所に置く（入力データの保存とは分ける。入力のたびに大きなデータを書き直さないように）。
 
 import { toHalf } from '../core/text.js';
-import { idbGet, idbPut } from './idb.js';
+import { idbDelete, idbGet, idbPut } from './idb.js';
 import { fromBase64, getFile, putFile, toBase64 } from './sync.js';
 
 export const INDEX_KEY = 'prevIndex';
@@ -16,45 +16,73 @@ export const photoKey = (packId) => `prevPhotos:${packId}`;
 export const prevKey = (code, treeNo) => `${toHalf(code || '').trim()}|${toHalf(treeNo || '').trim().toUpperCase()}`;
 
 // 読んだカルテ（readKarteBook の trees を全部つないだもの）から、要点と写真の束を作る
-//  返す形：{ index, packs: { packId: { 鍵: [写真…] } }, duplicates: [同じ木が2回以上あった鍵] }
-export function buildPrevious(trees, now = new Date().toISOString()) {
-  const karte = {};
-  const packOf = {}; // 場所のコード → packId
-  const packs = {};
+//  1本の木に、種類の違うカルテ（詳しい診断・周辺の環境・簡単な診断など）が複数あってよい
+//  base を渡すと、それに足す（同じ木・同じ種類は新しく読んだ方に入れ替える）。公園ごとなど何回かに分けて読み込めるように
+//  返す形：{ index, packs: { packId: { 鍵: { 種類: [写真…] } } }, duplicates: [同じ木・同じ種類が2回以上あったもの] }
+export function buildPrevious(kartes, now = new Date().toISOString(), order = [], base = null) {
+  const trees = structuredClone(base?.index ? treesOf(base.index) : {});
+  const packOf = Object.fromEntries(Object.entries(base?.index?.packs || {}).map(([id, p]) => [p.code, id])); // 場所のコード → packId
+  const nextId = () => `p${Math.max(0, ...Object.values(packOf).map((id) => Number(id.slice(1)) || 0)) + 1}`;
+  const packs = structuredClone(base?.packs || {});
   const duplicates = [];
-  for (const t of trees) {
+  const fresh = new Set(); // 今回読んだもの（同じ回の中で2回出たら知らせる）
+  const rank = (k) => (order.includes(k) ? order.indexOf(k) : order.length);
+  for (const t of kartes) {
     const key = prevKey(t.code, t.treeNo);
-    if (karte[key]) duplicates.push(key); // 後から読んだ方を使う（同じカルテを2回読んだときなど）
-    if (!packOf[t.code]) packOf[t.code] = `p${Object.keys(packOf).length + 1}`;
+    if (!packOf[t.code]) packOf[t.code] = nextId();
     const packId = packOf[t.code];
     const { photos, ...rest } = t;
-    karte[key] = { ...rest, photoCount: photos.length, packId };
+    const list = (trees[key] = trees[key] || []);
+    const i = list.findIndex((x) => x.kind === t.kind);
+    if (i >= 0) {
+      if (fresh.has(`${key}#${t.kind}`)) duplicates.push(`${key}（${t.title}）`);
+      list.splice(i, 1); // 後から読んだ方を使う
+    }
+    fresh.add(`${key}#${t.kind}`);
+    list.push({ ...rest, photoCount: photos.length, packId });
+    list.sort((a, b) => rank(a.kind) - rank(b.kind));
     packs[packId] = packs[packId] || {};
-    packs[packId][key] = photos.map((p) => ({ caption: p.caption, type: p.type, data: toBase64(p.buffer) }));
+    const had = packs[packId][key];
+    packs[packId][key] = { ...(Array.isArray(had) ? { karte: had } : had || {}), [t.kind]: photos.map((p) => ({ caption: p.caption, type: p.type, data: toBase64(p.buffer) })) };
   }
-  const packList = Object.fromEntries(
-    Object.entries(packOf).map(([code, id]) => [id, { code, count: Object.values(packs[id]).reduce((n, ps) => n + ps.length, 0) }]),
-  );
-  return { index: { version: 1, updated: now, karte, packs: packList }, packs, duplicates: [...new Set(duplicates)] };
+  const count = (id) => Object.values(packs[id]).reduce((n, byKind) => n + Object.values(byKind).reduce((m, ps) => m + ps.length, 0), 0);
+  const packList = Object.fromEntries(Object.entries(packOf).map(([code, id]) => [id, { code, count: count(id) }]));
+  return { index: { version: 2, updated: now, trees, packs: packList }, packs, duplicates: [...new Set(duplicates)] };
+}
+
+// 前の形（版1：1本1カルテ）の要点を、今の形にそろえる
+function treesOf(index) {
+  if (!index) return {};
+  if (index.trees) return index.trees;
+  return Object.fromEntries(Object.entries(index.karte || {}).map(([k, v]) => [k, [{ kind: 'karte', title: '', ...v }]]));
+}
+export const prevCount = (index) => Object.keys(treesOf(index)).length;
+
+// 写真の束から、ある木・ある種類の写真（前の形にも対応）
+export function photosOf(pack, key, kind) {
+  const v = pack?.[key];
+  if (!v) return [];
+  return Array.isArray(v) ? v : v[kind] || [];
 }
 
 // 木に対応する前回のカルテ
-//  返す形：null（なし）/ { karte, speciesMismatch }（樹種が違えば speciesMismatch=true。画面では中身を隠して知らせる）
-export function karteOf(tree, index, cfg) {
-  if (!index?.karte || !tree?.treeNo) return null;
+//  返す形：null（なし）/ { kartes: [...], speciesMismatch }（樹種が違えば speciesMismatch=true。画面では中身を隠して知らせる）
+export function prevOf(tree, index, cfg) {
+  const all = treesOf(index);
+  if (!tree?.treeNo || !Object.keys(all).length) return null;
   const sheet = cfg.dbFormat.sheets.find((s) => s.type === tree.siteType);
   const code = sheet?.code ? tree[sheet.code] : '';
-  let k = index.karte[prevKey(code, tree.treeNo)];
-  if (!k && !code) {
+  let kartes = all[prevKey(code, tree.treeNo)];
+  if (!kartes && !code) {
     // 場所のコードがない木（一覧にない木など）は、番号だけで1つに決まるときだけ
     const no = prevKey('', tree.treeNo).split('|')[1];
-    const hits = Object.values(index.karte).filter((x) => x.treeNo === no);
-    if (hits.length === 1) [k] = hits;
+    const hits = Object.entries(all).filter(([k]) => k.split('|')[1] === no);
+    if (hits.length === 1) kartes = hits[0][1];
   }
-  if (!k) return null;
+  if (!kartes?.length) return null;
   const norm = (s) => toHalf(s || '').replace(/\s/g, '');
-  const speciesMismatch = !!(k.species && tree.species && norm(k.species) !== norm(tree.species));
-  return { karte: k, speciesMismatch };
+  const speciesMismatch = kartes.some((k) => k.species && tree.species && norm(k.species) !== norm(tree.species));
+  return { kartes, speciesMismatch };
 }
 
 // ---------- 端末内の保存 ----------
@@ -64,6 +92,23 @@ const changed = () => typeof window !== 'undefined' && window.dispatchEvent(new 
 
 export const loadIndex = () => idbGet(INDEX_KEY);
 export const loadPhotos = (packId) => idbGet(photoKey(packId));
+
+// 端末にある前回の調査を全部（要点と写真）。足して読み込むときの土台
+export async function loadAllPrevious() {
+  const index = await loadIndex();
+  if (!index) return null;
+  const packs = {};
+  for (const id of Object.keys(index.packs || {})) packs[id] = (await loadPhotos(id)) || {};
+  return { index, packs };
+}
+
+// 前回の調査を端末から消す（読み込み直すとき）
+export async function clearPrevious() {
+  const index = await loadIndex();
+  for (const id of Object.keys(index?.packs || {})) await idbDelete(photoKey(id));
+  await idbDelete(INDEX_KEY);
+  changed();
+}
 
 // 読み込んだ結果を端末に置く（事務所の PC）
 export async function savePrevious({ index, packs }) {
@@ -87,7 +132,7 @@ export async function putPrevious(server, onProgress = () => {}, fetchFn = fetch
   // 要点は最後に置く（写真がそろってから、スマホに知らせる）
   await putFile(server, INDEX_KEY, `${INDEX_KEY}.json`, enc.encode(JSON.stringify(index)).buffer, fetchFn);
   onProgress(ids.length + 1, ids.length + 1);
-  return Object.keys(index.karte).length;
+  return prevCount(index);
 }
 
 // サーバーから要点を受け取る（スマホ）。返す形：受け取った本数（なければ 0）
@@ -97,7 +142,7 @@ export async function getPreviousIndex(server, fetchFn = fetch) {
   const index = JSON.parse(new TextDecoder().decode(f.buffer));
   await idbPut(INDEX_KEY, index);
   changed();
-  return Object.keys(index.karte || {}).length;
+  return prevCount(index);
 }
 
 // サーバーから写真を受け取って端末に入れる（スマホ。場所ごと）

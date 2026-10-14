@@ -35,10 +35,14 @@ test('PC でカルテをまとめて読み込み、スマホで前回の弱点�
   await pc.setInputFiles('[data-testid=ledger-file]', tmp('p-ledger.xlsx', await makeLedger()));
   await expect(pc.locator('[data-testid=ledger-status] .ok')).toBeVisible();
   await pc.setInputFiles('[data-testid=prev-files]', [
-    tmp('p-karte1.xlsx', await makeKarte()),
+    tmp('p-karte1.xlsx', await makeKarte([{ no: 'AB001' }, { no: 'AB001', kind: 'place' }, { no: 'AB002', species: 'ミホンカエデ', withPhoto: false }])),
     tmp('p-karte2.xlsx', await makeKarte([{ no: 'AB001', code: 'K09', place: '別の架空公園', species: 'ちがう木' }])),
   ]);
-  await expect(pc.locator('.toast')).toContainText('2ファイルから3本分を読み込みました（写真4枚）');
+  await expect(pc.locator('.toast')).toContainText('2ファイルから読み込みました（前回の詳しい診断3本・周りの様子1本、写真7枚）。合わせて3本分');
+  await expect(pc.locator('[data-testid=prev-status]')).toContainText('3本・2か所');
+  // 分けて読み込める：同じファイルをもう一度読んでも、増えずに入れ替わる
+  await pc.setInputFiles('[data-testid=prev-files]', [tmp('p-karte1.xlsx', await makeKarte([{ no: 'AB001' }, { no: 'AB001', kind: 'place' }, { no: 'AB002', species: 'ミホンカエデ', withPhoto: false }]))]);
+  await expect(pc.locator('.toast')).toContainText('1ファイルから読み込みました');
   await expect(pc.locator('[data-testid=prev-status]')).toContainText('3本・2か所');
   await setServer(pc);
   await pc.click('[data-testid=server-put]');
@@ -57,15 +61,21 @@ test('PC でカルテをまとめて読み込み、スマホで前回の弱点�
   await expect(phone.locator('[data-tree=AB001] .tag.prev')).toBeVisible();
   await expect(phone.locator('[data-tree=AB003] .tag.prev')).toHaveCount(0);
   await phone.click('[data-tree=AB001]');
-  await expect(phone.locator('[data-testid=prev-open]')).toContainText('2090/09/01・弱点3・写真2枚'); // 閉じたままでも分かる
+  // 閉じたままでも、どの種類のカルテがあるか分かる
+  await expect(phone.locator('[data-testid=prev-open]')).toContainText('前回の詳しい診断 2090/09/01');
+  await expect(phone.locator('[data-testid=prev-open]')).toContainText('周りの様子 2021/10/13');
+  await expect(phone.locator('[data-testid=prev-open]')).toContainText('弱点など4・写真5枚');
   await phone.click('[data-testid=prev-open]');
-  await expect(phone.locator('[data-testid=prev-items] li')).toHaveCount(3);
-  await expect(phone.locator('[data-testid=prev-items]')).toContainText('幹 ①うろ 有（大）');
-  await expect(phone.locator('[data-testid=prev]')).toContainText('危険度 E うろ・根の傷み');
+  const detail = phone.locator('.prev-karte[data-kind=detail]');
+  await expect(detail.locator('[data-testid=prev-items] li')).toHaveCount(3);
+  await expect(detail).toContainText('幹 ①うろ 有（大）');
+  await expect(detail).toContainText('危険度 E うろ・根の傷み');
+  await expect(phone.locator('.prev-karte[data-kind=place]')).toContainText('人の通行 有');
 
-  // 写真：この場所の分を端末に入れると見られる。タップで大きく
+  // 写真・図：この場所の分を端末に入れると見られる（周りの様子の配置の図も）。タップで大きく
   await phone.click('[data-testid=prev-get-photos]');
-  await expect(phone.locator('[data-testid=prev-photos] img')).toHaveCount(2);
+  await expect(detail.locator('[data-testid=prev-photos] img')).toHaveCount(2);
+  await expect(phone.locator('.prev-karte[data-kind=place] .prev-photo small')).toHaveText(['配置の図', '周りの写真', '根元の様子']);
   await phone.locator('.prev-photo').first().click();
   await expect(phone.locator('.photo-big img')).toBeVisible();
   await phone.click('.photo-big');

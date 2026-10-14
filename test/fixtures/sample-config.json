@@ -665,53 +665,99 @@
   "treeNoPlaceholder": "AB123",
   "previous": {
     "label": "前回",
-    "karte": {
-      "title": "前回の詳しい診断",
-      "fields": {
-        "date": {
-          "label": "調べた日："
+    "kartes": [
+      {
+        "id": "detail",
+        "title": "前回の詳しい診断",
+        "match": "前回の詳しい診断",
+        "fields": {
+          "date": {
+            "label": "調べた日："
+          },
+          "inspector": {
+            "label": "調べた人："
+          },
+          "code": {
+            "label": [
+              "場所コード"
+            ]
+          },
+          "placeName": {
+            "label": [
+              "場所コード"
+            ],
+            "nth": 2
+          },
+          "treeNo": {
+            "label": "木の番号"
+          },
+          "species": {
+            "label": "木の種類"
+          }
         },
-        "inspector": {
-          "label": "調べた人："
-        },
-        "code": {
-          "label": [
-            "場所コード"
-          ]
-        },
-        "placeName": {
-          "label": [
-            "場所コード"
-          ],
-          "nth": 2
-        },
-        "treeNo": {
-          "label": "木の番号"
-        },
-        "species": {
-          "label": "木の種類"
-        }
+        "yesMark": "■有",
+        "parts": [
+          "枝",
+          "幹",
+          "根"
+        ],
+        "summary": [
+          {
+            "label": "見た目の評価",
+            "rows": 2
+          },
+          {
+            "label": "まとめ",
+            "rows": 1
+          }
+        ],
+        "photoCaptions": [
+          "全体の写真",
+          "弱点の図"
+        ],
+        "dropTexts": [
+          "飾り"
+        ]
       },
-      "yesMark": "■有",
-      "parts": [
-        "枝",
-        "幹",
-        "根"
-      ],
-      "summary": [
-        {
-          "label": "見た目の評価",
-          "rows": 2
+      {
+        "id": "place",
+        "title": "周りの様子",
+        "match": "周りの様子",
+        "fields": {
+          "date": {
+            "label": "調べた日："
+          },
+          "code": {
+            "label": [
+              "場所コード"
+            ]
+          },
+          "placeName": {
+            "label": [
+              "場所コード"
+            ],
+            "nth": 2
+          },
+          "treeNo": {
+            "label": "木の番号"
+          }
         },
-        {
-          "label": "まとめ",
-          "rows": 1
-        }
-      ],
-      "photoCaptions": [
-        "全体の写真",
-        "弱点の図"
-      ]
-    }
+        "yesMark": "■有",
+        "parts": [
+          "まわり"
+        ],
+        "summary": [
+          {
+            "label": "土地の使われ方",
+            "rows": 1
+          }
+        ],
+        "photoCaptions": [
+          "配置の図",
+          "周りの写真"
+        ],
+        "captionBelow": true
+      }
+    ]
   }
 }

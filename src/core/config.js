@@ -158,22 +158,29 @@ function validateDbFormat(f, need, e) {
     need(Object.values(f.parenKeys).every((p) => isStr(p.when) && (p.alias == null || isObj(p.alias))), 'dbFormat.parenKeys には when（例「有」）が必要です');
 }
 
-// 前回の調査の読み方（省略可）
+// 前回の調査の読み方（省略可）。kartes：カルテの種類の一覧（以前の形 karte：1種類だけ、も使える）
 function validatePrevious(p, need) {
   if (!need(isObj(p), 'previous の形が違います')) return;
-  if (p.karte == null) return;
-  const k = p.karte;
-  if (!need(isObj(k) && isObj(k.fields), 'previous.karte に fields（見出しの文字と、その右の値）が必要です')) return;
+  if (p.kartes != null && !need(isArr(p.kartes) && p.kartes.length > 0, 'previous.kartes はカルテの種類の一覧にしてください')) return;
+  const list = p.kartes || (p.karte != null ? [{ id: 'karte', ...p.karte }] : []);
   const labelOk = (d) => isObj(d) && (isStr(d.label) || (isArr(d.label) && d.label.every(isStr))) && (d.nth == null || (Number.isInteger(d.nth) && d.nth >= 1));
-  need(Object.values(k.fields).every(labelOk), 'previous.karte.fields の各項目は { label, nth } の形にしてください');
-  need(labelOk(k.fields.treeNo), 'previous.karte.fields に treeNo（樹木番号の見出し）が必要です');
-  need(isStr(k.yesMark), 'previous.karte.yesMark（「有」の印）が必要です');
-  need(k.parts == null || (isArr(k.parts) && k.parts.every(isStr)), 'previous.karte.parts は文字の一覧にしてください');
-  need(k.photoCaptions == null || (isArr(k.photoCaptions) && k.photoCaptions.every(isStr)), 'previous.karte.photoCaptions は文字の一覧にしてください');
-  need(
-    k.summary == null || (isArr(k.summary) && k.summary.every((x) => isObj(x) && isStr(x.label) && (x.rows == null || (Number.isInteger(x.rows) && x.rows >= 1)))),
-    'previous.karte.summary は { label, rows } の一覧にしてください',
-  );
+  const strs = (v) => v == null || (isArr(v) && v.every(isStr));
+  list.forEach((k, i) => {
+    const at = p.kartes ? `previous.kartes[${i}]` : 'previous.karte';
+    if (!need(isObj(k) && isObj(k.fields), `${at} に fields（見出しの文字と、その右の値）が必要です`)) return;
+    need(isStr(k.id), `${at} に id（種類の名前）が必要です`);
+    need(Object.values(k.fields).every(labelOk), `${at}.fields の各項目は { label, nth } の形にしてください`);
+    need(labelOk(k.fields.treeNo), `${at}.fields に treeNo（樹木番号の見出し）が必要です`);
+    need(isStr(k.yesMark), `${at}.yesMark（「有」の印）が必要です`);
+    need(k.match == null || isStr(k.match), `${at}.match は文字にしてください`);
+    need(strs(k.parts) && strs(k.photoCaptions) && strs(k.dropTexts), `${at} の parts・photoCaptions・dropTexts は文字の一覧にしてください`);
+    need(
+      k.summary == null || (isArr(k.summary) && k.summary.every((x) => isObj(x) && isStr(x.label) && (x.rows == null || (Number.isInteger(x.rows) && x.rows >= 1)))),
+      `${at}.summary は { label, rows } の一覧にしてください`,
+    );
+  });
+  const ids = list.map((k) => k?.id);
+  need(new Set(ids).size === ids.length, 'previous.kartes の id が重複しています');
 }
 
 // 新しい設定が正しければそれを、不正なら前の設定を使う
