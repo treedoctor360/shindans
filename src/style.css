@@ -205,3 +205,16 @@ html,body,#root{height:100%;margin:0}
 .diff{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
 .diff th,.diff td{border:1px solid var(--line);padding:3px 5px;text-align:left;word-break:break-all;vertical-align:top}
 .notice{text-align:left;font:inherit;color:inherit;cursor:pointer}
+/* 前回の調査 */
+.prev summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+.prev-sum,.prev-items{display:flex;flex-direction:column;gap:2px;font-size:13.5px}
+.prev-sum small,.prev-items small{color:var(--muted)}
+.prev-items ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:4px}
+.prev-items .tag{margin-left:4px}
+.prev-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px}
+.prev-photo{border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:3px;display:flex;flex-direction:column;gap:2px;font:inherit;color:inherit}
+.prev-photo img{width:100%;height:auto;border-radius:5px;display:block}
+.prev-photo small{font-size:11px;color:var(--muted)}
+.photo-big{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.85);border:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#fff;font:inherit;padding:16px}
+.photo-big img{max-width:100%;max-height:85vh;object-fit:contain}
+.tag.prev{color:var(--info);border-color:var(--info)}
