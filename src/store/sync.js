@@ -84,6 +84,11 @@ export async function push(state, cfg, fetchFn = fetch) {
   return { results: r.results || [], tokens };
 }
 
+// 中身が同じか（項目の並び順は問わない）
+const canon = (v) =>
+  Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v;
+const sameData = (a, b) => JSON.stringify(canon(a ?? null)) === JSON.stringify(canon(b ?? null));
+
 // 付箋の食い違いを、持ち主ごとに合わせる（送り直す前提で dirty のまま、版はサーバーに合わせる）
 function mergeSticky(local, server, rev) {
   if (!server) return { ...local, rev };
@@ -109,6 +114,12 @@ export function applyPush(state, results, tokens, cfg) {
         if (r.ok) {
           saved++;
           return { ...t, rev: r.rev, sent: t.updatedAt === tk.token ? true : t.sent };
+        }
+        // 送信はサーバーに届いていたのに、返事が届く前に通信が切れた場合：サーバーの内容はこの端末が送ったものと同じ。
+        // 自分どうしの食い違いにはせず、送信済みとして扱う
+        if (r.conflict && sameData(r.data, treeData(t))) {
+          saved++;
+          return { ...t, rev: r.rev, sent: t.updatedAt === tk.token ? true : t.sent, conflict: null };
         }
         if (r.conflict) {
           conflicts.push(t.treeNo);
@@ -177,7 +188,10 @@ export function applyPull(state, records, lastSeq, cfg) {
       if (rec.rev <= (local.rev || 0)) continue; // 自分が送ったもの・もう知っている版
       if (local.conflict && rec.rev <= local.conflict.rev) continue; // 送ったときに既に食い違いとして受け取った版
       const dirty = local.done && local.source === 'app' && !local.sent;
-      if (dirty) {
+      if (dirty && sameData(rec.data, treeData(local))) {
+        // この端末が送った内容（返事を受け取れなかった送信）。送信済みにする
+        trees[i] = { ...local, rev: rec.rev, sent: true, conflict: null };
+      } else if (dirty) {
         // 自分にも送っていない修正がある → 黙って上書きしない
         trees[i] = { ...local, conflict: { rev: rec.rev, by: rec.by, updatedAt: rec.updatedAt, data: rec.data } };
         conflicts.push(local.treeNo);

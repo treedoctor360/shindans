@@ -164,6 +164,23 @@ describe('送信と受信（にせの Google で通しで確認）', () => {
     expect(theirs.trees[0]).toMatchObject({ height: '10', rev: 2, sent: true, conflict: null });
   });
 
+  it('【再発防止】送信はサーバーに届いたが返事が届かなかった：送り直しても自分どうしの食い違いにしない', async () => {
+    const g = makeFakeGas();
+    const s = S([P('a1', { done: true, height: '8', updatedAt: 'x' })]);
+    await push(s, cfg, g.fetchFn); // サーバーには保存されたが、返事を受け取る前に通信が切れた（端末は未送信のまま）
+    const again = await sync(s, g);
+    expect(again.conflicts).toEqual([]);
+    expect(again.state.trees[0]).toMatchObject({ sent: true, rev: 1, conflict: null });
+    // 受け取りの側でも同じ（送り直す前に受け取った場合）
+    const p = await pull(s, cfg, g.fetchFn);
+    const r = applyPull(s, p.records, p.lastSeq, cfg);
+    expect(r.conflicts).toEqual([]);
+    expect(r.state.trees[0]).toMatchObject({ sent: true, rev: 1 });
+    // 返事を失った後でさらに直していた場合は、従来どおり食い違いとして見せる（中身が違うので）
+    const edited = { ...s, trees: s.trees.map((t) => ({ ...t, height: '9', updatedAt: 'y' })) };
+    expect((await sync(edited, g)).conflicts).toEqual(['A1']);
+  });
+
   it('受け取った版が、まだ送っていない自分の修正とぶつかったら、上書きせずに食い違いにする', async () => {
     const g = makeFakeGas();
     const base = await sync(S([P('a1', { done: true, height: '8', updatedAt: 'x' })]), g);

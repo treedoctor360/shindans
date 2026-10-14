@@ -5,7 +5,8 @@
 //    部品のファイル名には中身ごとに変わる印（ハッシュ）が付くので、古い部品を使ってしまうことはない
 //  サーバー（GAS）への通信は扱わない（そのままブラウザに任せる）
 
-const CACHE = 'shindans-v1';
+const PREFIX = 'shindans-';
+const CACHE = `${PREFIX}v1`;
 
 self.addEventListener('install', (e) => {
   self.skipWaiting(); // 新しい版をすぐ使い始める
@@ -16,7 +17,8 @@ self.addEventListener('activate', (e) => {
   e.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+      // 消すのはこのアプリの古い保存だけ。同じドメインの別のアプリの保存は残す（保存の場所はドメインごとに共有されるため）
+      await Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== CACHE).map((k) => caches.delete(k)));
       await self.clients.claim();
     })(),
   );
