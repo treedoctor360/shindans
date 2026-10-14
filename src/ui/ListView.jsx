@@ -5,6 +5,8 @@ import { monthDay, toHalf } from '../core/text.js';
 import { useState } from 'react';
 import { addTree } from '../store/actions.js';
 import { REVIEW_LABEL, confirmable, reviewState, setConfirm } from '../store/review.js';
+import { karteOf } from '../store/previous.js';
+import { usePrevIndex } from './usePrevious.js';
 
 const NO_AREA = '本区画';
 
@@ -34,6 +36,7 @@ const REVIEW_FILTERS = [
 
 export default function ListView({ state, update, config: cfg, send, toast }) {
   const [askBulk, setAskBulk] = useState(false);
+  const prevIndex = usePrevIndex();
   if (!cfg || !state.trees.length) {
     return (
       <section className="view">
@@ -208,6 +211,7 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
                 {t.status && <span className="tag new">{statusLabel(t.status)}</span>}
                 {t.planInitial && <span className="tag w">{cfg.initial.pill || '診断'}予定</span>}
                 {nWarn > 0 && <span className="tag w">要確認{nWarn}</span>}
+                {karteOf(t, prevIndex, cfg) && <span className="tag prev">{cfg.previous?.label || '前回'}カルテ</span>}
                 {useReview && ['asked', 'answered', 'confirmed', 'conflict'].includes(rsOf(t)) && (
                   <span className={`tag rs-${rsOf(t)}`}>{rsOf(t) === 'conflict' ? '食い違い' : REVIEW_LABEL[rsOf(t)]}</span>
                 )}

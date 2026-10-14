@@ -7,7 +7,7 @@
 //    { action: 'ping' }                            … 合言葉の確認
 //    { action: 'push', year, deviceId, records }   … 記録を保存する（版番号を確かめてから）
 //    { action: 'pull', year, since }               … 通し番号 since より後に変わった記録を返す
-//    { action: 'putFile', kind, name, base64 }     … 設定・原本・台帳のファイルを置く（事務所のPCから）
+//    { action: 'putFile', kind, name, base64 }     … 設定・原本・台帳・前回の調査のファイルを置く（事務所のPCから）
 //    { action: 'getFile', kind }                   … 置いたファイルを取り出す（スマホから）
 //  どの操作にも pass（合言葉）を付ける。合言葉はスクリプトのプロパティ PASSPHRASE に入れる。
 //
@@ -27,7 +27,11 @@ var HISTORY_SHEET = 'history';
 var HEADER = ['ID', '年度', '種類', '木のID', '版', '通し番号', '更新日時', '受信日時', '端末', '人', 'データ'];
 var HISTORY_HEADER = ['受信日時', 'ID', '種類', '木のID', '版', '人', '端末', 'データ'];
 var KINDS = ['tree', 'sticky', 'confirm'];
-var FILE_KINDS = ['config', 'template', 'ledger'];
+var FILE_KINDS = ['config', 'template', 'ledger', 'prevIndex'];
+// 前回の写真は場所ごとに1ファイル（prevPhotos:p1, prevPhotos:p2 …）
+function isFileKind(kind) {
+  return FILE_KINDS.indexOf(kind) >= 0 || /^prevPhotos:p[0-9]{1,4}$/.test(String(kind));
+}
 
 // ---------- 計算だけの部分（テストで Node から呼べるように、Google の機能を使わない） ----------
 
@@ -224,7 +228,7 @@ function dataFolder(props) {
 }
 
 function putFile(req, props) {
-  if (FILE_KINDS.indexOf(req.kind) < 0) return { ok: false, error: 'ファイルの種類が違います' };
+  if (!isFileKind(req.kind)) return { ok: false, error: 'ファイルの種類が違います' };
   var folder = dataFolder(props);
   var blob = Utilities.newBlob(Utilities.base64Decode(req.base64), 'application/octet-stream', req.name);
   var file = folder.createFile(blob);
@@ -242,7 +246,7 @@ function putFile(req, props) {
 }
 
 function getFile(req, props) {
-  if (FILE_KINDS.indexOf(req.kind) < 0) return { ok: false, error: 'ファイルの種類が違います' };
+  if (!isFileKind(req.kind)) return { ok: false, error: 'ファイルの種類が違います' };
   var id = props.getProperty('FILE_' + req.kind);
   if (!id) return { ok: true, file: null };
   var file = DriveApp.getFileById(id);
@@ -257,4 +261,4 @@ function getFile(req, props) {
 }
 
 // テスト（Node）から計算部分を読めるようにする。Google の上では module が無いので何もしない
-if (typeof module !== 'undefined') module.exports = { planPush: planPush, listSince: listSince };
+if (typeof module !== 'undefined') module.exports = { planPush: planPush, listSince: listSince, isFileKind: isFileKind };

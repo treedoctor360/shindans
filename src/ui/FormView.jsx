@@ -10,6 +10,7 @@ import { composeTreat } from '../core/treat.js';
 import { isDead, isLocked } from '../core/tree.js';
 import { normalizeField, pressAlertAction, pressOption, saveTree, toggleTreat, touched, updateTree } from '../store/actions.js';
 import { activeGroup } from './ListView.jsx';
+import PrevPanel from './PrevPanel.jsx';
 import ReviewPanel from './ReviewPanel.jsx';
 
 const MODE_TEXT = { 'full+weak': '全景＋弱点写真', shared: '全景と共用', fullOnly: '全景だけ（写真で見えない弱点のみ）' };
@@ -151,6 +152,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
       </div>
 
       <ReviewPanel t={t} state={state} update={update} config={cfg} toast={toast} send={send} />
+      <PrevPanel t={t} state={state} config={cfg} toast={toast} />
       {officeView && <p className="hint">事務の端末では入力内容を直せません。直してほしいところは付箋の修正案で伝えます。</p>}
 
       <fieldset disabled={readOnly} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

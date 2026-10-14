@@ -1,6 +1,7 @@
 // 設定画面：調査情報、設定ファイル・野帳の原本・台帳の読み込み
 import { useState } from 'react';
 import { loadConfigText, importLedger, saveTemplate } from '../store/state.js';
+import PrevSection from './PrevSection.jsx';
 import ServerSection from './ServerSection.jsx';
 
 // 今日の日付 "2099-04-05"（端末の時刻で）
@@ -149,6 +150,8 @@ export default function SettingsView({ state, update, config, setConfig, toast }
           樹木番号・樹種・場所を取り込みます。台帳で入力済みの木は読み取り専用になり、二重調査を防ぎます。アプリで入力した内容は消えません（台帳でも入力済みなら、台帳を正としてアプリの入力は控えに残します）。
         </p>
       </div>
+
+      <PrevSection config={config} toast={toast} />
     </section>
   );
 }

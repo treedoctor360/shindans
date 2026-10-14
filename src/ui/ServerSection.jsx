@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { idbGet } from '../store/idb.js';
 import { importLedger, loadConfigText, saveTemplate } from '../store/state.js';
 import { callServer, getFile, putFile } from '../store/sync.js';
+import { getPreviousIndex, getPreviousPhotos, loadIndex, putPrevious } from '../store/previous.js';
 import { todayYmd } from './SettingsView.jsx';
 
 export default function ServerSection({ state, update, config, setConfig, toast }) {
@@ -39,7 +40,9 @@ export default function ServerSection({ state, update, config, setConfig, toast 
       if (tpl) await putFile(sv, 'template', tpl.name, tpl.buffer);
       const ledger = await idbGet('ledger');
       if (ledger) await putFile(sv, 'ledger', ledger.name, ledger.buffer);
-      toast(`サーバーに置きました（設定${tpl ? '・原本' : ''}${ledger ? '・台帳' : ''}）`);
+      // 前回の調査（要点と、場所ごとの写真）
+      const nPrev = await putPrevious(sv, (d, n) => setBusy(`サーバーに置く ${d}/${n}`));
+      toast(`サーバーに置きました（設定${tpl ? '・原本' : ''}${ledger ? '・台帳' : ''}${nPrev ? `・前回の調査${nPrev}本` : ''}）`);
     });
 
   // サーバーから設定・原本・台帳を受け取る（スマホで）
@@ -67,7 +70,22 @@ export default function ServerSection({ state, update, config, setConfig, toast 
         await update((s) => ({ ...s, trees: r.state.trees, ledgerInfo: r.state.ledgerInfo }), { now: true });
         got.push(`台帳（${r.stats.all}本）`);
       }
+      const nPrev = await getPreviousIndex(sv);
+      if (nPrev) got.push(`前回の調査（${nPrev}本）`);
       toast(got.length ? `受け取りました：${got.join('・')}` : 'サーバーにはまだ何も置かれていません');
+    });
+
+  // 前回の写真を、全部の場所の分まとめて端末に入れる（Wi-Fi のある所で）
+  const onGetPhotos = () =>
+    run('前回の写真', async () => {
+      const index = await loadIndex();
+      const ids = Object.keys(index?.packs || {});
+      if (!ids.length) throw new Error('前回の調査がまだありません。先に「サーバーから受け取る」を押してください');
+      for (let i = 0; i < ids.length; i++) {
+        setBusy(`前回の写真 ${i + 1}/${ids.length}`);
+        await getPreviousPhotos(sv, ids[i]);
+      }
+      toast(`前回の写真を端末に入れました（${ids.length}か所）`);
     });
 
   const ready = !!(sv.url && sv.pass);
@@ -118,10 +136,13 @@ export default function ServerSection({ state, update, config, setConfig, toast 
         {busy === '接続の確認' ? '確認中…' : '接続を確認する'}
       </button>
       <button type="button" className="btn big" disabled={!ready || !!busy} onClick={onGet} data-testid="server-get">
-        {busy === 'サーバーから受け取る' ? '受け取り中…' : 'サーバーから設定・原本・台帳を受け取る'}
+        {busy === 'サーバーから受け取る' ? '受け取り中…' : 'サーバーから設定・原本・台帳・前回の調査を受け取る'}
       </button>
       <button type="button" className="btn big" disabled={!ready || !!busy || !config} onClick={onPut} data-testid="server-put">
-        {busy === 'サーバーに置く' ? '送信中…' : 'この端末の設定・原本・台帳をサーバーに置く'}
+        {busy.startsWith('サーバーに置く') ? `送信中…${busy.slice(8)}` : 'この端末の設定・原本・台帳・前回の調査をサーバーに置く'}
+      </button>
+      <button type="button" className="btn" disabled={!ready || !!busy} onClick={onGetPhotos} data-testid="prev-get-all">
+        {busy.startsWith('前回の写真') ? `受け取り中…${busy.slice(5)}` : '前回の写真をすべて端末に入れる（Wi-Fi のある所で）'}
       </button>
       <p className="hint">
         事務所の PC で設定・原本・台帳を読み込み、「サーバーに置く」を押します。スマホでは「サーバーから受け取る」を押すだけで、同じものが使えます。台帳を置き直したら、スマホでもう一度受け取ってください（アプリで入力した内容は消えません）。
