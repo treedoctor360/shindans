@@ -23,3 +23,20 @@ test('ホーム画面に追加するための情報（マニフェスト）が�
   expect(m.display).toBe('standalone');
   expect(m.icons.length).toBeGreaterThan(0);
 });
+
+test('【再発防止】アプリを新しくしても、同じドメインの別のアプリの保存は消さない（このアプリの古い保存だけ消す）', async ({ page }) => {
+  await page.goto('./');
+  // サービスワーカーが動き出す前に、別のアプリの保存と、このアプリの古い版の保存を作っておく
+  await page.evaluate(async () => {
+    await caches.open('other-app-v3');
+    await caches.open('shindans-v0');
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  });
+  await page.reload();
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await expect
+    .poll(() => page.evaluate(() => caches.keys()))
+    .toEqual(expect.arrayContaining(['other-app-v3']));
+  await expect.poll(async () => (await page.evaluate(() => caches.keys())).includes('shindans-v0')).toBe(false);
+});
