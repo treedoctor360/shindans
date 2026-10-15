@@ -222,3 +222,18 @@ html,body,#root{height:100%;margin:0}
 .prev-karte{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:8px}
 .prev-karte h3{margin:0;font-size:14px}
 .prev-karte h3 small{font-weight:400;color:var(--muted)}
+
+/* 入力画面の本体（スマホでは縦に1列） */
+fieldset.form-body{gap:14px}
+
+/* PC など広い画面：横幅を広げ、欄を2列（一覧は3列）に並べる */
+@media (min-width: 960px){
+  .app{max-width:1180px}
+  .tabs-in{max-width:1180px}
+  .view{padding:18px 24px 28px}
+  fieldset.form-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+  .view.settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+  .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .prev-photos{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+  .savebar{max-width:560px;margin:0 auto;width:100%}
+}

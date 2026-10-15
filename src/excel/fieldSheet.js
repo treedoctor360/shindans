@@ -309,7 +309,12 @@ export async function exportFieldSheet(templateBuffer, pages, cfg, { title = '' 
       };
       // 番号（＋前回の特記）・樹種（＋状態・行ごとの調査記録）。未入力の木も書く
       ws.getCell(`${c.treeNo}${r}`).value = {
-        richText: [{ text: half(t.treeNo), font: { name: fs.font, size: 11 } }, ...(t.prevNote ? [{ text: `\n${fs.prevLabel}${t.prevNote}`, font: small }] : [])],
+        richText: [
+          { text: half(t.treeNo), font: { name: fs.font, size: 11 } },
+          ...(t.prevNote ? [{ text: `\n${fs.prevLabel}${t.prevNote}`, font: small }] : []),
+          // 前回の調査の印（例：前回に詳しい診断をした木）。出力の前に t.prevMarks を付けておく
+          ...(t.prevMarks?.length ? [{ text: `\n${t.prevMarks.join('・')}`, font: { ...small, bold: true } }] : []),
+        ],
       };
       own(ws.getCell(`${c.treeNo}${r}`)).alignment = { vertical: 'top', wrapText: true };
       const statusLabel = fs.statusLabels?.[t.status];
@@ -376,6 +381,8 @@ export async function verifyFieldSheet(outBuffer, templateBuffer, pages, cfg) {
       const no = half(t.treeNo);
       if (firstLine(`${c.treeNo}${r}`) !== no) errs.push(`${label} ${r}行目：樹木番号が「${firstLine(`${c.treeNo}${r}`)}」（正しくは${no}）`);
       if (firstLine(`${c.species}${r + 1}`) !== (t.species || '')) errs.push(`${label} ${no}：樹種が「${firstLine(`${c.species}${r + 1}`)}」`);
+      const noCell = String(cellValue(ws.getCell(`${c.treeNo}${r}`)));
+      for (const m of t.prevMarks || []) if (!noCell.includes(m)) errs.push(`${label} ${no}：前回の印「${m}」がありません`);
       if (!t.done) {
         for (const oc of fs.optionCols) {
           const a = `${oc.col}${r}`;

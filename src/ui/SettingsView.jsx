@@ -71,7 +71,7 @@ export default function SettingsView({ state, update, config, setConfig, toast }
   };
 
   return (
-    <section className="view">
+    <section className="view settings">
       <div className="sec">
         <h2>調査情報</h2>
         <div className="row">

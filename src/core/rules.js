@@ -101,8 +101,8 @@ export function alertsOf(tree, cfg) {
     a.push({
       id: 'ledgerDone',
       lv: 'info',
-      msg: `台帳で入力済みの木です（${monthDay(tree.ledgerDate)} ${tree.ledgerInspector || ''}）。値は台帳から読み込んだもので、変更できません。`,
-      acts: [{ type: 'resurvey', label: '再調査として入力し直す' }],
+      msg: `この木は台帳ですでに調査済みです（${monthDay(tree.ledgerDate)} ${tree.ledgerInspector || ''}）。表示しているのは台帳の値で、ここでは変更できません。もう一度調べ直すときだけ、下のボタンを押してください。`,
+      acts: [{ type: 'resurvey', label: '調べ直す（再調査として入力する）' }],
     });
   if (tree.ledgerDuplicate)
     a.push({
@@ -115,8 +115,8 @@ export function alertsOf(tree, cfg) {
     a.push({
       id: 'appBackup',
       lv: 'warn',
-      msg: `この木は${monthDay(tree.appBackup.date)}にアプリでも入力されていましたが、台帳の入力済みを正としました。アプリの入力は控えとして残しています。`,
-      acts: [{ type: 'useApp', label: 'アプリの入力に戻す' }],
+      msg: `この木は${monthDay(tree.appBackup.date)}にアプリでも入力しましたが、後から読み込んだ台帳にも調査結果が入っていました。いまは台帳の方を表示しています。アプリで入力した内容は消さずに取ってあります。`,
+      acts: [{ type: 'useApp', label: 'アプリで入力した内容を使う' }],
     });
   if (isLocked(tree, cfg))
     a.push({

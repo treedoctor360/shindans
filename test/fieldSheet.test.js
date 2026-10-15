@@ -100,6 +100,20 @@ describe('野帳の出力', () => {
     expect(tags.some((t) => t.startsWith('AB002'))).toBe(false);
   });
 
+  it('前回の調査の印を番号の欄に書く。印が消えていたら照合で見つける', async () => {
+    const tpl = await makeTemplate();
+    const pages = buildPages([doneTree('AB001', { prevMarks: ['前回詳(2090)'] }), todo('AB002', { prevNote: '前の特記', prevMarks: ['前回詳(2090)'] })], cfg);
+    const r = await exportFieldSheet(tpl, pages, cfg);
+    expect(r.errors).toEqual([]);
+    const ws = (await load(r.buffer)).worksheets[0];
+    expect(cellValue(ws.getCell('A4'))).toBe('AB001\n前回詳(2090)');
+    expect(cellValue(ws.getCell('A6'))).toBe('AB002\n前回:前の特記\n前回詳(2090)');
+    // 印のない出力を、印がある前提で照合すると食い違いになる
+    const plain = await exportFieldSheet(tpl, buildPages([doneTree('AB001'), todo('AB002')], cfg), cfg);
+    const errs = await verifyFieldSheet(plain.buffer, tpl, pages, cfg);
+    expect(errs.filter((e) => e.includes('前回の印'))).toHaveLength(2);
+  });
+
   it('罫線の色「自動」を付け直す。2枚目以降も原本と同じ罫線になる', async () => {
     const pages = buildPages(['A1', 'A2', 'A3', 'A4'].map((n) => doneTree(n)), cfg);
     const r = await exportFieldSheet(await makeTemplate(), pages, cfg);
