@@ -7,6 +7,8 @@ import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
 import { loadLedgerFile, loadTemplate } from '../store/state.js';
 import { unsentCount } from '../store/sync.js';
 import { treesForDb } from '../store/review.js';
+import { fieldSheetMarks, loadIndex } from '../store/previous.js';
+import { karteSpecs } from '../excel/karte.js';
 import { activeGroup } from './ListView.jsx';
 import { todayYmd } from './SettingsView.jsx';
 
@@ -86,13 +88,18 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
     run('野帳の出力', async () => {
       const tpl = await loadTemplate();
       if (!tpl) throw new Error('野帳の原本がありません。「設定」で読み込んでください');
-      const pages = buildPages(groupTrees, cfg);
+      // 前回の調査の印（前回に詳しい診断をした木など）を付けてから用紙に分ける
+      const index = await loadIndex();
+      const specs = karteSpecs(cfg);
+      const marked = groupTrees.map((t) => ({ ...t, prevMarks: fieldSheetMarks(t, index, cfg, specs) }));
+      const pages = buildPages(marked, cfg);
       const r = await exportFieldSheet(tpl.buffer.slice(0), pages, cfg, { title: gname.replace(/^\[.*?\]\s*/, '') });
       if (r.errors.length) return setCheck({ title: '野帳の出力検査', errors: r.errors });
       const sheet = cfg.dbFormat.sheets.find((s) => s.type === groupTrees[0]?.siteType);
       download(`野帳_${safeName(groupTrees[0]?.[sheet?.identify]) || '野帳'}_${yymmdd()}.xlsx`, r.buffer);
       const nDone = groupTrees.filter((t) => t.done).length;
-      toast(`検査OK（${pages.length}枚・入力済み${nDone}本の全項目が一致）。保存しました`);
+      const nMarked = marked.filter((t) => t.prevMarks.length).length;
+      toast(`検査OK（${pages.length}枚・入力済み${nDone}本の全項目が一致${nMarked ? `・前回の印${nMarked}本` : ''}）。保存しました`);
     });
 
   const onDb = () =>

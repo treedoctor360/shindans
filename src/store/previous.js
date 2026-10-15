@@ -85,6 +85,20 @@ export function prevOf(tree, index, cfg) {
   return { kartes, speciesMismatch };
 }
 
+// 野帳に書く前回の印（設定のカルテの種類に fieldSheetMark があるものだけ。例「前回初期(2021)」）
+export function fieldSheetMarks(tree, index, cfg, specs) {
+  const hit = prevOf(tree, index, cfg);
+  if (!hit || hit.speciesMismatch) return [];
+  return hit.kartes
+    .map((k) => {
+      const mark = specs.find((s) => s.id === k.kind)?.fieldSheetMark;
+      if (!mark) return '';
+      const y = String(k.date || '').slice(0, 4);
+      return /^\d{4}$/.test(y) ? `${mark}(${y})` : mark;
+    })
+    .filter(Boolean);
+}
+
 // ---------- 端末内の保存 ----------
 
 // 画面に「前回のデータが変わった」と知らせる（読み直してもらう）

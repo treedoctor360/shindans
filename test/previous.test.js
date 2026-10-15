@@ -9,6 +9,7 @@ import { idbReset } from '../src/store/idb.js';
 import {
   buildPrevious,
   clearPrevious,
+  fieldSheetMarks,
   getPreviousIndex,
   getPreviousPhotos,
   loadAllPrevious,
@@ -127,6 +128,15 @@ describe('まとめて、木と結び付ける', () => {
     expect(prevOf(park({ treeNo: 'AB001', species: '' }), index, cfg).speciesMismatch).toBe(false); // 樹種未入力は比べない
     expect(prevOf(park({ treeNo: 'AB002', parkCode: '' }), index, cfg)).not.toBeNull(); // 番号だけで1つに決まる
     expect(prevKey(' K01 ', 'ab001')).toBe('K01|AB001');
+  });
+
+  it('野帳に書く前回の印：印の設定がある種類のカルテだけ、年を付けて。樹種が違う木には付けない', async () => {
+    const { index } = buildPrevious(await read([{ no: 'AB001' }, { no: 'AB001', kind: 'place' }]), 'now', order);
+    const specs = cfg.previous.kartes;
+    expect(fieldSheetMarks(park({ treeNo: 'AB001', species: 'テストノキ' }), index, cfg, specs)).toEqual(['前回詳(2090)']);
+    expect(fieldSheetMarks(park({ treeNo: 'AB001', species: 'ちがう木' }), index, cfg, specs)).toEqual([]);
+    expect(fieldSheetMarks(park({ treeNo: 'AB009' }), index, cfg, specs)).toEqual([]);
+    expect(fieldSheetMarks(park({ treeNo: 'AB001' }), null, cfg, specs)).toEqual([]);
   });
 
   it('以前の形（版1）の要点・写真も読める', () => {

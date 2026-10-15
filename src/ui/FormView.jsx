@@ -36,21 +36,41 @@ function Seg({ field, opts, value, onPress, disabled, className = '', labels }) 
   );
 }
 
-// 注意・提案の一覧
-function Alerts({ list, onAct }) {
+// 押す前に確かめるボタン（取り消しにくい操作）と、そのときの説明
+const CONFIRM = {
+  resurvey: '台帳の値を下書きにして、この木をアプリで入力し直します。保存すると、一覧表にはアプリで入力した値が書き込まれます（元の台帳のファイルは変わりません）。',
+  useApp: '台帳の値の代わりに、アプリで入力した内容を使います。一覧表にはアプリで入力した値が書き込まれます（元の台帳のファイルは変わりません）。',
+};
+
+// 注意・提案の一覧。asking：確かめ中のボタン { alertId, act }
+function Alerts({ list, onAct, asking, onAsk, onCancel }) {
   return (
     <div className="alerts">
       {list.map((a) => (
         <div key={a.id} className={`alert ${a.lv}`} data-alert={a.id}>
           <span>{a.msg}</span>
-          {a.acts?.length > 0 && (
+          {asking?.alertId === a.id ? (
+            <div className="confirm" data-testid="confirm-act">
+              <b>{CONFIRM[asking.act.type]}よろしいですか？</b>
+              <div className="acts">
+                <button type="button" className="btn fill" onClick={() => onAct(a, asking.act)} data-testid="confirm-yes">
+                  {asking.act.label}
+                </button>
+                <button type="button" className="btn" onClick={onCancel} data-testid="confirm-no">
+                  やめる
+                </button>
+              </div>
+            </div>
+          ) : (
+            a.acts?.length > 0 && (
             <div className="acts">
               {a.acts.map((act) => (
-                <button key={act.label} type="button" className="btn" onClick={() => onAct(a, act)}>
+                <button key={act.label} type="button" className="btn" onClick={() => (CONFIRM[act.type] ? onAsk(a, act) : onAct(a, act))}>
                   {act.label}
                 </button>
               ))}
             </div>
+            )
           )}
         </div>
       ))}
@@ -61,6 +81,8 @@ function Alerts({ list, onAct }) {
 export default function FormView({ state, update, config: cfg, toast, send }) {
   const [showAllChips, setShowAllChips] = useState(false);
   const [missingAsk, setMissingAsk] = useState(null); // 保存しようとしたときの未入力の一覧
+  const [asking, setAsking] = useState(null); // 確かめ中のボタン { alertId, act }
+  const [undo, setUndo] = useState(null); // 直前の操作を取り消すための、押す前の木 { treeId, before, label }
 
   if (!cfg || !state.trees.length) {
     return (
@@ -92,7 +114,9 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   };
 
   const onAct = (a, act) => {
-    update((s) => pressAlertAction({ ...s, currentId: t.id }, t.id, act, a.id, cfg));
+    setAsking(null);
+    if (CONFIRM[act.type]) setUndo({ treeId: t.id, before: t, label: act.label });
+    update((s) => pressAlertAction({ ...s, currentId: t.id }, t.id, act, a.id, cfg), { now: true });
     if (act.type === 'addNote') toast('特記事項に理由を入れました。必要なら書き換えてください');
     if (act.type === 'resurvey') toast('再調査として入力できるようにしました（台帳の値を下書きにしています）');
     if (act.type === 'useApp') toast('アプリの入力に戻しました');
@@ -155,7 +179,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
       <PrevPanel t={t} state={state} config={cfg} toast={toast} />
       {officeView && <p className="hint">事務の端末では入力内容を直せません。直してほしいところは付箋の修正案で伝えます。</p>}
 
-      <fieldset disabled={readOnly} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <fieldset disabled={readOnly} className="form-body">
         <div className="sec">
           <h2>樹木</h2>
           <div className="hint">{place}</div>
@@ -450,7 +474,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
           ))}
         </div>
 
-        <Alerts list={otherAlerts} onAct={onAct} />
+        <Alerts list={otherAlerts} onAct={onAct} asking={asking} onAsk={(a, act) => setAsking({ alertId: a.id, act })} onCancel={() => setAsking(null)} />
 
         <div className="sec">
           <h2>写真（デジカメで撮影）</h2>
@@ -476,7 +500,26 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
         </div>
       </fieldset>
 
-      <Alerts list={topAlerts} onAct={onAct} />
+      {undo?.treeId === t.id && (
+        <div className="alert info" data-testid="undo">
+          <span>「{undo.label}」を行いました。</span>
+          <div className="acts">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                update((s) => updateTree(s, undo.treeId, () => undo.before), { now: true });
+                setUndo(null);
+                toast('取り消しました（押す前の状態に戻しました）');
+              }}
+              data-testid="undo-btn"
+            >
+              取り消す（押す前に戻す）
+            </button>
+          </div>
+        </div>
+      )}
+      <Alerts list={topAlerts} onAct={onAct} asking={asking} onAsk={(a, act) => setAsking({ alertId: a.id, act })} onCancel={() => setAsking(null)} />
       <div className="savebar">
         {missingAsk && missing.length > 0 ? (
           <div className="alert warn" role="alert">

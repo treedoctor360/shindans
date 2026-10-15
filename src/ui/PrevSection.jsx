@@ -138,7 +138,13 @@ export default function PrevSection({ config: cfg, toast }) {
             ))}
         </>
       ) : (
-        <p className="hint">設定ファイルにカルテの読み方（previous.kartes）がないため、使えません。</p>
+        <div className="alert warn" data-testid="prev-no-spec">
+          <span>
+            {cfg
+              ? `いま使っている設定ファイル（${cfg.job?.title || '名前なし'}・版${cfg.version}）には、カルテの読み方（previous.kartes）が入っていません。カルテの読み方を入れた新しい設定ファイルを、上の「設定ファイル（JSON）を読み込む」で読み込み直してください。`
+              : '先に設定ファイルを読み込んでください。'}
+          </span>
+        </div>
       )}
     </div>
   );
