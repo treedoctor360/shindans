@@ -14,6 +14,13 @@ test('調べ直すボタン：確かめる → やめる／する → 取り消�
   await page.click('[data-tree=AB001]');
   await expect(page.locator('#f-height')).toBeDisabled(); // 台帳の値は直せない
   await expect(page.locator('[data-alert=ledgerDone]')).toContainText('台帳ですでに調査済み');
+  // 押せないが読める：全体は薄くせず、選んだ項目はそのままの濃さ・選ばなかった項目だけ薄い
+  await expect(page.locator('[data-testid=readonly-note]')).toContainText('表示のみ');
+  const opacity = (sel) => page.locator(sel).first().evaluate((el) => getComputedStyle(el).opacity);
+  expect(await opacity('fieldset.form-body')).toBe('1');
+  expect(await opacity('[data-group=lean] .seg-b.on')).toBe('1');
+  expect(Number(await opacity('[data-group=lean] .seg-b:not(.on)'))).toBeLessThan(0.5);
+  expect(await page.locator('#f-height').evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
 
   // 押すと、まず確かめる。「やめる」なら何も変わらない
   await page.click('text=調べ直す（再調査として入力する）');

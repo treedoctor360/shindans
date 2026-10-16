@@ -237,3 +237,18 @@ fieldset.form-body{gap:14px}
   .prev-photos{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
   .savebar{max-width:560px;margin:0 auto;width:100%}
 }
+
+/* 直せない木（台帳で調査済み・事務の端末で見る提出済みの木）：押せないが、入力した内容ははっきり読めるようにする
+   ・全体を薄くしない。選んだ項目はそのままの濃さで、選ばなかった項目だけ薄くする
+   ・入力欄の文字は通常の濃さ（iPhone の Safari は無効な入力欄の文字を薄くするので、文字色を指定し直す） */
+fieldset.form-body:disabled{opacity:1}
+fieldset.form-body:disabled fieldset:disabled{opacity:1}
+fieldset.form-body:disabled input,
+fieldset.form-body:disabled textarea,
+fieldset.form-body:disabled select{color:var(--ink);-webkit-text-fill-color:var(--ink);opacity:1;background:var(--sunk);border-style:dashed}
+fieldset.form-body:disabled .seg-b{opacity:.3;cursor:default}
+fieldset.form-body:disabled .seg-b.on{opacity:1}
+fieldset.form-body:disabled .chip{cursor:default}
+fieldset.form-body:disabled .chip:not(.on){opacity:.3}
+fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
+.readonly-note{display:flex;gap:8px;align-items:center;background:var(--sunk);border:1px dashed var(--line);border-radius:8px;padding:8px 11px;font-size:13px}
