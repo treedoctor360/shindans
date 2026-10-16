@@ -177,7 +177,17 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
 
       <ReviewPanel t={t} state={state} update={update} config={cfg} toast={toast} send={send} />
       <PrevPanel t={t} state={state} config={cfg} toast={toast} />
-      {officeView && <p className="hint">事務の端末では入力内容を直せません。直してほしいところは付箋の修正案で伝えます。</p>}
+      {officeView && (
+        <div className="readonly-note" data-testid="readonly-note">
+          表示のみ：事務の端末では入力内容を直せません。直してほしいところは付箋の修正案で伝えます。
+        </div>
+      )}
+      {t.source === 'ledger' && (
+        <div className="readonly-note" data-testid="readonly-note">
+          表示のみ：台帳で調査済みの木です（{t.ledgerDate ? `${t.ledgerDate.replace(/-/g, '/')} ` : ''}
+          {t.ledgerInspector || ''}）。調べ直すときは、下の「調べ直す」を押します。
+        </div>
+      )}
 
       <fieldset disabled={readOnly} className="form-body">
         <div className="sec">
