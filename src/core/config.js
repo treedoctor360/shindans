@@ -5,7 +5,7 @@
 import { RULE_TYPES } from './rules.js';
 
 // このアプリが読める設定の版。形式を変えたら上げる
-export const CONFIG_VERSION = 5; // 2: dbFormat（台帳の列）/ 3: 一覧表への書き戻し / 4: fieldSheet（野帳）/ 5: 入力画面の選択肢
+export const CONFIG_VERSION = 6; // 2: dbFormat（台帳の列）/ 3: 一覧表への書き戻し / 4: fieldSheet（野帳）/ 5: 入力画面の選択肢 / 6: initialSurvey（詳しい診断のデータ入力用ブック。省略可）
 
 const LEVELS = ['info', 'warn', 'danger'];
 
@@ -120,6 +120,7 @@ export function validateConfig(cfg) {
   validateFieldSheet(cfg.fieldSheet, need);
   validateScreen(cfg, need);
   if (cfg.previous != null) validatePrevious(cfg.previous, need);
+  if (cfg.initialSurvey != null) validateInitialSurvey(cfg.initialSurvey, cfg, need);
 
   return { ok: e.length === 0, errors: e };
 }
@@ -186,6 +187,53 @@ function validatePrevious(p, need) {
   });
   const ids = list.map((k) => k?.id);
   need(new Set(ids).size === ids.length, 'previous.kartes の id が重複しています');
+}
+
+// 詳しい診断（初期診断など）の設定（省略可。省略すると、その画面は出さない）
+//  book：データ入力用ブックの書式。シートごとに、どの書式（form）・どのシートの種類（siteType）か、
+//        見出しの行数・データの最初の行、項目ごとの列（col）と、確かめる見出し（header、正規表現・省略可）
+export const INITIAL_FORMS = ['initial', 'environment'];
+function validateInitialSurvey(s, cfg, need) {
+  if (!need(isObj(s), 'initialSurvey の形が違います')) return;
+  need(isStr(s.label), 'initialSurvey.label（画面に出す名前）がありません');
+  const b = s.book;
+  if (!need(isObj(b), 'initialSurvey.book（データ入力用ブックの書式）がありません')) return;
+  need(isStr(b.doneKey), 'initialSurvey.book.doneKey（入力済みの行を見分ける項目。例 treeNo）がありません');
+  if (!need(isArr(b.sheets) && b.sheets.length > 0, 'initialSurvey.book.sheets（シートの一覧）がありません')) return;
+  const siteTypes = isObj(cfg.dbFormat) && isArr(cfg.dbFormat.sheets) ? cfg.dbFormat.sheets.map((x) => x?.type) : [];
+  const seen = new Set();
+  b.sheets.forEach((sh, i) => {
+    const at = `initialSurvey.book.sheets[${i}]`;
+    if (!need(isObj(sh), `${at} の形が違います`)) return;
+    need(INITIAL_FORMS.includes(sh.form), `${at}.form は ${INITIAL_FORMS.join('・')} のどれかです`);
+    need(siteTypes.includes(sh.siteType), `${at}.siteType は dbFormat.sheets の type のどれかです`);
+    const id = `${sh.form}|${sh.siteType}`;
+    need(!seen.has(id), `${at}：同じ form・siteType のシートが2つあります`);
+    seen.add(id);
+    let reOk = isStr(sh.name);
+    if (reOk)
+      try {
+        new RegExp(sh.name);
+      } catch {
+        reOk = false;
+      }
+    need(reOk, `${at}.name（シート名の正規表現）が読めません`);
+    need(Number.isInteger(sh.headerRows) && sh.headerRows >= 1, `${at}.headerRows（見出しの行数）は1以上の整数にしてください`);
+    need(Number.isInteger(sh.dataRow) && sh.dataRow > sh.headerRows, `${at}.dataRow は見出しより後ろの行にしてください`);
+    if (!need(isObj(sh.columns) && isObj(sh.columns[b.doneKey]), `${at}.columns に ${b.doneKey} が必要です`)) return;
+    const cols = [];
+    for (const [k, c] of Object.entries(sh.columns)) {
+      if (!need(isObj(c) && isCol(c.col), `${at}.columns.${k} は { col: "AB", header?: "見出し" } の形にしてください`)) continue;
+      cols.push(c.col);
+      if (c.header == null) continue;
+      try {
+        new RegExp(c.header);
+      } catch {
+        need(false, `${at}.columns.${k}.header が正規表現として読めません`);
+      }
+    }
+    need(new Set(cols).size === cols.length, `${at}.columns の列が重複しています`);
+  });
 }
 
 // 新しい設定が正しければそれを、不正なら前の設定を使う

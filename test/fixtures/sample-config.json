@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "job": {
     "title": "架空の点検業務",
     "year": 2099
@@ -775,5 +775,102 @@
         "captionBelow": true
       }
     ]
+  },
+  "initialSurvey": {
+    "label": "詳しい診断",
+    "book": {
+      "doneKey": "treeNo",
+      "sheets": [
+        {
+          "form": "initial",
+          "siteType": "park",
+          "name": "^公園_詳しい診断$",
+          "headerRows": 4,
+          "dataRow": 5,
+          "columns": {
+            "serial": {
+              "col": "A",
+              "header": "^通し番号$"
+            },
+            "year": {
+              "col": "B",
+              "header": "^調査日/年$"
+            },
+            "month": {
+              "col": "C",
+              "header": "^月$"
+            },
+            "day": {
+              "col": "D",
+              "header": "^日$"
+            },
+            "inspector": {
+              "col": "E",
+              "header": "^調査者$"
+            },
+            "treeNo": {
+              "col": "F",
+              "header": "^基本情報/樹木番号$"
+            },
+            "code": {
+              "col": "G",
+              "header": "^コード$"
+            },
+            "species": {
+              "col": "H",
+              "header": "^樹種名$"
+            },
+            "b4": {
+              "col": "I",
+              "header": "^地上部の弱点/枝/枯れ枝$"
+            },
+            "b4Grade": {
+              "col": "J"
+            },
+            "b4Detail": {
+              "col": "K"
+            }
+          }
+        },
+        {
+          "form": "environment",
+          "siteType": "park",
+          "name": "^公園_周りの環境$",
+          "headerRows": 3,
+          "dataRow": 4,
+          "columns": {
+            "treeNo": {
+              "col": "A",
+              "header": "^樹木番号$"
+            },
+            "code": {
+              "col": "B",
+              "header": "^コード$"
+            },
+            "weather": {
+              "col": "C",
+              "header": "^生育条件/保護材/気象の影響$"
+            },
+            "stake": {
+              "col": "D",
+              "header": "^支柱の損傷$"
+            }
+          }
+        },
+        {
+          "form": "initial",
+          "siteType": "street",
+          "name": "^道路_詳しい診断$",
+          "headerRows": 4,
+          "dataRow": 5,
+          "columns": {
+            "treeNo": {
+              "col": "F",
+              "header": "樹木番号"
+            }
+          }
+        }
+      ]
+    }
   }
 }
