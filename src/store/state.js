@@ -34,6 +34,27 @@ export function initialState() {
   };
 }
 
+// 木の印（id）の修復：印がない木・ほかの木と同じ印の木に、新しい印を付ける
+//  印は端末の中で木を選ぶためだけに使う（送るデータには入らない）ので、付け直しても送受信には影響しない。
+//  印が欠けたり重なったりすると、一覧で押した木と違う木が開くおそれがあるため、読み込むたびに確かめる
+export function repairIds(trees) {
+  if (!Array.isArray(trees)) return trees;
+  const seen = new Set();
+  let n = 0;
+  return trees.map((t) => {
+    if (!t || typeof t !== 'object') return t;
+    let id = typeof t.id === 'string' && t.id ? t.id : '';
+    if (!id || seen.has(id)) {
+      do id = `fix:${++n}:${t.treeNo || ''}`;
+      while (seen.has(id));
+      seen.add(id);
+      return { ...t, id };
+    }
+    seen.add(id);
+    return t;
+  });
+}
+
 // この端末の印（ランダムな文字）
 const newDeviceId = () => Math.random().toString(36).slice(2, 10);
 
@@ -43,16 +64,19 @@ export function migrate(s) {
   if (!s || typeof s !== 'object') s = {};
   const server = { ...base.server, ...(s.server || {}) };
   if (!server.deviceId) server.deviceId = newDeviceId();
-  let trees = s.trees || base.trees;
+  let trees = repairIds(s.trees || base.trees);
   if ((s.stateVersion || 1) < 2 && Array.isArray(trees)) {
     // 版1から2へ：サーバーの保存の形が変わったので、アプリで入力した木は送り直す
     trees = trees.map((t) => (t && t.done && t.source === 'app' && !(t.rev > 0) ? { ...t, sent: false } : t));
     server.lastSeq = 0;
   }
+  // 開いていた木がない（印を直した・消えた）ときは、別の木を開かないよう一覧から始める
+  const keep = !s.currentId || (Array.isArray(trees) && trees.some((t) => t?.id === s.currentId));
   return {
     ...base,
     ...s,
     trees,
+    ...(keep ? {} : { currentId: '', view: s.view === 'form' ? 'list' : s.view }),
     session: { ...base.session, ...(s.session || {}) },
     user: { ...base.user, ...(s.user || {}) },
     stickies: s.stickies || {},

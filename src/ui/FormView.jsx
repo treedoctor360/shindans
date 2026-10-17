@@ -108,8 +108,9 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   // 削除した木は前後の移動に出さない（削除した木を開いているときだけ、その木を含める）
   const ts = treesOfGroup(state.trees, group, cfg).filter((x) => !x.deleted || x.id === state.currentId);
   let t = ts.find((x) => x.id === state.currentId);
-  // 選んだ木が見つからないときは、別の木を黙って開かない（別の木を書き換えてしまう事故を防ぐ）
-  if (!t && state.currentId) {
+  // 選んだ木がどこにもないときは、別の木を黙って開かない（別の木を書き換えてしまう事故を防ぐ）
+  //  公園・路線を切り替えた後など、選んだ木が別のまとまりにあるだけなら、今までどおり今のまとまりの未入力の木を開く
+  if (!t && state.currentId && !state.trees.some((x) => x.id === state.currentId)) {
     return (
       <section className="view">
         <div className="alert danger" data-testid="tree-missing">
@@ -126,7 +127,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
       </section>
     );
   }
-  if (!t) t = ts.find((x) => !x.done) || ts[0]; // 木を選んでいないとき（「入力」を押しただけ）は、未入力の木から
+  if (!t) t = ts.find((x) => !x.done) || ts[0]; // 木を選んでいないとき・別のまとまりに切り替えたときは、未入力の木から
   if (!t) return <section className="view"><p className="hint">木がありません。</p></section>;
 
   const idx = ts.indexOf(t);
