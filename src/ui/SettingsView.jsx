@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { bookCount } from '../store/initial.js';
 import { loadConfigText, importInitialBook, importLedger, saveTemplate } from '../store/state.js';
 import PrevSection from './PrevSection.jsx';
+import { diagnosticDump } from '../store/diagnose.js';
+import { APP_VERSION } from '../version.js';
 import ServerSection from './ServerSection.jsx';
 
 // 今日の日付 "2099-04-05"（端末の時刻で）
@@ -204,6 +206,26 @@ export default function SettingsView({ state, update, config, setConfig, toast }
       )}
 
       <PrevSection config={config} toast={toast} />
+
+      <div className="sec">
+        <h2>不具合を調べるとき</h2>
+        <button
+          type="button"
+          className="btn"
+          data-testid="diagnostic"
+          onClick={() => {
+            const json = JSON.stringify(diagnosticDump(state, config, APP_VERSION), null, 1);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+            a.download = `調べるためのデータ_${todayYmd().replace(/-/g, '')}.json`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+          }}
+        >
+          調べるためのデータを書き出す
+        </button>
+        <p className="hint">この端末の入力内容と状態を1つのファイルにします（合言葉は入りません）。おかしな動きがあったとき、開発の担当に送ってください。</p>
+      </div>
     </section>
   );
 }
