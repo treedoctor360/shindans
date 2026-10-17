@@ -6,6 +6,7 @@ import { validateConfig } from '../src/core/config.js';
 import { alertsOf } from '../src/core/rules.js';
 import { blankTree } from '../src/core/tree.js';
 import { mergeLedger, readLedger } from '../src/excel/ledger.js';
+import { isAddedTree } from '../src/store/actions.js';
 import { makeLedger } from './helpers/makeLedger.js';
 
 const cfg = structuredClone(cfgJson);
@@ -115,7 +116,9 @@ describe('【再発防止】台帳の木の番号が書き換えられた後に�
     const again = trees.filter((t) => t.treeNo === 'AB002');
     expect(again).toHaveLength(1); // 台帳の AB002 は作り直される
     const other = trees.find((t) => t.species === '別の木');
-    expect(other.ledgerRow).toBeUndefined(); // 台帳にない木は、台帳の行と結び付けない（追加した木として削除できる）
-    expect(other.order).toBeUndefined();
+    expect(other.ledgerGone).toBe(true); // 今の台帳にない木に印 → 追加した木と同じく削除できる
+    expect(isAddedTree(other)).toBe(true);
+    expect(isAddedTree(again[0])).toBe(false);
+    expect(again[0].ledgerGone).toBeUndefined();
   });
 });

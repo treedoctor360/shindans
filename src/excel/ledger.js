@@ -69,6 +69,7 @@ export function mergeLedger(trees, rows, cfg) {
   const f = cfg.dbFormat;
   const out = trees.map((t) => ({ ...t }));
   const byKey = new Map(out.map((t) => [treeKey(t.siteType, t.treeNo, t.dupIndex), t]));
+  const usedIds = new Set(out.map((t) => t.id));
   const seen = new Set();
   const countByNo = new Map(); // 番号ごとに、これまでに何行出てきたか
   const stats = { all: 0, done: 0, conflicts: 0, duplicates: [] };
@@ -89,7 +90,11 @@ export function mergeLedger(trees, rows, cfg) {
 
     let t = byKey.get(key);
     if (!t) {
-      t = blankTree({ id: `ledger:${key}`, treeNo: no, siteType: row.sheetType, dupIndex });
+      // 印（id）は、ほかの木と重ならないようにする（台帳の木の番号が書き換えられて、同じ印の木が残っていることがある）
+      let id = `ledger:${key}`;
+      for (let n = 2; usedIds.has(id); n++) id = `ledger:${key}#${n}`;
+      usedIds.add(id);
+      t = blankTree({ id, treeNo: no, siteType: row.sheetType, dupIndex });
       out.push(t);
       byKey.set(key, t);
     }
@@ -147,6 +152,13 @@ export function mergeLedger(trees, rows, cfg) {
     }
   }
 
+  // 台帳の行と結び付いていたのに、今の台帳にない木（番号が書き換えられた木・台帳から消えた行）に印を付ける。
+  //  この印の木は追加した木と同じく削除できる（actions.js の isAddedTree）。一覧表への書き戻しでは、行が見つからないとして止める
+  for (const t of out) {
+    if (!t.ledgerRow) continue;
+    if (seen.has(treeKey(t.siteType, t.treeNo, t.dupIndex))) delete t.ledgerGone;
+    else t.ledgerGone = true;
+  }
   // 台帳の並び順にそろえる（台帳にない木は元の順のまま後ろへ）
   const rank = (t, i) => (t.order && seen.has(treeKey(t.siteType, t.treeNo, t.dupIndex)) ? t.order : 1e6 + i);
   const sorted = out.map((t, i) => [rank(t, i), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
