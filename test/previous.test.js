@@ -43,6 +43,13 @@ describe('カルテを読む', () => {
     const t = r.trees[0];
     expect(t).toMatchObject({ kind: 'detail', title: '前回の詳しい診断', code: 'K01', placeName: '架空公園', species: 'テストノキ', date: '2090-09-01' });
     expect(t.inspector).toBe('試験 一郎(資格)・試験 二郎(資格)');
+    // 基本情報：設定の info の順に「見出し 値」。見出しの末尾の「：」は外す・title があればその名前
+    expect(t.info).toEqual([
+      { label: '調べた日', value: '2090-09-01' },
+      { label: '木の種類', value: 'テストノキ' },
+      { label: '植えた年', value: '1990' },
+      { label: '手入れ', value: '年に1回' },
+    ]);
     expect(t.items).toEqual([
       { part: '枝', item: '②折れた枝', result: '有', grade: 'C', detail: '1本、地上約5m' },
       { part: '幹', item: '①うろ', result: '有（大）', grade: 'E', detail: '地上0～1m、30×20cm' },

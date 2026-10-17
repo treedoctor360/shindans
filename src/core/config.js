@@ -174,6 +174,10 @@ function validatePrevious(p, need) {
     need(isStr(k.yesMark), `${at}.yesMark（「有」の印）が必要です`);
     need(k.match == null || isStr(k.match), `${at}.match は文字にしてください`);
     need(k.fieldSheetMark == null || isStr(k.fieldSheetMark), `${at}.fieldSheetMark（野帳に書く印）は文字にしてください`);
+    need(
+      k.info == null || (isArr(k.info) && k.info.every((x) => isObj(x) && isStr(x.label) && (x.title == null || isStr(x.title)) && (x.nth == null || (Number.isInteger(x.nth) && x.nth >= 1)))),
+      `${at}.info は { label, title?, nth? } の一覧にしてください`,
+    );
     need(strs(k.parts) && strs(k.photoCaptions) && strs(k.dropTexts), `${at} の parts・photoCaptions・dropTexts は文字の一覧にしてください`);
     need(
       k.summary == null || (isArr(k.summary) && k.summary.every((x) => isObj(x) && isStr(x.label) && (x.rows == null || (Number.isInteger(x.rows) && x.rows >= 1)))),

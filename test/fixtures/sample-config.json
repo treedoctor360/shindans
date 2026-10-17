@@ -718,7 +718,22 @@
         "dropTexts": [
           "飾り"
         ],
-        "fieldSheetMark": "前回詳"
+        "fieldSheetMark": "前回詳",
+        "info": [
+          {
+            "label": "調べた日：",
+            "title": "調べた日"
+          },
+          {
+            "label": "木の種類"
+          },
+          {
+            "label": "植えた年"
+          },
+          {
+            "label": "手入れ"
+          }
+        ]
       },
       {
         "id": "place",

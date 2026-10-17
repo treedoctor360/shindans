@@ -252,3 +252,7 @@ fieldset.form-body:disabled .chip{cursor:default}
 fieldset.form-body:disabled .chip:not(.on){opacity:.3}
 fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .readonly-note{display:flex;gap:8px;align-items:center;background:var(--sunk);border:1px dashed var(--line);border-radius:8px;padding:8px 11px;font-size:13px}
+.prev-info{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0;font-size:13px}
+.prev-info div{display:flex;gap:6px}
+.prev-info dt{color:var(--muted)}
+.prev-info dd{margin:0}

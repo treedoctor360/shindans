@@ -11,6 +11,7 @@
 //  photoCaptions … 写真・図の見出し（写真がどの見出しの下にあるかで、写真の名前にする）
 //  captionBelow … true なら、写真のすぐ下の文字（同じ列の範囲）があれば、それを写真の名前にする
 //  dropTexts … 評価の欄から除く言葉（表の飾りの言葉など）
+//  info    … 画面に「見出し 値」で並べる基本情報（見出しの文字の右 nth 番目の値。title で表示の名前を変えられる）
 //
 // 結合セルは左上のセルだけを読む（同じ文字を何度も拾わないように）。
 // 「□無 ■有」のようなチェック欄は、■の付いた言葉だけを取り出す。
@@ -106,6 +107,17 @@ export function readKarteSheet(ws, wb, specs) {
   }
   if (!f.treeNo) return null;
 
+  // 基本情報（例：植栽年・管理履歴）。見つからない項目は出さない
+  const info = [];
+  for (const def of spec.info || []) {
+    let v = null;
+    for (const { cells } of rows) {
+      v = valueRight(cells, def.label, def.nth || 1);
+      if (v != null) break;
+    }
+    if (v) info.push({ label: def.title || def.label.replace(/[：:]$/, ''), value: serialDate(checked(v)) });
+  }
+
   // 弱点（「有」の行だけ）
   const items = [];
   let part = '';
@@ -192,6 +204,7 @@ export function readKarteSheet(ws, wb, specs) {
     species: f.species || '',
     date: f.date ? serialDate(f.date) : '',
     inspector: f.inspector || '',
+    info,
     items,
     summary,
     photos,
