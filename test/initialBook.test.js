@@ -53,9 +53,9 @@ describe('データ入力用ブックの読み込み', () => {
       [8, false],
       [9, false],
     ]);
-    expect(main.rows[0].values).toMatchObject({ serial: 1, year: 2099, month: 4, day: 5, treeNo: 'AB009', b4: '有（小）', b4Grade: '', b4Detail: '1本、地上2m' });
+    expect(main.rows[0].values).toMatchObject({ serial: 1, year: 2099, month: 4, day: 5, treeNo: 'AB009', parkCode: 'K01', b4: '有（小）', b4Grade: '', b4Detail: '1本、地上2m' });
     expect(emptyRowCount(main)).toBe(3);
-    expect(env.rows.filter((x) => x.filled).map((x) => x.values)).toEqual([{ treeNo: 'AB009', code: 'K01', weather: '無', stake: '支柱なし' }]);
+    expect(env.rows.filter((x) => x.filled).map((x) => x.values)).toEqual([{ treeNo: 'AB009', parkCode: 'K01', weather: '無', stake: '支柱なし' }]);
     expect(emptyRowCount(env)).toBe(3); // 「無」が先に入っていても、番号がなければ空き行
   });
 
@@ -65,14 +65,13 @@ describe('データ入力用ブックの読み込み', () => {
     expect(r.sheets[1].options).toEqual({ stake: ['支柱なし', '無', '有'] });
   });
 
-  it('入力済みの木の一覧（全角の番号も半角で数える。同じ番号の2行は両方）', async () => {
+  it('入力済みの木の一覧（場所のコードと番号で見分ける。全角の番号も半角で数える）', async () => {
     const r = await readInitialBook(await makeInitialBook(), cfg);
-    const idx = filledIndex(r, 'treeNo');
-    expect(idx.get('initial|park|AB009')).toEqual([
-      { sheet: '公園_詳しい診断', rowNumber: 5 },
-      { sheet: '公園_詳しい診断', rowNumber: 6 },
-    ]);
-    expect(idx.get('environment|park|AB009')).toHaveLength(1);
+    const idx = filledIndex(r, cfg);
+    // 同じ番号でも場所のコードが違えば別の木
+    expect(idx.get('initial|park|K01|AB009')).toEqual([{ sheet: '公園_詳しい診断', rowNumber: 5 }]);
+    expect(idx.get('initial|park|K09|AB009')).toEqual([{ sheet: '公園_詳しい診断', rowNumber: 6 }]);
+    expect(idx.get('environment|park|K01|AB009')).toHaveLength(1);
   });
 
   it('見出しが設定と違えば（列がずれているなど）知らせる', async () => {

@@ -26,8 +26,8 @@ var HISTORY_SHEET = 'history';
 // 列：0 ID / 1 年度 / 2 種類 / 3 木のID / 4 版 / 5 通し番号 / 6 更新日時（端末） / 7 受信日時 / 8 端末 / 9 人 / 10 データ
 var HEADER = ['ID', '年度', '種類', '木のID', '版', '通し番号', '更新日時', '受信日時', '端末', '人', 'データ'];
 var HISTORY_HEADER = ['受信日時', 'ID', '種類', '木のID', '版', '人', '端末', 'データ'];
-var KINDS = ['tree', 'sticky', 'confirm'];
-var FILE_KINDS = ['config', 'template', 'ledger', 'prevIndex'];
+var KINDS = ['tree', 'initial', 'sticky', 'confirm']; // initial：詳しい診断（初期診断など）の入力内容
+var FILE_KINDS = ['config', 'template', 'ledger', 'prevIndex', 'initialBook']; // initialBook：詳しい診断のデータ入力用ブック
 // 前回の写真は場所ごとに1ファイル（prevPhotos:p1, prevPhotos:p2 …）
 function isFileKind(kind) {
   return FILE_KINDS.indexOf(kind) >= 0 || /^prevPhotos:p[0-9]{1,4}$/.test(String(kind));

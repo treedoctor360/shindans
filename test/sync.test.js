@@ -334,11 +334,11 @@ describe('一覧表に書き込む木', () => {
   });
 });
 
-describe('端末の状態の引き継ぎ（版1 → 版2）', () => {
+describe('端末の状態の引き継ぎ（版1 → 今の版）', () => {
   it('付箋・確定・使う人の欄を足し、アプリで入力した木は新しいサーバーへ送り直す', () => {
     const old = { stateVersion: 1, trees: [P('a', { done: true, sent: true }), P('b', { source: 'ledger', done: true }), P('c')], server: { url: 'u' } };
     const s = migrate(old);
-    expect(s).toMatchObject({ stickies: {}, confirms: {}, user: { role: 'surveyor', name: '' }, stateVersion: 2 });
+    expect(s).toMatchObject({ stickies: {}, confirms: {}, user: { role: 'surveyor', name: '' }, stateVersion: 3, initials: [] });
     expect(s.server.lastSeq).toBe(0);
     expect(s.trees.map((t) => !!t.sent)).toEqual([false, false, false]);
     expect(s.trees[1].source).toBe('ledger');

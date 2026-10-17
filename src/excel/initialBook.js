@@ -88,13 +88,18 @@ function readSheet(ws, spec, doneKey) {
   return { spec, name: ws.name, errors, rows, options };
 }
 
-// 入力済みの行の一覧（「書式|シートの種類|樹木番号」→ 行の一覧）。同じ番号が2行あれば両方入る
-export function filledIndex(result, doneKey) {
+// 入力済みの行の一覧（「書式|シートの種類|場所のコード|樹木番号」→ 行の一覧）。同じ鍵が2行あれば両方入る
+//  場所のコードの項目名は、台帳と同じ（cfg.dbFormat.sheets の code。例 parkCode）。違う場所の同じ番号は別の木
+export const bookKey = (form, siteType, code, treeNo) =>
+  `${form}|${siteType || ''}|${toHalf(String(code ?? '')).trim()}|${toHalf(String(treeNo ?? '')).trim()}`;
+export function filledIndex(result, cfg) {
+  const doneKey = cfg.initialSurvey.book.doneKey;
   const index = new Map();
   for (const s of result.sheets) {
+    const codeKey = cfg.dbFormat.sheets.find((x) => x.type === s.spec.siteType)?.code;
     for (const row of s.rows) {
       if (!row.filled) continue;
-      const k = `${s.spec.form}|${s.spec.siteType}|${toHalf(String(row.values[doneKey])).trim()}`;
+      const k = bookKey(s.spec.form, s.spec.siteType, codeKey ? row.values[codeKey] : '', row.values[doneKey]);
       if (!index.has(k)) index.set(k, []);
       index.get(k).push({ sheet: s.name, rowNumber: row.rowNumber });
     }

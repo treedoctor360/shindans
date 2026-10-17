@@ -193,9 +193,19 @@ function validatePrevious(p, need) {
 //  book：データ入力用ブックの書式。シートごとに、どの書式（form）・どのシートの種類（siteType）か、
 //        見出しの行数・データの最初の行、項目ごとの列（col）と、確かめる見出し（header、正規表現・省略可）
 export const INITIAL_FORMS = ['initial', 'environment'];
+const INHERIT_CALC = ['@girth', '@heightRatio', '@branchRatio'];
 function validateInitialSurvey(s, cfg, need) {
   if (!need(isObj(s), 'initialSurvey の形が違います')) return;
   need(isStr(s.label), 'initialSurvey.label（画面に出す名前）がありません');
+  // 引き継ぎ（省略可）：{ 項目: "簡易診断の項目名" か { from, map } }。from が「@」で始まるものは計算した値
+  if (s.inherit != null)
+    need(
+      isObj(s.inherit) &&
+        Object.values(s.inherit).every(
+          (x) => (isStr(x) || (isObj(x) && isStr(x.from) && (x.map == null || isObj(x.map)))) && (!String(x?.from ?? x).startsWith('@') || INHERIT_CALC.includes(x?.from ?? x)),
+        ),
+      `initialSurvey.inherit は { 項目: "簡易診断の項目名" か { from, map } } の形にしてください（計算した値は ${INHERIT_CALC.join('・')}）`,
+    );
   const b = s.book;
   if (!need(isObj(b), 'initialSurvey.book（データ入力用ブックの書式）がありません')) return;
   need(isStr(b.doneKey), 'initialSurvey.book.doneKey（入力済みの行を見分ける項目。例 treeNo）がありません');

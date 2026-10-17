@@ -83,6 +83,8 @@ exports[`答え合わせ：確認の流れ > 付箋を付ける・返事をす�
     },
     "currentId": "",
     "group": "",
+    "initialBookInfo": null,
+    "initials": [],
     "ledgerInfo": null,
     "server": {
       "deviceId": "dev1",
@@ -94,7 +96,7 @@ exports[`答え合わせ：確認の流れ > 付箋を付ける・返事をす�
       "date": "",
       "inspector": "",
     },
-    "stateVersion": 2,
+    "stateVersion": 3,
     "stickies": {
       "1fy700adk4fzzzx": {
         "answer": null,
@@ -732,6 +734,8 @@ exports[`答え合わせ：送受信 > 受け取った記録の当てはめ（�
     },
     "currentId": "",
     "group": "",
+    "initialBookInfo": null,
+    "initials": [],
     "ledgerInfo": null,
     "server": {
       "deviceId": "dev1",
@@ -743,7 +747,7 @@ exports[`答え合わせ：送受信 > 受け取った記録の当てはめ（�
       "date": "",
       "inspector": "",
     },
-    "stateVersion": 2,
+    "stateVersion": 3,
     "stickies": {
       "n1": {
         "answer": null,
@@ -1237,6 +1241,8 @@ exports[`答え合わせ：送受信 > 送った結果の当てはめ（成功�
     },
     "currentId": "",
     "group": "",
+    "initialBookInfo": null,
+    "initials": [],
     "ledgerInfo": null,
     "server": {
       "deviceId": "dev1",
@@ -1248,7 +1254,7 @@ exports[`答え合わせ：送受信 > 送った結果の当てはめ（成功�
       "date": "",
       "inspector": "",
     },
-    "stateVersion": 2,
+    "stateVersion": 3,
     "stickies": {
       "s1": {
         "answer": null,

@@ -1,7 +1,8 @@
 // 設定画面の「サーバー」欄：URL と合言葉、接続の確認、設定・原本・台帳の受け渡し
 import { useState } from 'react';
 import { idbGet } from '../store/idb.js';
-import { importLedger, loadConfigText, saveTemplate } from '../store/state.js';
+import { bookCount } from '../store/initial.js';
+import { importInitialBook, importLedger, loadConfigText, saveTemplate } from '../store/state.js';
 import { callServer, getFile, putFile } from '../store/sync.js';
 import { getPreviousIndex, getPreviousPhotos, loadIndex, putPrevious } from '../store/previous.js';
 import { todayYmd } from './SettingsView.jsx';
@@ -40,9 +41,11 @@ export default function ServerSection({ state, update, config, setConfig, toast 
       if (tpl) await putFile(sv, 'template', tpl.name, tpl.buffer);
       const ledger = await idbGet('ledger');
       if (ledger) await putFile(sv, 'ledger', ledger.name, ledger.buffer);
+      const book = config.initialSurvey ? await idbGet('initialBook') : null;
+      if (book) await putFile(sv, 'initialBook', book.name, book.buffer);
       // 前回の調査（要点と、場所ごとの写真）
       const nPrev = await putPrevious(sv, (d, n) => setBusy(`サーバーに置く ${d}/${n}`));
-      toast(`サーバーに置きました（設定${tpl ? '・原本' : ''}${ledger ? '・台帳' : ''}${nPrev ? `・前回の調査${nPrev}本` : ''}）`);
+      toast(`サーバーに置きました（設定${tpl ? '・原本' : ''}${ledger ? '・台帳' : ''}${book ? '・データ入力用ブック' : ''}${nPrev ? `・前回の調査${nPrev}本` : ''}）`);
     });
 
   // サーバーから設定・原本・台帳を受け取る（スマホで）
@@ -69,6 +72,14 @@ export default function ServerSection({ state, update, config, setConfig, toast 
         const r = await importLedger(state, ledger.name, ledger.buffer, cfg, todayYmd());
         await update((s) => ({ ...s, trees: r.state.trees, ledgerInfo: r.state.ledgerInfo }), { now: true });
         got.push(`台帳（${r.stats.all}本）`);
+      }
+      if (cfg?.initialSurvey) {
+        const book = await getFile(sv, 'initialBook');
+        if (book) {
+          const r = await importInitialBook(state, book.name, book.buffer, cfg, todayYmd());
+          await update((s) => ({ ...s, initialBookInfo: r.state.initialBookInfo }), { now: true });
+          got.push(`データ入力用ブック（入力済み${bookCount(r.state.initialBookInfo)}本）`);
+        }
       }
       const nPrev = await getPreviousIndex(sv);
       if (nPrev) got.push(`前回の調査（${nPrev}本）`);
