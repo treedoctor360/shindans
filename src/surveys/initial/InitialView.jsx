@@ -1,0 +1,208 @@
+// 詳しい診断（初期診断など）の入力画面
+//  並びは設定 initialSurvey.forms（紙のカルテと同じ順にする）。書式（initial／environment）ごとに切り替える。
+//  選択肢は設定かデータ入力用ブックの入力規則から。簡易診断から引き継いだ項目には「簡易から」と出す。
+//  事務の端末では表示だけ（直すのは調査者）。
+import { useState } from 'react';
+import { toHalf } from '../../core/text.js';
+import {
+  INITIAL_STATUS_LABEL,
+  detailKeyOf,
+  fillNone,
+  formOf,
+  initialOf,
+  initialStatus,
+  missingInitial,
+  optionsOf,
+  saveInitial,
+  updateInitial,
+} from '../../store/initial.js';
+import PrevPanel from '../../ui/PrevPanel.jsx';
+
+const isNone = (v, cfg) => v === (cfg.initialSurvey?.noneValue || '無');
+
+// 選択肢のボタン（もう一度押すと外す）
+function Choice({ k, opts, value, onPress }) {
+  return (
+    <div className="seg wrap" role="group" data-group={k}>
+      {opts.map((o) => (
+        <button key={o} type="button" className={`seg-b${value === o ? ' on' : ''}`} data-v={o} aria-pressed={value === o} onClick={() => onPress(k, o)}>
+          {o}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Item({ it, rec, cfg, opts, set, press }) {
+  const v = rec[it.key] ?? '';
+  const tags = (
+    <>
+      {it.desk && <small className="tag">後で</small>}
+      {rec.inherited?.includes(it.key) && <small className="tag prev">簡易から</small>}
+      {it.hint && <small>{it.hint}</small>}
+    </>
+  );
+  const id = `i-${it.key}`;
+  if ((it.type === 'choice' || it.type === 'weak') && opts?.length) {
+    const dk = detailKeyOf(it);
+    const showDetail = it.type === 'weak' && v !== '' && !isNone(v, cfg);
+    return (
+      <div className="row" data-item={it.key}>
+        <span className="lbl">
+          {it.label} {tags}
+        </span>
+        <Choice k={it.key} opts={opts} value={v} onPress={press} />
+        {(showDetail || (it.type === 'weak' && rec[dk])) && (
+          <input id={`i-${dk}`} type="text" value={rec[dk] ?? ''} placeholder={it.detailHint || '位置・大きさなど'} onChange={(e) => set(dk, e.target.value)} />
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="row" data-item={it.key}>
+      <label className="lbl" htmlFor={id}>
+        {it.label} {tags}
+      </label>
+      {it.type === 'textarea' ? (
+        <textarea id={id} value={v} onChange={(e) => set(it.key, e.target.value)} />
+      ) : (
+        <div className={it.unit ? 'unit' : undefined}>
+          <input
+            id={id}
+            type="text"
+            inputMode={it.type === 'number' ? 'decimal' : undefined}
+            value={v}
+            onChange={(e) => set(it.key, e.target.value)}
+            onBlur={() => {
+              // 数の項目は半角の数にする（ブックの数の欄に数で書くため）
+              if (it.type !== 'number') return;
+              const s = toHalf(String(v)).trim();
+              if (/^-?\d+(\.\d+)?$/.test(s)) set(it.key, Number(s));
+            }}
+          />
+          {it.unit && <span>{it.unit}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function InitialView({ state, update, config: cfg, toast, send }) {
+  const forms = Object.keys(cfg?.initialSurvey?.forms || {});
+  const [form, setForm] = useState(forms[0] || 'initial');
+  const [missingAsk, setMissingAsk] = useState(null);
+  const tree = state.trees.find((t) => t.id === state.initialTreeId);
+  const rec = tree && cfg ? initialOf(state, tree, cfg) : null;
+  const back = (view = 'list') => update((s) => ({ ...s, view, ...(view === 'form' && tree ? { currentId: tree.id } : {}) }));
+
+  if (!cfg?.initialSurvey || !tree || !rec) {
+    return (
+      <section className="view">
+        <div className="alert warn" data-testid="initial-missing">
+          <span>開く記録がありません。一覧から木を選び、簡易診断の画面の「{cfg?.initialSurvey?.label || '詳しい診断'}を入力」を押してください。</span>
+          <div className="acts">
+            <button type="button" className="btn" onClick={() => back('list')}>
+              一覧に戻る
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const office = state.user?.role === 'office';
+  const f = formOf(cfg, form);
+  const optionsFor = (it) => optionsOf(it, state, form, tree.siteType);
+  const set = (k, v) => update((s) => updateInitial(s, rec.id, (r) => ({ ...r, [k]: v })));
+  const press = (k, v) => update((s) => updateInitial(s, rec.id, (r) => ({ ...r, [k]: r[k] === v ? '' : v })));
+  const status = initialStatus(tree, state, cfg);
+  const missing = office ? [] : missingInitial(rec, cfg);
+
+  const onNone = (sec) => {
+    const r = fillNone(rec, sec, cfg, optionsFor);
+    if (!r.keys.length) return toast('まだ選んでいない項目はありません');
+    update((s) => updateInitial(s, rec.id, () => r.record));
+    toast(`まだ選んでいなかった${r.keys.length}項目を「${cfg.initialSurvey.noneValue || '無'}」にしました`);
+  };
+  const onSave = (force = false) => {
+    const r = saveInitial(state, rec.id, cfg, { force });
+    if (!r.saved) return setMissingAsk(r.missing);
+    setMissingAsk(null);
+    update(() => ({ ...r.state, view: 'list' }), { now: true }).then(() => send?.());
+    toast(`${toHalf(tree.treeNo) || 'この木'} の${cfg.initialSurvey.label}を保存しました`);
+    window.scrollTo(0, 0);
+  };
+
+  return (
+    <section className="view" data-testid="initial-view">
+      <div className="sub" style={{ justifyContent: 'space-between' }}>
+        <button type="button" className="btn" onClick={() => back('form')} data-testid="back-to-simple">
+          ← 簡易診断へ
+        </button>
+        <span className="hint">
+          {cfg.initialSurvey.label}：{INITIAL_STATUS_LABEL[status]}
+        </span>
+      </div>
+
+      <div className="sec">
+        <h2>{cfg.initialSurvey.label}</h2>
+        <div className="lbl" data-testid="initial-tree">
+          <span className="no">{toHalf(tree.treeNo) || '(番号なし)'}</span> {tree.species}
+          <small>{tree.place}</small>
+        </div>
+        {forms.length > 1 && (
+          <div className="seg" role="tablist">
+            {forms.map((k) => (
+              <button key={k} type="button" className={`seg-b${form === k ? ' on' : ''}`} onClick={() => setForm(k)} data-form={k}>
+                {formOf(cfg, k).title}
+              </button>
+            ))}
+          </div>
+        )}
+        {office && <div className="readonly-note">表示のみ：事務の端末では入力内容を直せません。</div>}
+      </div>
+
+      <PrevPanel t={tree} state={state} config={cfg} toast={toast} />
+
+      <fieldset disabled={office} className="form-body">
+        {f.sections.map((sec, i) => (
+          <div className="sec" key={`${form}-${i}`} data-section={i}>
+            <h2>{sec.title}</h2>
+            {sec.none && !office && (
+              <button type="button" className="btn" onClick={() => onNone(sec)} data-testid={`none-${i}`}>
+                まだ選んでいない項目をすべて「{cfg.initialSurvey.noneValue || '無'}」にする
+              </button>
+            )}
+            {sec.items.map((it) => (
+              <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} />
+            ))}
+          </div>
+        ))}
+      </fieldset>
+
+      {!office && (
+        <div className="savebar">
+          {missingAsk && missing.length > 0 ? (
+            <div className="alert warn" role="alert">
+              <span>未入力があります：{missing.join('、')}</span>
+              <div className="acts">
+                <button type="button" className="btn" onClick={() => onSave(true)}>
+                  未入力のまま保存する
+                </button>
+              </div>
+            </div>
+          ) : (
+            missing.length > 0 && (
+              <div className="alert info">
+                <span>未入力：{missing.length}項目</span>
+              </div>
+            )
+          )}
+          <button type="button" className="btn fill big" onClick={() => onSave(false)} data-testid="save-initial">
+            保存して一覧へ
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}

@@ -2,6 +2,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { groupLabel } from './core/groups.js';
 import FormView from './ui/FormView.jsx';
+import InitialView from './surveys/initial/InitialView.jsx';
 import ListView, { activeGroup } from './ui/ListView.jsx';
 import OutView from './ui/OutView.jsx';
 import SettingsView from './ui/SettingsView.jsx';
@@ -96,6 +97,7 @@ export default function App() {
         {state.view === 'settings' && <SettingsView {...app} toast={toast} />}
         {state.view === 'list' && <ListView {...app} toast={toast} />}
         {state.view === 'form' && <FormView key={state.currentId} {...app} toast={toast} />}
+        {state.view === 'initial' && <InitialView key={state.initialTreeId} {...app} toast={toast} />}
         {state.view === 'out' && <OutView {...app} toast={toast} />}
       </main>
       <footer>© 2026– Koh Kitsukawa. All rights reserved.</footer>

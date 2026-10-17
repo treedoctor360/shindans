@@ -256,3 +256,6 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .prev-info div{display:flex;gap:6px}
 .prev-info dt{color:var(--muted)}
 .prev-info dd{margin:0}
+
+/* 詳しい診断：選択肢が多い・長い項目は折り返す */
+.seg.wrap{grid-auto-flow:row;grid-template-columns:repeat(auto-fit,minmax(92px,1fr))}
