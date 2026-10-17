@@ -4,7 +4,9 @@ import { groupLabel, treesOfGroup } from '../core/groups.js';
 import { toHalf } from '../core/text.js';
 import { dbValues, exportDb } from '../excel/dbExport.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
-import { loadLedgerFile, loadTemplate } from '../store/state.js';
+import { exportInitialBook } from '../excel/initialExport.js';
+import { initialsForBook } from '../store/initial.js';
+import { loadInitialBookFile, loadLedgerFile, loadTemplate } from '../store/state.js';
 import { unsentCount } from '../store/sync.js';
 import { treesForDb } from '../store/review.js';
 import { fieldSheetMarks, loadIndex } from '../store/previous.js';
@@ -71,6 +73,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   const useReview = !!state.server?.url;
   const db = treesForDb(state, cfg, { includeUnconfirmed: withUnconfirmed });
   const dbCount = mine.length - db.excluded.length;
+  const ini = cfg.initialSurvey ? initialsForBook(state, cfg, { includeUnconfirmed: withUnconfirmed }) : null;
 
   const run = async (name, fn) => {
     setBusy(name);
@@ -114,6 +117,23 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
         `検査OK。${st.written + st.appended}本を書き込みました（既存の行${st.written}・追加${st.appended}）。他の行は変わっていません` +
           (st.skippedLedgerDone.length ? `。台帳で入力済みの${st.skippedLedgerDone.length}本は書き込んでいません` : '') +
           (db.excluded.length ? `。未確定の${db.excluded.length}本は書き込んでいません` : ''),
+      );
+    });
+
+  // 詳しい診断の記録を、データ入力用ブックに書き込む
+  const onInitial = () =>
+    run(`${cfg.initialSurvey.label}の出力`, async () => {
+      const file = await loadInitialBookFile();
+      if (!file) throw new Error('データ入力用ブックがありません。「設定」で読み込んでください');
+      const r = await exportInitialBook(file.buffer.slice(0), ini.records, cfg);
+      if (r.errors.length) return setCheck({ title: `${cfg.initialSurvey.label}の出力検査`, errors: r.errors });
+      const n = new Set(r.stats.written.map((w) => w.treeNo)).size;
+      if (!n) return toast('書き込む木がありませんでした（ブックで入力済みの木は書き込みません）');
+      download(`${safeName(file.name.replace(/\.xls[xm]$/i, ''))}_入力反映_${yymmdd()}.xlsx`, r.buffer);
+      toast(
+        `検査OK。${n}本を書き込みました。ほかの行・入力規則などは変わっていません` +
+          (r.stats.skippedInBook.length ? `。ブックで入力済みの${r.stats.skippedInBook.length}本（${r.stats.skippedInBook.slice(0, 5).join('・')}）は書き込んでいません` : '') +
+          (r.stats.skippedNoNumber ? `。番号のない${r.stats.skippedNoNumber}本は書き込んでいません` : ''),
       );
     });
 
@@ -197,6 +217,34 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
             : '先に「設定」で台帳を読み込んでください。'}
         </p>
       </div>
+
+      {ini && (
+        <div className="sec" data-testid="initial-export-sec">
+          <h2>{cfg.initialSurvey.label}：データ入力用ブックに出力</h2>
+          <button type="button" className="btn big" disabled={!!busy || !ini.records.length || !state.initialBookInfo} onClick={onInitial} data-testid="export-initial">
+            {busy === `${cfg.initialSurvey.label}の出力`
+              ? '作成中…'
+              : `データ入力用ブックに書き込んで出力（${useReview && !withUnconfirmed ? '確定した' : '入力済みの'}${ini.records.length}本）`}
+          </button>
+          {useReview && !withUnconfirmed && ini.excluded.length > 0 && (
+            <p className="hint" data-testid="initial-excluded">
+              まだ確定していない{ini.excluded.length}本は書き込みません（{ini.excluded.slice(0, 8).map((r) => toHalf(r.treeNo)).join('・')}
+              {ini.excluded.length > 8 ? 'ほか' : ''}）。途中経過を見るときは、上の「未確定の木も書き込む」を選んでください。
+            </p>
+          )}
+          {ini.notTarget.length > 0 && (
+            <p className="hint" data-testid="initial-not-target">
+              簡易診断で「{cfg.initial.label}」が必要でなくなった（または削除した）木の記録{ini.notTarget.length}件は書き込みません（
+              {ini.notTarget.slice(0, 8).map((r) => toHalf(r.treeNo)).join('・')}）。
+            </p>
+          )}
+          <p className="hint">
+            {state.initialBookInfo
+              ? `読み込んだ「${state.initialBookInfo.name}」の、入力済みの最後の行より下の空き行に書き込みます。ブックで入力済みの木は書き込みません。書き込むセルのほかは変えません（列の並び・入力規則・書式もそのまま）。保存する前に、書き出したファイルを読み直して全件照合します。元のファイルは変わりません。`
+              : '先に「設定」でデータ入力用ブックを読み込んでください。'}
+          </p>
+        </div>
+      )}
 
       <div className="sec">
         <h2>サーバー</h2>
