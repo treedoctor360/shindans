@@ -353,11 +353,17 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                 id="f-treeNo"
                 className={`num${badNo ? ' bad' : ''}`}
                 value={t.treeNo}
+                readOnly={!isAddedTree(t)} // 台帳の木の番号は変えない（別の木なら「一覧にない木を追加」）
                 autoCapitalize="characters"
                 placeholder={cfg.treeNoPlaceholder || ''}
                 onChange={(e) => setField('treeNo', e.target.value)}
                 onBlur={() => blurField('treeNo')}
               />
+              {!isAddedTree(t) && (
+                <small className="hint" data-testid="treeno-locked">
+                  台帳の木の番号は変えられません。別の木を入れるときは、一覧の「一覧にない木を追加」を使います。
+                </small>
+              )}
             </div>
             <div className="row">
               <label className="lbl" htmlFor="f-species">

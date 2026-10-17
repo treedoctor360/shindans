@@ -6,6 +6,7 @@ import { validateConfig } from '../src/core/config.js';
 import { alertsOf } from '../src/core/rules.js';
 import { blankTree } from '../src/core/tree.js';
 import { mergeLedger, readLedger } from '../src/excel/ledger.js';
+import { isAddedTree } from '../src/store/actions.js';
 import { makeLedger } from './helpers/makeLedger.js';
 
 const cfg = structuredClone(cfgJson);
@@ -100,5 +101,24 @@ describe('台帳の取り込み', () => {
     expect(r.ok).toBe(false);
     expect(r.errors.join('\n')).toMatch(/doneKey/);
     expect(r.errors.join('\n')).toMatch(/columns.vigor/);
+  });
+});
+
+describe('【再発防止】台帳の木の番号が書き換えられた後に、台帳を読み込み直す', () => {
+  it('台帳の木を作り直しても、印（id）がほかの木と重ならない。台帳にない木からは台帳の行の印を外す', async () => {
+    const { rows } = await readLedger(await makeLedger(), cfg);
+    const first = mergeLedger([], rows, cfg).trees;
+    // 台帳の木 AB002 の番号を消して、別の木（追加した木のつもり）に書き換えてしまった
+    const broken = first.map((t) => (t.treeNo === 'AB002' ? { ...t, treeNo: '', species: '別の木', status: '追加' } : t));
+    const { trees } = mergeLedger(broken, rows, cfg);
+    const ids = trees.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length); // 印が重ならない
+    const again = trees.filter((t) => t.treeNo === 'AB002');
+    expect(again).toHaveLength(1); // 台帳の AB002 は作り直される
+    const other = trees.find((t) => t.species === '別の木');
+    expect(other.ledgerGone).toBe(true); // 今の台帳にない木に印 → 追加した木と同じく削除できる
+    expect(isAddedTree(other)).toBe(true);
+    expect(isAddedTree(again[0])).toBe(false);
+    expect(again[0].ledgerGone).toBeUndefined();
   });
 });

@@ -104,7 +104,8 @@ export function addTree(state, cfg, { area = '', now = Date.now() } = {}) {
 // ---------- 削除・入力の取り消し（調査者の操作） ----------
 
 // 一覧にない木を追加したものか（台帳から読み込んだ木には ledgerRow がある）
-export const isAddedTree = (t) => !t.ledgerRow;
+//  台帳の行と結び付いていたが、今の台帳にない木（ledgerGone）も、追加した木と同じく扱う（番号を直したり削除したりできる）
+export const isAddedTree = (t) => !t.ledgerRow || !!t.ledgerGone;
 
 const stamp = (now) => now || new Date().toISOString();
 
