@@ -64,8 +64,8 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   }
   const group = activeGroup(state, cfg);
   const gname = groupLabel(state.trees, group, cfg);
-  const groupTrees = treesOfGroup(state.trees, group, cfg);
-  const mine = state.trees.filter((t) => t.done && t.source === 'app');
+  const groupTrees = treesOfGroup(state.trees, group, cfg).filter((t) => !t.deleted); // 削除した木は野帳に出さない
+  const mine = state.trees.filter((t) => t.done && t.source === 'app' && !t.deleted);
   const shown = groupTrees.filter((t) => t.done);
   const cols = columns(cfg);
   const useReview = !!state.server?.url;

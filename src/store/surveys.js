@@ -14,7 +14,10 @@ import { groupKey } from '../core/groups.js';
 import { toHalf } from '../core/text.js';
 
 // 簡易診断の木の鍵（年度・シートの種類・番号・何本目）
-export const simpleKey = (t, cfg) => [cfg.job.year, t.siteType || '', toHalf(t.treeNo).trim(), t.dupIndex || 1].join('|');
+//  一覧にない木を追加したときは、番号の代わりに追加したときの印（uid）で見分ける。
+//  番号のない木が何本あってもぶつからず、送信の後で番号を書き換えても同じ木のまま。
+export const simpleKey = (t, cfg) =>
+  [cfg.job.year, t.siteType || '', t.uid ? `+${t.uid}` : toHalf(t.treeNo).trim(), t.dupIndex || 1].join('|');
 
 // 同じまとまり（公園・路線）の最後の後ろ。まとまりがなければ配列の最後
 function afterSameGroup(list, rec, cfg) {

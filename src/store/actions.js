@@ -86,15 +86,54 @@ export function saveTree(state, cfg, { force = false, now = new Date().toISOStri
 }
 
 // 台帳にない木を追加する（場所の情報は同じまとまりの最初の木から写す）
+//  uid … 追加した木の印（端末の印＋時刻）。番号の代わりにこれで木を見分ける（review.js の treeKey）
 export function addTree(state, cfg, { area = '', now = Date.now() } = {}) {
   const ts = currentGroupTrees(state, cfg);
   const ref = ts[0] || {};
   const copyKeys = ['siteType', ...cfg.dbFormat.infoKeys];
-  const nt = blankTree({ id: `new:${now}`, status: cfg.newTreeStatus ?? '', area });
+  const uid = `${state.server?.deviceId || 'dev'}-${Number(now).toString(36)}`;
+  const nt = blankTree({ id: `new:${now}`, uid, status: cfg.newTreeStatus ?? '', area });
   for (const k of copyKeys) if (ref[k] !== undefined) nt[k] = ref[k];
   // まとまりの最後の木の直後に入れる
   const last = ts.at(-1);
   const at = last ? state.trees.indexOf(last) + 1 : state.trees.length;
   const trees = [...state.trees.slice(0, at), nt, ...state.trees.slice(at)];
   return { ...state, trees, currentId: nt.id, view: 'form', group: state.group || groupKey(nt, cfg) };
+}
+
+// ---------- 削除・入力の取り消し（調査者の操作） ----------
+
+// 一覧にない木を追加したものか（台帳から読み込んだ木には ledgerRow がある）
+export const isAddedTree = (t) => !t.ledgerRow;
+
+const stamp = (now) => now || new Date().toISOString();
+
+// 追加した木を削除する
+//  サーバーに届いていない木（版がない）は端末から消す。
+//  届いている木は「削除した」印を付けて送る（他の端末でも削除になる。元に戻せる）
+export function deleteTree(state, id, now) {
+  const t = state.trees.find((x) => x.id === id);
+  if (!t) return state;
+  if (!isAddedTree(t)) throw new Error('台帳の木は削除できません（入力の取り消しを使ってください）');
+  if (!(t.rev > 0)) {
+    return { ...state, trees: state.trees.filter((x) => x.id !== id), currentId: state.currentId === id ? '' : state.currentId };
+  }
+  if (t.conflict) throw new Error('別の端末との食い違いがあります。先にどちらを使うか選んでください');
+  return updateTree(state, id, (x) => ({ ...x, deleted: true, source: 'app', sent: false, updatedAt: stamp(now) }));
+}
+
+// 削除した木を元に戻す
+export function restoreTree(state, id, now) {
+  return updateTree(state, id, (x) => (x.deleted ? { ...x, deleted: false, sent: false, updatedAt: stamp(now) } : x));
+}
+
+// 台帳の木の入力を取り消して、未入力に戻す（入力した値は下書きとして残る）
+//  サーバーに届いていれば、未入力に戻ったことを送る（版がない木は送らない）
+export function withdrawTree(state, id, now) {
+  const t = state.trees.find((x) => x.id === id);
+  if (!t) return state;
+  if (isAddedTree(t)) throw new Error('追加した木は、入力の取り消しではなく削除を使ってください');
+  if (!t.done || t.source !== 'app') throw new Error('アプリで入力済みの木だけ取り消せます');
+  if (t.conflict) throw new Error('別の端末との食い違いがあります。先にどちらを使うか選んでください');
+  return updateTree(state, id, (x) => ({ ...x, done: false, sent: false, updatedAt: stamp(now) }));
 }

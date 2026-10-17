@@ -8,7 +8,19 @@ import { alertsOf, missingFields } from '../core/rules.js';
 import { num, toHalf } from '../core/text.js';
 import { composeTreat } from '../core/treat.js';
 import { isDead, isLocked } from '../core/tree.js';
-import { normalizeField, pressAlertAction, pressOption, saveTree, toggleTreat, touched, updateTree } from '../store/actions.js';
+import {
+  deleteTree,
+  isAddedTree,
+  normalizeField,
+  pressAlertAction,
+  pressOption,
+  restoreTree,
+  saveTree,
+  toggleTreat,
+  touched,
+  updateTree,
+  withdrawTree,
+} from '../store/actions.js';
 import { activeGroup } from './ListView.jsx';
 import PrevPanel from './PrevPanel.jsx';
 import ReviewPanel from './ReviewPanel.jsx';
@@ -83,6 +95,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const [missingAsk, setMissingAsk] = useState(null); // 保存しようとしたときの未入力の一覧
   const [asking, setAsking] = useState(null); // 確かめ中のボタン { alertId, act }
   const [undo, setUndo] = useState(null); // 直前の操作を取り消すための、押す前の木 { treeId, before, label }
+  const [askRemove, setAskRemove] = useState(''); // 削除・入力の取り消しを確かめ中の木の id
 
   if (!cfg || !state.trees.length) {
     return (
@@ -92,7 +105,8 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
     );
   }
   const group = activeGroup(state, cfg);
-  const ts = treesOfGroup(state.trees, group, cfg);
+  // 削除した木は前後の移動に出さない（削除した木を開いているときだけ、その木を含める）
+  const ts = treesOfGroup(state.trees, group, cfg).filter((x) => !x.deleted || x.id === state.currentId);
   let t = ts.find((x) => x.id === state.currentId);
   if (!t) t = ts.find((x) => !x.done) || ts[0];
   if (!t) return <section className="view"><p className="hint">木がありません。</p></section>;
@@ -100,7 +114,8 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const idx = ts.indexOf(t);
   // 台帳で入力済みの木は直せない。事務の端末では、提出された木は直さず付箋で修正案を出す
   const officeView = state.user?.role === 'office' && t.source === 'app' && t.done;
-  const readOnly = t.source === 'ledger' || officeView;
+  const readOnly = t.source === 'ledger' || officeView || !!t.deleted;
+  const surveyor = (state.user?.role || 'surveyor') !== 'office';
   const locked = isLocked(t, cfg);
   // 入力済みの木を直したら、送り直しの印を付ける
   const change = (fn, opt) => update((s) => updateTree({ ...s, currentId: t.id, group }, t.id, (x) => touched(fn(x))), opt);
@@ -132,6 +147,37 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
     update(() => r.state, { now: true }).then(() => send?.()); // 端末に保存してから、裏でサーバーへ送る
     toast(`${toHalf(t.treeNo) || 'この木'} を保存しました`);
     window.scrollTo(0, 0);
+  };
+
+  // 削除（追加した木）・入力の取り消し（台帳の木）・元に戻す
+  const name = `${toHalf(t.treeNo) || '(番号なし)'} ${t.species || ''}`.trim();
+  const removeAct = isAddedTree(t)
+    ? {
+        label: 'この木を削除',
+        ok: '削除する',
+        text:
+          t.rev > 0
+            ? `「${name}」を削除します。一覧・一覧表・野帳に出なくなり、他の端末でも削除になります（「削除した木」から元に戻せます）。`
+            : `「${name}」を削除します。まだサーバーに送っていない木なので、この端末から消えます（元に戻せません）。`,
+        fn: deleteTree,
+        done: '削除しました',
+      }
+    : { label: '入力を取り消す（未入力に戻す）', ok: '取り消す', text: `「${name}」の入力を取り消して未入力に戻します（入力した値は下書きとして残ります）。`, fn: withdrawTree, done: '未入力に戻しました' };
+  const canRemove = surveyor && !t.deleted && (isAddedTree(t) || (t.source === 'app' && t.done));
+  const onRemove = () => {
+    setAskRemove('');
+    try {
+      const next = removeAct.fn({ ...state, currentId: t.id, group }, t.id);
+      const gone = !next.trees.some((x) => x.id === t.id); // サーバーに届いていない木は端末から消える
+      update(() => (gone ? { ...next, view: 'list' } : next), { now: true }).then(() => send?.());
+      toast(removeAct.done);
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  const onRestore = () => {
+    update((s) => restoreTree(s, t.id), { now: true }).then(() => send?.());
+    toast('元に戻しました');
   };
 
   // 表示する値
@@ -177,6 +223,18 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
 
       <ReviewPanel t={t} state={state} update={update} config={cfg} toast={toast} send={send} />
       <PrevPanel t={t} state={state} config={cfg} toast={toast} />
+      {t.deleted && (
+        <div className="alert warn" data-testid="deleted-note">
+          <span>この木は削除しました。一覧・一覧表・野帳には出ません。</span>
+          {surveyor && (
+            <div className="acts">
+              <button type="button" className="btn" onClick={onRestore} data-testid="restore-tree">
+                元に戻す
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {officeView && (
         <div className="readonly-note" data-testid="readonly-note">
           表示のみ：事務の端末では入力内容を直せません。直してほしいところは付箋の修正案で伝えます。
@@ -554,6 +612,25 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
         )}
         {sheet && <span className="hint" style={{ textAlign: 'center' }}>{sheet.label}</span>}
       </div>
+
+      {canRemove &&
+        (askRemove === t.id ? (
+          <div className="alert danger" data-testid="remove-ask">
+            <span>{removeAct.text}</span>
+            <div className="acts">
+              <button type="button" className="btn fill" onClick={onRemove} data-testid="remove-ok">
+                {removeAct.ok}
+              </button>
+              <button type="button" className="btn" onClick={() => setAskRemove('')}>
+                やめる
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="btn" onClick={() => setAskRemove(t.id)} data-testid="remove-tree">
+            {removeAct.label}
+          </button>
+        ))}
     </section>
   );
 }
