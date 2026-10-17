@@ -9,7 +9,8 @@ import ExcelJS from 'exceljs';
 
 const list = (values) => ({ type: 'list', allowBlank: true, formulae: [`"${values.join(',')}"`] });
 
-export async function makeInitialBook({ envHeader = '気象の影響' } = {}) {
+//  withAB001：台帳の AB001（K01）も手で入力済みにする（入力画面でブックの内容を見るテスト用）
+export async function makeInitialBook({ envHeader = '気象の影響', withAB001 = false } = {}) {
   const wb = new ExcelJS.Workbook();
 
   const a = wb.addWorksheet('公園_詳しい診断');
@@ -35,6 +36,10 @@ export async function makeInitialBook({ envHeader = '気象の影響' } = {}) {
     ['B5', 2099], ['C5', 4], ['D5', 5], ['E5', '試験 一郎(資格)'], ['F5', 'AB009'], ['G5', 'K01'], ['H5', 'テストノキ'], ['I5', '有（小）'], ['K5', '1本、地上2m'],
     ['B6', 2099], ['C6', 4], ['D6', 6], ['E6', '試験 一郎(資格)'], ['F6', 'ＡＢ００９'], ['G6', 'K09'], ['H6', '別の樹種'], ['I6', '無'],
   ].forEach(([addr, v]) => (a.getCell(addr).value = v));
+  if (withAB001)
+    [['B7', 2099], ['C7', 4], ['D7', 7], ['E7', '試験 三郎(資格)'], ['F7', 'AB001'], ['G7', 'K01'], ['H7', 'テストノキ'], ['I7', '有（大）'], ['K7', '2本、地上5m'], ['M7', 9.5]].forEach(
+      ([addr, v]) => (a.getCell(addr).value = v),
+    );
 
   const e = wb.addWorksheet('公園_周りの環境');
   e.getCell('A1').value = '樹木番号';
@@ -51,6 +56,7 @@ export async function makeInitialBook({ envHeader = '気象の影響' } = {}) {
     e.getCell(`D${r}`).dataValidation = list(['支柱なし', '無', '有']);
   }
   e.getCell('A4').value = 'AB009';
+  if (withAB001) [['A5', 'AB001'], ['B5', 'K01'], ['D5', '有']].forEach(([addr, v]) => (e.getCell(addr).value = v));
   e.getCell('B4').value = 'K01';
   e.getCell('D4').value = '支柱なし';
 

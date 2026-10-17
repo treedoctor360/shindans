@@ -2,10 +2,13 @@
 //  並びは設定 initialSurvey.forms（紙のカルテと同じ順にする）。書式（initial／environment）ごとに切り替える。
 //  選択肢は設定かデータ入力用ブックの入力規則から。簡易診断から引き継いだ項目には「簡易から」と出す。
 //  事務の端末では表示だけ（直すのは調査者）。
+//  データ入力用ブックに手で入力済みの木は、ブックの内容を表示だけする（「アプリで入力し直す」でブックの値を下書きにできる）。
 import { useState } from 'react';
 import { toHalf } from '../../core/text.js';
 import {
   INITIAL_STATUS_LABEL,
+  bookEntry,
+  bookValues,
   detailKeyOf,
   fillNone,
   formOf,
@@ -14,6 +17,7 @@ import {
   missingInitial,
   optionsOf,
   saveInitial,
+  startInitial,
   updateInitial,
 } from '../../store/initial.js';
 import PrevPanel from '../../ui/PrevPanel.jsx';
@@ -39,6 +43,7 @@ function Item({ it, rec, cfg, opts, set, press }) {
     <>
       {it.desk && <small className="tag">後で</small>}
       {rec.inherited?.includes(it.key) && <small className="tag prev">簡易から</small>}
+      {rec.fromBook?.includes(it.key) && <small className="tag prev">ブックから</small>}
       {it.hint && <small>{it.hint}</small>}
     </>
   );
@@ -91,8 +96,12 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const forms = Object.keys(cfg?.initialSurvey?.forms || {});
   const [form, setForm] = useState(forms[0] || 'initial');
   const [missingAsk, setMissingAsk] = useState(null);
+  const [showBook, setShowBook] = useState(false); // アプリの記録があるとき、ブックの内容を見るか
   const tree = state.trees.find((t) => t.id === state.initialTreeId);
-  const rec = tree && cfg ? initialOf(state, tree, cfg) : null;
+  const appRec = tree && cfg ? initialOf(state, tree, cfg) : null;
+  const entry = tree && cfg?.initialSurvey ? bookEntry(state, tree, cfg) : null;
+  const viewingBook = !!entry && (!appRec || showBook); // ブックの内容を表示している（表示だけ）
+  const rec = viewingBook ? bookValues(entry, cfg) : appRec;
   const back = (view = 'list') => update((s) => ({ ...s, view, ...(view === 'form' && tree ? { currentId: tree.id } : {}) }));
 
   if (!cfg?.initialSurvey || !tree || !rec) {
@@ -111,12 +120,24 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   }
 
   const office = state.user?.role === 'office';
+  const readOnly = office || viewingBook;
+  // ブックの値を下書きにして、アプリで入力し直す
+  const onCopyBook = () => {
+    try {
+      update((s) => startInitial(s, tree, cfg, { force: true }).state, { now: true });
+      setShowBook(false);
+      toast('ブックの内容を下書きにしました。直して保存してください');
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  const bookAt = entry && ['initial', 'environment'].map((k) => entry[k] && `${entry[k]._sheet} ${entry[k]._row}行目`).filter(Boolean).join('・');
   const f = formOf(cfg, form);
   const optionsFor = (it) => optionsOf(it, state, form, tree.siteType);
   const set = (k, v) => update((s) => updateInitial(s, rec.id, (r) => ({ ...r, [k]: v })));
   const press = (k, v) => update((s) => updateInitial(s, rec.id, (r) => ({ ...r, [k]: r[k] === v ? '' : v })));
   const status = initialStatus(tree, state, cfg);
-  const missing = office ? [] : missingInitial(rec, cfg);
+  const missing = readOnly ? [] : missingInitial(rec, cfg);
 
   const onNone = (sec) => {
     const r = fillNone(rec, sec, cfg, optionsFor);
@@ -159,16 +180,38 @@ export default function InitialView({ state, update, config: cfg, toast, send })
             ))}
           </div>
         )}
-        {office && <div className="readonly-note">表示のみ：事務の端末では入力内容を直せません。</div>}
+        {office && !viewingBook && <div className="readonly-note">表示のみ：事務の端末では入力内容を直せません。</div>}
+        {entry && (
+          <div className={`alert ${viewingBook ? 'info' : 'warn'}`} data-testid="book-note">
+            <span>
+              {viewingBook
+                ? `データ入力用ブックに手で入力済みの内容です（${bookAt}）。表示だけです。`
+                : `データ入力用ブックにも入力済みです（${bookAt}）。二重にならないよう、どちらを使うか事務所で確かめてください。`}
+              {entry.dup?.length ? ' ブックに同じ木の行が2つ以上あります（最初の行を表示）。' : ''}
+            </span>
+            <div className="acts">
+              {appRec && (
+                <button type="button" className="btn" onClick={() => setShowBook((x) => !x)} data-testid="book-toggle">
+                  {showBook ? 'アプリの入力に戻る' : 'ブックの内容を見る'}
+                </button>
+              )}
+              {!appRec && !office && (
+                <button type="button" className="btn" onClick={onCopyBook} data-testid="book-copy">
+                  アプリで入力し直す（ブックの内容を下書きにする）
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <PrevPanel t={tree} state={state} config={cfg} toast={toast} />
 
-      <fieldset disabled={office} className="form-body">
+      <fieldset disabled={readOnly} className="form-body">
         {f.sections.map((sec, i) => (
           <div className="sec" key={`${form}-${i}`} data-section={i}>
             <h2>{sec.title}</h2>
-            {sec.none && !office && (
+            {sec.none && !readOnly && (
               <button type="button" className="btn" onClick={() => onNone(sec)} data-testid={`none-${i}`}>
                 まだ選んでいない項目をすべて「{cfg.initialSurvey.noneValue || '無'}」にする
               </button>
@@ -180,7 +223,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
         ))}
       </fieldset>
 
-      {!office && (
+      {!readOnly && (
         <div className="savebar">
           {missingAsk && missing.length > 0 ? (
             <div className="alert warn" role="alert">

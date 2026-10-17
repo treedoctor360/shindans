@@ -6,7 +6,7 @@ import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
-import { fillNone, initialOf, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
+import { bookEntry, bookValues, fillNone, initialOf, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
 import { addSticky, reviewState, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
 import { INITIAL, initialKey } from '../src/store/surveys.js';
@@ -174,5 +174,30 @@ describe('入力画面の部品（並び・選択肢・すべて無・未入力�
     const r2 = saveInitial(s, id, cfg, { now: 'u9' });
     expect(r2.saved).toBe(true);
     expect(r2.state.initials[0]).toMatchObject({ done: true, sent: false, year: 2099, month: 5, day: 6, inspector: '試験 二郎(資格)', updatedAt: 'u9' });
+  });
+});
+
+describe('ブックに入力済みの木の中身', () => {
+  it('ブックの行の中身を、場所のコードと番号で引ける（初期・環境をまとめる。行の番号は印として持つ）', async () => {
+    const book = await makeInitialBook({ withAB001: true });
+    let s = S([need('AB001'), need('AB002')]);
+    s = (await importInitialBook(s, 'b.xlsx', book, cfg, '2099-05-06')).state;
+    const e = bookEntry(s, s.trees[0], cfg);
+    expect(e.initial).toMatchObject({ treeNo: 'AB001', b4: '有（大）', b4Detail: '2本、地上5m', height: 9.5, _sheet: '公園_詳しい診断', _row: 7 });
+    expect(e.environment).toMatchObject({ stake: '有', _row: 5 });
+    expect(bookValues(e, cfg)).toMatchObject({ b4: '有（大）', height: 9.5, stake: '有', weather: '無' });
+    expect(bookValues(e, cfg)).not.toHaveProperty('_row');
+    expect(bookValues(e, cfg)).not.toHaveProperty('serial');
+    expect(bookEntry(s, s.trees[1], cfg)).toBeNull();
+  });
+
+  it('「アプリで入力し直す」は、ブックの値を下書きにする（簡易からの引き継ぎより優先）', async () => {
+    let s = S([need('AB001')]);
+    s = (await importInitialBook(s, 'b.xlsx', await makeInitialBook({ withAB001: true }), cfg, '2099-05-06')).state;
+    const { record } = startInitial(s, s.trees[0], cfg, { force: true });
+    expect(record).toMatchObject({ height: 9.5, b4: '有（大）', b4Detail: '2本、地上5m', stake: '有', girth: 0.64, done: false });
+    expect(record.fromBook).toContain('height');
+    expect(record.inherited).not.toContain('height'); // ブックの値を使ったので「簡易から」ではない
+    expect(record.inherited).toContain('girth');
   });
 });

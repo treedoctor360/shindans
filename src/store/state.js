@@ -8,7 +8,7 @@
 
 import { chooseConfig } from '../core/config.js';
 import { mergeLedger, readLedger } from '../excel/ledger.js';
-import { filledIndex, readInitialBook } from '../excel/initialBook.js';
+import { bookKey, filledIndex, readInitialBook } from '../excel/initialBook.js';
 import { idbGet, idbPut } from './idb.js';
 
 // 保存する状態の形の版（形を変えたら上げ、migrate で古い形を直す）
@@ -134,6 +134,29 @@ export async function importInitialBook(state, name, buffer, cfg, today) {
   const filled = [...filledIndex(result, cfg).keys()];
   // 選択肢（入力規則）は、書式とシートの種類ごとに持つ（入力画面で使う）
   const options = Object.fromEntries(result.sheets.filter((s) => !s.errors.length).map((s) => [`${s.spec.form}|${s.spec.siteType}`, s.options]));
-  return { state: { ...state, initialBookInfo: { name, date: today, filled, errors: result.errors, options } }, result };
+  const rows = bookRows(result, cfg);
+  return { state: { ...state, initialBookInfo: { name, date: today, filled, errors: result.errors, options, rows } }, result };
 }
 export const loadInitialBookFile = () => idbGet('initialBook');
+
+// ブックの入力済みの行の中身（入力画面で見るため）。鍵は「シートの種類|場所のコード|樹木番号」、中身は書式ごとの値
+//  { 'park|K01|AB009': { initial: { …値, _sheet, _row }, environment: {…}, dup: ['initial'] } }
+//  見出しが設定と違うシートは使わない。同じ鍵の行が2つあれば最初の行を使い、dup に書式を記録する
+function bookRows(result, cfg) {
+  const out = {};
+  for (const s of result.sheets) {
+    if (s.errors.length) continue;
+    const codeKey = cfg.dbFormat.sheets.find((x) => x.type === s.spec.siteType)?.code;
+    for (const row of s.rows) {
+      if (!row.filled) continue;
+      const k = bookKey('', s.spec.siteType, codeKey ? row.values[codeKey] : '', row.values[cfg.initialSurvey.book.doneKey]).slice(1);
+      const e = (out[k] ||= {});
+      if (e[s.spec.form]) {
+        e.dup = [...new Set([...(e.dup || []), s.spec.form])];
+        continue;
+      }
+      e[s.spec.form] = { ...row.values, _sheet: s.name, _row: row.rowNumber };
+    }
+  }
+  return out;
+}
