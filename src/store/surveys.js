@@ -28,7 +28,12 @@ function afterSameGroup(list, rec, cfg) {
 
 export const SIMPLE = { id: 'simple', kind: 'tree', list: 'trees', keyOf: simpleKey, place: afterSameGroup };
 
-export const SURVEYS = [SIMPLE];
+// 詳しい診断（初期診断など）の記録の鍵：簡易診断の木の鍵の前に「initial|」を付ける
+//  記録には、元の木を見分ける項目（シートの種類・番号・何本目・uid）を写して持つので、同じ作り方で鍵ができる
+export const initialKey = (r, cfg) => `initial|${simpleKey(r, cfg)}`;
+export const INITIAL = { id: 'initial', kind: 'initial', list: 'initials', keyOf: initialKey };
+
+export const SURVEYS = [SIMPLE, INITIAL];
 
 // 記録の種類の名前から調べる（無ければ null）
 export const surveyOfKind = (kind) => SURVEYS.find((s) => s.kind === kind) || null;

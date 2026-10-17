@@ -8,10 +8,11 @@
 
 import { chooseConfig } from '../core/config.js';
 import { mergeLedger, readLedger } from '../excel/ledger.js';
+import { filledIndex, readInitialBook } from '../excel/initialBook.js';
 import { idbGet, idbPut } from './idb.js';
 
 // 保存する状態の形の版（形を変えたら上げ、migrate で古い形を直す）
-export const STATE_VERSION = 2; // 2: 確認の流れ（付箋・確定・版番号）を追加
+export const STATE_VERSION = 3; // 2: 確認の流れ（付箋・確定・版番号）を追加 / 3: 詳しい診断の記録（initials）を追加
 
 export function initialState() {
   return {
@@ -19,6 +20,8 @@ export function initialState() {
     view: 'settings', // 'list' | 'form' | 'out' | 'settings'
     session: { date: '', inspector: '' }, // 調査情報（保存した木に記録する）
     trees: [],
+    initials: [], // 詳しい診断（初期診断など）の記録。1本の木に1件（surveys.js の INITIAL）
+    initialBookInfo: null, // 読み込んだデータ入力用ブック { name, date, filled: [入力済みの鍵…], errors: [...] }
     group: '', // 表示中の公園・路線
     currentId: '',
     ledgerInfo: null, // { name, date }
@@ -54,6 +57,7 @@ export function migrate(s) {
     user: { ...base.user, ...(s.user || {}) },
     stickies: s.stickies || {},
     confirms: s.confirms || {},
+    initials: Array.isArray(s.initials) ? s.initials : [],
     server,
     stateVersion: STATE_VERSION,
   };
@@ -96,3 +100,14 @@ export async function importLedger(state, name, buffer, cfg, today) {
   return { state: { ...state, trees, ledgerInfo: { name, date: today } }, stats, sheets };
 }
 export const loadLedgerFile = () => idbGet('ledger');
+
+// 詳しい診断のデータ入力用ブックを読み込む。返す形：{ state, result }
+//  ブックは端末に保存し（書き込みのときに使う）、状態には入力済みの木の鍵と、見出しの誤りだけを持つ
+export async function importInitialBook(state, name, buffer, cfg, today) {
+  const result = await readInitialBook(buffer.slice(0), cfg);
+  if (!result.sheets.length) throw new Error('設定にあるシートが見つかりませんでした。データ入力用ブックを選んでください');
+  await idbPut('initialBook', { name, date: today, buffer });
+  const filled = [...filledIndex(result, cfg).keys()];
+  return { state: { ...state, initialBookInfo: { name, date: today, filled, errors: result.errors } }, result };
+}
+export const loadInitialBookFile = () => idbGet('initialBook');

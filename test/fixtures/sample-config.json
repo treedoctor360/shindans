@@ -778,6 +778,24 @@
   },
   "initialSurvey": {
     "label": "詳しい診断",
+    "inherit": {
+      "species": "species",
+      "place": "place",
+      "height": "height",
+      "girth": "@girth",
+      "branchRatio": {
+        "from": "@branchRatio",
+        "map": {
+          "30倍以上": "30≦"
+        }
+      },
+      "lean": {
+        "from": "lean",
+        "map": {
+          "有": "有（危険）"
+        }
+      }
+    },
     "book": {
       "doneKey": "treeNo",
       "sheets": [
@@ -812,7 +830,7 @@
               "col": "F",
               "header": "^基本情報/樹木番号$"
             },
-            "code": {
+            "parkCode": {
               "col": "G",
               "header": "^コード$"
             },
@@ -829,6 +847,21 @@
             },
             "b4Detail": {
               "col": "K"
+            },
+            "place": {
+              "col": "L"
+            },
+            "height": {
+              "col": "M"
+            },
+            "girth": {
+              "col": "N"
+            },
+            "branchRatio": {
+              "col": "O"
+            },
+            "lean": {
+              "col": "P"
             }
           }
         },
@@ -843,7 +876,7 @@
               "col": "A",
               "header": "^樹木番号$"
             },
-            "code": {
+            "parkCode": {
               "col": "B",
               "header": "^コード$"
             },

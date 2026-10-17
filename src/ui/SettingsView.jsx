@@ -1,6 +1,7 @@
 // 設定画面：調査情報、設定ファイル・野帳の原本・台帳の読み込み
 import { useState } from 'react';
-import { loadConfigText, importLedger, saveTemplate } from '../store/state.js';
+import { bookCount } from '../store/initial.js';
+import { loadConfigText, importInitialBook, importLedger, saveTemplate } from '../store/state.js';
 import PrevSection from './PrevSection.jsx';
 import ServerSection from './ServerSection.jsx';
 
@@ -69,6 +70,26 @@ export default function SettingsView({ state, update, config, setConfig, toast }
       setBusy(false);
     }
   };
+
+  // 詳しい診断のデータ入力用ブック（設定に initialSurvey があるときだけ）
+  const onInitialBook = async (file) => {
+    setBusy(true);
+    try {
+      const r = await importInitialBook(state, file.name, await file.arrayBuffer(), config, todayYmd());
+      await update((st) => ({ ...st, initialBookInfo: r.state.initialBookInfo }), { now: true });
+      const info = r.state.initialBookInfo;
+      toast(
+        info.errors.length
+          ? `見出しが設定と違うシートがあります（${info.errors.length}か所）。そのシートは使いません`
+          : `データ入力用ブックを読み込みました（入力済み${bookCount(info)}本）`,
+      );
+    } catch (e) {
+      toast(e.message || 'データ入力用ブックを読み込めませんでした');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const book = state.initialBookInfo;
 
   return (
     <section className="view settings">
@@ -150,6 +171,37 @@ export default function SettingsView({ state, update, config, setConfig, toast }
           樹木番号・樹種・場所を取り込みます。台帳で入力済みの木は読み取り専用になり、二重調査を防ぎます。アプリで入力した内容は消えません（台帳でも入力済みなら、台帳を正としてアプリの入力は控えに残します）。
         </p>
       </div>
+
+      {config?.initialSurvey && (
+        <div className="sec">
+          <h2>データ入力用ブック（{config.initialSurvey.label}）</h2>
+          <div className="hint" data-testid="initial-book-status">
+            {book ? (
+              <>
+                <span className="ok">読み込み済み</span>：{book.name}（{book.date}）・入力済み{bookCount(book)}本
+              </>
+            ) : (
+              'まだ読み込んでいません。'
+            )}
+          </div>
+          {book?.errors?.length > 0 && (
+            <div className="alert warn" data-testid="initial-book-errors">
+              <span>見出しが設定と違うため、次のシートは使いません（列の並びが変わっていないか確かめてください）。</span>
+              {book.errors.map((e) => (
+                <span key={e}>・{e}</span>
+              ))}
+            </div>
+          )}
+          <FileButton
+            label={busy ? '読み込み中…' : 'データ入力用ブック（Excel）を読み込む'}
+            accept=".xlsx,.xlsm"
+            onFile={onInitialBook}
+            disabled={busy}
+            testId="initial-book-file"
+          />
+          <p className="hint">手で入力済みの木を知り、二重入力を防ぎます。列の並びは変えずに、空いている行へ書き込みます（書き込みは出力の画面から）。</p>
+        </div>
+      )}
 
       <PrevSection config={config} toast={toast} />
     </section>

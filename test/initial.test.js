@@ -1,0 +1,134 @@
+// 詳しい診断（初期診断など）の記録のテスト：対象・引き継ぎ・鍵・送受信・ブックとの二重入力・付箋
+// IndexedDB は Node にないので、テスト用の代わり（fake-indexeddb）を使う
+import 'fake-indexeddb/auto';
+import { describe, expect, it } from 'vitest';
+import cfgJson from './fixtures/sample-config.json';
+import { validateConfig } from '../src/core/config.js';
+import { blankTree } from '../src/core/tree.js';
+import { importInitialBook, initialState, migrate } from '../src/store/state.js';
+import { initialOf, initialStatus, initialTargets, inheritFrom, startInitial } from '../src/store/initial.js';
+import { addSticky, reviewState, treeKey } from '../src/store/review.js';
+import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
+import { INITIAL, initialKey } from '../src/store/surveys.js';
+import { makeFakeGas } from './helpers/fakeGas.js';
+import { makeInitialBook } from './helpers/makeInitialBook.js';
+
+const cfg = structuredClone(cfgJson);
+const server = { url: 'https://example.invalid/exec', pass: 'ひみつ', deviceId: 'dev1', lastSeq: 0 };
+const T = (no, o = {}) =>
+  blankTree({ id: `ledger:${no}`, treeNo: no, siteType: 'park', parkCode: 'K01', parkName: '架空公園', place: '架空町', ledgerRow: { sheet: 's', row: 3 }, ...o });
+const S = (trees, o = {}) => ({ ...migrate(initialState()), trees, server: { ...server }, ...o });
+// 簡易診断で「詳しい診断が必要」と入力した木
+const need = (no, o = {}) => T(no, { source: 'app', done: true, initialNeeded: '要', species: 'テストノキ', height: '12', girths: ['0.5', '0.3'], branchLen: '400', branchDia: '10', lean: '有', ...o });
+
+async function sync(state, g) {
+  const r = await push(state, cfg, g.fetchFn);
+  const a = applyPush(state, r.results, r.tokens, cfg);
+  const p = await pull(a.state, cfg, g.fetchFn);
+  return applyPull(a.state, p.records, p.lastSeq, cfg).state;
+}
+
+describe('詳しい診断の対象と引き継ぎ', () => {
+  it('対象は簡易診断で「必要」とした木（台帳の木も含む。削除した木は除く）', () => {
+    const s = S([need('AB001'), T('AB002', { initialNeeded: '否', done: true }), T('AB003', { source: 'ledger', done: true, initialNeeded: '要' }), need('AB004', { deleted: true })]);
+    expect(initialTargets(s, cfg).map((x) => [x.tree.treeNo, x.status])).toEqual([
+      ['AB001', 'todo'],
+      ['AB003', 'todo'],
+    ]);
+  });
+
+  it('設定に詳しい診断がなければ、対象はない', () => {
+    const c = structuredClone(cfgJson);
+    delete c.initialSurvey;
+    expect(initialTargets(S([need('AB001')]), c)).toEqual([]);
+  });
+
+  it('簡易診断の値を設定どおりに引き継ぐ（株立の幹周・枝長/枝径の上限・選択肢の言い換え・数は数で）', () => {
+    const { values, keys } = inheritFrom(need('AB001'), cfg);
+    expect(values).toEqual({
+      species: 'テストノキ',
+      place: '架空町',
+      height: 12,
+      girth: 0.64, // (0.5＋0.3)×0.8
+      branchRatio: '30≦', // 40倍 → 「30倍以上」→ 言い換え
+      lean: '有（危険）',
+    });
+    expect(keys).toEqual(['species', 'place', 'height', 'girth', 'branchRatio', 'lean']);
+    // 台帳の木の枝長/枝径は、台帳の値
+    expect(inheritFrom(T('X', { source: 'ledger', initialNeeded: '要', ledgerBranchRatio: '12.5' }), cfg).values.branchRatio).toBe(12.5);
+  });
+
+  it('記録を作ると、元の木と同じ見分け方の鍵になり、もう一度押しても2件にならない', () => {
+    let s = S([need('AB001')]);
+    const r1 = startInitial(s, s.trees[0], cfg, { now: 't1' });
+    expect(r1.created).toBe(true);
+    expect(initialKey(r1.record, cfg)).toBe(`initial|${treeKey(s.trees[0], cfg)}`);
+    expect(r1.record).toMatchObject({ treeNo: 'AB001', siteType: 'park', dupIndex: 1, parkCode: 'K01', height: 12, done: false, source: 'app', inherited: expect.any(Array) });
+    s = r1.state;
+    const r2 = startInitial(s, s.trees[0], cfg);
+    expect(r2.created).toBe(false);
+    expect(s.initials).toHaveLength(1);
+    expect(initialStatus(s.trees[0], s, cfg)).toBe('draft');
+    s = { ...s, initials: s.initials.map((r) => ({ ...r, done: true })) };
+    expect(initialStatus(s.trees[0], s, cfg)).toBe('done');
+    expect(initialOf(s, s.trees[0], cfg).id).toBe('ini:ledger:AB001');
+  });
+
+  it('追加した木（uid で見分ける木）も、同じ uid の鍵になる', () => {
+    const t = need('ZZ9', { ledgerRow: undefined, id: 'new:1', uid: 'dev1-abc' });
+    const { record } = startInitial(S([t]), t, cfg);
+    expect(initialKey(record, cfg)).toBe('initial|2099|park|+dev1-abc|1');
+  });
+
+  it('対象でない木は記録を作らない', () => {
+    const t = T('AB002', { initialNeeded: '否' });
+    expect(() => startInitial(S([t]), t, cfg)).toThrow('対象ではない');
+  });
+
+  it('設定の引き継ぎの形を確かめる', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.inherit.x = { from: '@unknown' };
+    expect(validateConfig(c).errors.join()).toContain('initialSurvey.inherit');
+  });
+});
+
+describe('データ入力用ブックとの二重入力', () => {
+  it('ブックに手で入力済みの木は「ブックで入力済み」になり、記録は作らない（force を付ければ作れる）', async () => {
+    let s = S([need('AB009'), need('AB001')]);
+    const r = await importInitialBook(s, 'book.xlsx', await makeInitialBook(), cfg, '2099-05-06');
+    s = r.state;
+    expect(s.initialBookInfo).toMatchObject({ name: 'book.xlsx', date: '2099-05-06', errors: [] });
+    expect(s.initialBookInfo.filled).toContain('initial|park|K01|AB009');
+    // 別の場所（K09）の同じ番号の行があっても、K01 の AB001 は対象のまま
+    expect(initialTargets(s, cfg).map((x) => x.status)).toEqual(['book', 'todo']);
+    expect(() => startInitial(s, s.trees[0], cfg)).toThrow('入力済み');
+    const forced = startInitial(s, s.trees[0], cfg, { force: true }).state;
+    expect(initialStatus(forced.trees[0], { ...forced, initials: forced.initials.map((x) => ({ ...x, done: true })) }, cfg)).toBe('both');
+  });
+});
+
+describe('詳しい診断の記録の送受信と付箋', () => {
+  it('入力済みにした記録は種類 initial で送られ、他の端末に届く。簡易診断の木とは別の記録', async () => {
+    const g = makeFakeGas();
+    let phone = startInitial(S([need('AB001', { sent: true, rev: 1 })]), need('AB001'), cfg).state;
+    phone = { ...phone, initials: phone.initials.map((r) => ({ ...r, done: true, b4: '有（小）', updatedAt: 'u2' })) };
+    const { records } = outbox(phone, cfg);
+    expect(records.map((x) => [x.kind, x.id])).toEqual([['initial', 'initial:initial|2099|park|AB001|1']]);
+    phone = await sync(phone, g);
+    expect(phone.initials[0]).toMatchObject({ rev: 1, sent: true });
+
+    const office = await sync(S([T('AB001', { source: 'app', done: true, initialNeeded: '要' })], { server: { ...server, deviceId: 'pc' } }), g);
+    expect(office.initials).toHaveLength(1);
+    expect(office.initials[0]).toMatchObject({ treeNo: 'AB001', b4: '有（小）', done: true, rev: 1 });
+    expect(office.trees[0].b4).toBeUndefined(); // 簡易診断の木には入らない
+  });
+
+  it('付箋は記録の種類ごとに分かれる（詳しい診断の付箋は、簡易診断の木の付箋にならない）', () => {
+    let s = startInitial(S([need('AB001', { sent: true, rev: 1 })]), need('AB001'), cfg).state;
+    s = { ...s, initials: s.initials.map((r) => ({ ...r, done: true, sent: true, rev: 1 })) };
+    const r = addSticky(s, s.initials[0], { field: 'b4Detail', question: '高さは？' }, cfg, INITIAL);
+    expect(r.state.stickies[r.id].treeId).toBe('initial|2099|park|AB001|1');
+    expect(reviewState(r.state.initials[0], r.state, cfg, INITIAL)).toBe('asked');
+    expect(reviewState(r.state.trees[0], r.state, cfg)).toBe('submitted');
+  });
+});

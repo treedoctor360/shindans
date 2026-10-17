@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { addTree } from '../store/actions.js';
 import { REVIEW_LABEL, confirmable, reviewState, setConfirm } from '../store/review.js';
 import { prevOf } from '../store/previous.js';
+import { INITIAL_STATUS_LABEL, initialStatus, isInitialTarget } from '../store/initial.js';
 import { usePrevIndex } from './usePrevious.js';
 
 const NO_AREA = '本区画';
@@ -216,6 +217,11 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
                 {t.deleted && <span className="tag w">削除</span>}
                 {t.status && <span className="tag new">{statusLabel(t.status)}</span>}
                 {t.planInitial && <span className="tag w">{cfg.initial.pill || '診断'}予定</span>}
+                {isInitialTarget(t, cfg) && (
+                  <span className={`tag${['both'].includes(initialStatus(t, state, cfg)) ? ' w' : ''}`} data-initial={initialStatus(t, state, cfg)}>
+                    {cfg.initial.pill || '診断'}：{INITIAL_STATUS_LABEL[initialStatus(t, state, cfg)]}
+                  </span>
+                )}
                 {nWarn > 0 && <span className="tag w">要確認{nWarn}</span>}
                 {prevOf(t, prevIndex, cfg) && <span className="tag prev">{cfg.previous?.label || '前回'}カルテ</span>}
                 {useReview && ['asked', 'answered', 'confirmed', 'conflict'].includes(rsOf(t)) && (
