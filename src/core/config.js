@@ -206,6 +206,12 @@ function validateInitialSurvey(s, cfg, need) {
         ),
       `initialSurvey.inherit は { 項目: "簡易診断の項目名" か { from, map } } の形にしてください（計算した値は ${INHERIT_CALC.join('・')}）`,
     );
+  if (s.forms != null) validateInitialForms(s.forms, need);
+  if (s.stamp != null)
+    need(
+      isObj(s.stamp) && (s.stamp.date == null || (isArr(s.stamp.date) && s.stamp.date.length === 3 && s.stamp.date.every(isStr))) && (s.stamp.inspector == null || isStr(s.stamp.inspector)),
+      'initialSurvey.stamp は { date: ["年の項目","月の項目","日の項目"], inspector: "調査者の項目" } の形にしてください',
+    );
   const b = s.book;
   if (!need(isObj(b), 'initialSurvey.book（データ入力用ブックの書式）がありません')) return;
   need(isStr(b.doneKey), 'initialSurvey.book.doneKey（入力済みの行を見分ける項目。例 treeNo）がありません');
@@ -244,6 +250,31 @@ function validateInitialSurvey(s, cfg, need) {
     }
     need(new Set(cols).size === cols.length, `${at}.columns の列が重複しています`);
   });
+}
+
+// 詳しい診断の入力画面の並び（省略可）
+//  forms：書式（initial／environment）ごとに { title, sections: [{ title, none?, items: [{ key, label, type, … }] }] }
+//   type：choice（選択肢のボタン）/ weak（有無などの選択肢＋「有」のときの詳細）/ number（数）/ text（1行）/ textarea（数行）
+//   選択肢は options（設定）か、データ入力用ブックの入力規則から。desk: true は「後で（机上）」の項目
+//   none: true の区切りには「この区切りはすべて無」のボタンを出す
+export const INITIAL_ITEM_TYPES = ['choice', 'weak', 'number', 'text', 'textarea'];
+function validateInitialForms(forms, need) {
+  if (!need(isObj(forms), 'initialSurvey.forms の形が違います')) return;
+  for (const [form, f] of Object.entries(forms)) {
+    const at = `initialSurvey.forms.${form}`;
+    need(INITIAL_FORMS.includes(form), `${at}：書式は ${INITIAL_FORMS.join('・')} のどれかです`);
+    if (!need(isObj(f) && isStr(f.title) && isArr(f.sections) && f.sections.length > 0, `${at} には title と sections が必要です`)) continue;
+    const keys = [];
+    f.sections.forEach((sec, i) => {
+      if (!need(isObj(sec) && isStr(sec.title) && isArr(sec.items), `${at}.sections[${i}] には title と items が必要です`)) return;
+      sec.items.forEach((it, j) => {
+        const ok = isObj(it) && isStr(it.key) && isStr(it.label) && INITIAL_ITEM_TYPES.includes(it.type) && (it.options == null || (isArr(it.options) && it.options.every((o) => typeof o === 'string')));
+        need(ok, `${at}.sections[${i}].items[${j}] は { key, label, type（${INITIAL_ITEM_TYPES.join('・')}）, options? } の形にしてください`);
+        if (ok) keys.push(it.key, ...(it.type === 'weak' ? [it.detailKey || `${it.key}Detail`] : []));
+      });
+    });
+    need(new Set(keys).size === keys.length, `${at}：項目の key が重複しています`);
+  }
 }
 
 // 新しい設定が正しければそれを、不正なら前の設定を使う

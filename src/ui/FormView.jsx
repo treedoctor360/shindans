@@ -22,6 +22,7 @@ import {
   withdrawTree,
 } from '../store/actions.js';
 import { activeGroup } from './ListView.jsx';
+import { INITIAL_STATUS_LABEL, inBook, initialOf, initialStatus, isInitialTarget, startInitial } from '../store/initial.js';
 import PrevPanel from './PrevPanel.jsx';
 import ReviewPanel from './ReviewPanel.jsx';
 
@@ -86,6 +87,55 @@ function Alerts({ list, onAct, asking, onAsk, onCancel }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// 保存した木が詳しい診断の対象なら「続けて入力する？」と聞く（次の木の画面の上に出す）
+function InitialPrompt({ state, update, cfg, openInitial }) {
+  const tree = state.initialPrompt && state.trees.find((x) => x.id === state.initialPrompt);
+  if (!tree || state.user?.role === 'office') return null;
+  return (
+    <div className="alert info" data-testid="initial-prompt">
+      <span>
+        {toHalf(tree.treeNo) || '(番号なし)'} {tree.species} は{cfg.initialSurvey.label}が必要です。続けて入力しますか。
+      </span>
+      <div className="acts">
+        <button type="button" className="btn fill" onClick={() => openInitial(tree)} data-testid="initial-prompt-go">
+          続けて{cfg.initialSurvey.label}を入力
+        </button>
+        <button type="button" className="btn" onClick={() => update((s) => ({ ...s, initialPrompt: '' }))}>
+          あとで
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// 簡易診断の画面の中の、詳しい診断の欄（進み具合と、入力の画面を開くボタン）
+function InitialBlock({ t, state, cfg, openInitial }) {
+  const status = initialStatus(t, state, cfg);
+  const book = inBook(state, t, cfg);
+  const office = state.user?.role === 'office';
+  const label = cfg.initialSurvey.label;
+  return (
+    <div className="sec" data-testid="initial-block">
+      <h2>{label}</h2>
+      <span className="hint" data-initial={status}>
+        {INITIAL_STATUS_LABEL[status]}
+        {book && status === 'book' ? '（データ入力用ブックに手で入力済み。アプリで入力すると二重になります）' : ''}
+      </span>
+      {initialOf(state, t, cfg) || !book ? (
+        <button type="button" className="btn" onClick={() => openInitial(t)} data-testid="open-initial" disabled={office && !initialOf(state, t, cfg)}>
+          {office ? `${label}を見る` : `${label}を入力`}
+        </button>
+      ) : (
+        !office && (
+          <button type="button" className="btn" onClick={() => openInitial(t, true)} data-testid="open-initial-force">
+            ブックに入力済みだが、アプリでも入力する
+          </button>
+        )
+      )}
     </div>
   );
 }
@@ -156,6 +206,19 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
     if (act.type === 'useApp') toast('アプリの入力に戻しました');
   };
 
+  // 詳しい診断の画面を開く（記録がなければ作る。ブックで入力済みの木は force を付けたときだけ）
+  const openInitial = (tree, force = false) => {
+    try {
+      update((s) => {
+        const r = startInitial(s, s.trees.find((x) => x.id === tree.id) || tree, cfg, { force });
+        return { ...r.state, view: 'initial', initialTreeId: tree.id, initialPrompt: '' };
+      }, { now: true });
+      window.scrollTo(0, 0);
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+
   const onSave = (force = false) => {
     const r = saveTree({ ...state, currentId: t.id, group }, cfg, { force });
     if (!r.saved) {
@@ -163,7 +226,9 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
       return;
     }
     setMissingAsk(null);
-    update(() => r.state, { now: true }).then(() => send?.()); // 端末に保存してから、裏でサーバーへ送る
+    // 詳しい診断が必要な木なら、次の木の画面で「続けて入力」を聞く
+    const prompt = cfg.initialSurvey?.forms && isInitialTarget(r.state.trees.find((x) => x.id === t.id) || t, cfg) ? t.id : '';
+    update(() => ({ ...r.state, initialPrompt: prompt }), { now: true }).then(() => send?.()); // 端末に保存してから、裏でサーバーへ送る
     toast(`${toHalf(t.treeNo) || 'この木'} を保存しました`);
     window.scrollTo(0, 0);
   };
@@ -240,7 +305,11 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
         </button>
       </div>
 
+      <InitialPrompt state={state} update={update} cfg={cfg} openInitial={openInitial} />
       <ReviewPanel t={t} state={state} update={update} config={cfg} toast={toast} send={send} />
+      {cfg.initialSurvey?.forms && isInitialTarget(t, cfg) && (
+        <InitialBlock t={t} state={state} cfg={cfg} openInitial={openInitial} />
+      )}
       <PrevPanel t={t} state={state} config={cfg} toast={toast} />
       {t.deleted && (
         <div className="alert warn" data-testid="deleted-note">

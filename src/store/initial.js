@@ -9,7 +9,8 @@
 import { branchRatioCell, girthOf, heightRatioOf } from '../core/calc.js';
 import { toHalf } from '../core/text.js';
 import { bookKey } from '../excel/initialBook.js';
-import { INITIAL, initialKey, simpleKey } from './surveys.js';
+import { INITIAL, initialKey, simpleKey, updateRecord } from './surveys.js';
+import { touched } from './actions.js';
 
 const round2 = (x) => Math.round(x * 100) / 100;
 
@@ -108,4 +109,64 @@ export function initialTargets(state, cfg, trees = state.trees) {
   return trees
     .filter((t) => isInitialTarget(t, cfg))
     .map((tree) => ({ tree, record: initialOf(state, tree, cfg), status: initialStatus(tree, state, cfg) }));
+}
+
+// ---------- 入力画面 ----------
+
+// 書式（initial／environment）の画面の並び（設定 initialSurvey.forms）。なければ null
+export const formOf = (cfg, form) => cfg.initialSurvey?.forms?.[form] || null;
+
+// 「有」のときの詳細を入れる項目の名前
+export const detailKeyOf = (item) => item.detailKey || `${item.key}Detail`;
+
+// 項目の選択肢：設定にあればそれ、なければデータ入力用ブックの入力規則（ドロップダウン）
+export function optionsOf(item, state, form, siteType) {
+  if (item.options?.length) return item.options;
+  return state.initialBookInfo?.options?.[`${form}|${siteType || ''}`]?.[item.key] || null;
+}
+
+const isEmpty = (v) => v == null || String(v).trim() === '';
+const NONE = (cfg) => cfg.initialSurvey?.noneValue || '無';
+
+// 「この区切りはすべて無」：区切りの中の、まだ選んでいない選択肢の項目に「無」を入れる（選んである項目は変えない）
+//  返す形：{ record, keys: [入れた項目…] }
+export function fillNone(record, section, cfg, optionsFor) {
+  const keys = [];
+  const next = { ...record };
+  for (const it of section.items) {
+    if (!['choice', 'weak'].includes(it.type) || !isEmpty(next[it.key])) continue;
+    const opts = optionsFor(it) || [];
+    if (!opts.includes(NONE(cfg))) continue;
+    next[it.key] = NONE(cfg);
+    keys.push(it.key);
+  }
+  return { record: next, keys };
+}
+
+// 入力していない現場の項目（選択肢の項目だけ数える。「後で（机上）」の項目は数えない）。返す形：[項目名…]
+export function missingInitial(record, cfg) {
+  const out = [];
+  for (const form of Object.values(cfg.initialSurvey?.forms || {}))
+    for (const sec of form.sections)
+      for (const it of sec.items) if (['choice', 'weak'].includes(it.type) && !it.desk && isEmpty(record[it.key])) out.push(it.label);
+  return out;
+}
+
+// 記録を1件変える（入力済みなら送り直しの印を付ける）
+export const updateInitial = (state, id, fn) => updateRecord(state, INITIAL, id, (r) => touched(fn(r)));
+
+// 保存：入力済みにして、調査日・調査者を記録する（設定 initialSurvey.stamp の項目へ）
+//  返す形：{ state, missing, saved }
+export function saveInitial(state, id, cfg, { force = false, now = new Date().toISOString() } = {}) {
+  const r = (state.initials || []).find((x) => x.id === id);
+  if (!r) return { state, missing: [], saved: false };
+  const missing = missingInitial(r, cfg);
+  if (missing.length && !force) return { state, missing, saved: false };
+  const st = cfg.initialSurvey?.stamp || {};
+  const stamp = {};
+  const [y, m, d] = String(state.session?.date || '').split('-').map(Number);
+  if (st.date && y) [stamp[st.date[0]], stamp[st.date[1]], stamp[st.date[2]]] = [y, m, d];
+  if (st.inspector && state.session?.inspector) stamp[st.inspector] = state.session.inspector;
+  const next = updateRecord(state, INITIAL, id, (x) => ({ ...x, ...stamp, done: true, sent: false, source: 'app', updatedAt: now }));
+  return { state: next, missing, saved: true };
 }

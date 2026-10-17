@@ -796,6 +796,90 @@
         }
       }
     },
+    "stamp": {
+      "date": [
+        "year",
+        "month",
+        "day"
+      ],
+      "inspector": "inspector"
+    },
+    "forms": {
+      "initial": {
+        "title": "詳しい診断",
+        "sections": [
+          {
+            "title": "樹木形状",
+            "items": [
+              {
+                "key": "height",
+                "label": "樹高",
+                "type": "number",
+                "unit": "m"
+              },
+              {
+                "key": "girth",
+                "label": "幹周",
+                "type": "number",
+                "unit": "m"
+              },
+              {
+                "key": "branchRatio",
+                "label": "枝長/枝径",
+                "type": "text",
+                "desk": true
+              },
+              {
+                "key": "lean",
+                "label": "不自然な傾斜",
+                "type": "choice",
+                "options": [
+                  "無",
+                  "有（安全）",
+                  "有（危険）"
+                ]
+              }
+            ]
+          },
+          {
+            "title": "地上部の弱点・枝",
+            "none": true,
+            "items": [
+              {
+                "key": "b4",
+                "label": "枯れ枝",
+                "type": "weak"
+              }
+            ]
+          }
+        ]
+      },
+      "environment": {
+        "title": "周りの環境",
+        "sections": [
+          {
+            "title": "生育条件",
+            "none": true,
+            "items": [
+              {
+                "key": "weather",
+                "label": "気象の影響",
+                "type": "choice",
+                "options": [
+                  "無",
+                  "有"
+                ]
+              },
+              {
+                "key": "stake",
+                "label": "支柱の損傷",
+                "type": "choice"
+              }
+            ]
+          }
+        ]
+      }
+    },
     "book": {
       "doneKey": "treeNo",
       "sheets": [

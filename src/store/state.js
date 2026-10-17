@@ -132,6 +132,8 @@ export async function importInitialBook(state, name, buffer, cfg, today) {
   if (!result.sheets.length) throw new Error('設定にあるシートが見つかりませんでした。データ入力用ブックを選んでください');
   await idbPut('initialBook', { name, date: today, buffer });
   const filled = [...filledIndex(result, cfg).keys()];
-  return { state: { ...state, initialBookInfo: { name, date: today, filled, errors: result.errors } }, result };
+  // 選択肢（入力規則）は、書式とシートの種類ごとに持つ（入力画面で使う）
+  const options = Object.fromEntries(result.sheets.filter((s) => !s.errors.length).map((s) => [`${s.spec.form}|${s.spec.siteType}`, s.options]));
+  return { state: { ...state, initialBookInfo: { name, date: today, filled, errors: result.errors, options } }, result };
 }
 export const loadInitialBookFile = () => idbGet('initialBook');

@@ -6,7 +6,7 @@ import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
-import { initialOf, initialStatus, initialTargets, inheritFrom, startInitial } from '../src/store/initial.js';
+import { fillNone, initialOf, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
 import { addSticky, reviewState, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
 import { INITIAL, initialKey } from '../src/store/surveys.js';
@@ -130,5 +130,49 @@ describe('詳しい診断の記録の送受信と付箋', () => {
     expect(r.state.stickies[r.id].treeId).toBe('initial|2099|park|AB001|1');
     expect(reviewState(r.state.initials[0], r.state, cfg, INITIAL)).toBe('asked');
     expect(reviewState(r.state.trees[0], r.state, cfg)).toBe('submitted');
+  });
+});
+
+describe('入力画面の部品（並び・選択肢・すべて無・未入力・保存）', () => {
+  it('設定の画面の並びを確かめる', () => {
+    expect(validateConfig(cfg).errors).toEqual([]);
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.forms.initial.sections[0].items[0].type = 'slider';
+    expect(validateConfig(c).errors.join()).toContain('initialSurvey.forms.initial.sections[0].items[0]');
+    const d = structuredClone(cfgJson);
+    d.initialSurvey.forms.initial.sections[1].items.push({ key: 'b4Detail', label: 'x', type: 'text' });
+    expect(validateConfig(d).errors.join()).toContain('key が重複');
+  });
+
+  it('選択肢は設定にあればそれ、なければブックの入力規則から', async () => {
+    let s = S([need('AB001')]);
+    s = (await importInitialBook(s, 'b.xlsx', await makeInitialBook(), cfg, '2099-05-06')).state;
+    const items = cfg.initialSurvey.forms.initial.sections.flatMap((x) => x.items);
+    const lean = items.find((x) => x.key === 'lean');
+    const b4 = items.find((x) => x.key === 'b4');
+    expect(optionsOf(lean, s, 'initial', 'park')).toEqual(['無', '有（安全）', '有（危険）']);
+    expect(optionsOf(b4, s, 'initial', 'park')).toEqual(['無', '有（小）', '有（大）']);
+    expect(optionsOf(b4, S([]), 'initial', 'park')).toBeNull(); // ブックを読み込んでいなければない
+  });
+
+  it('「すべて無」は、まだ選んでいない選択肢の項目だけに入れる', () => {
+    const sec = cfg.initialSurvey.forms.environment.sections[0];
+    const opts = (it) => it.options || ['支柱なし', '無', '有'];
+    const r = fillNone({ weather: '有' }, sec, cfg, opts);
+    expect(r.record).toEqual({ weather: '有', stake: '無' });
+    expect(r.keys).toEqual(['stake']);
+  });
+
+  it('未入力は現場の選択肢の項目だけ数え、保存で調査日・調査者を記録する', () => {
+    let s = startInitial({ ...S([need('AB001')]), session: { date: '2099-05-06', inspector: '試験 二郎(資格)' } }, need('AB001'), cfg).state;
+    const id = s.initials[0].id;
+    // 不自然な傾斜は簡易診断から引き継いでいるので未入力ではない。枝長/枝径は「後で」の項目なので数えない
+    expect(missingInitial(s.initials[0], cfg)).toEqual(['枯れ枝', '気象の影響', '支柱の損傷']);
+    const r1 = saveInitial(s, id, cfg);
+    expect(r1.saved).toBe(false);
+    s = updateInitial(s, id, (r) => ({ ...r, b4: '無', weather: '無', stake: '支柱なし' }));
+    const r2 = saveInitial(s, id, cfg, { now: 'u9' });
+    expect(r2.saved).toBe(true);
+    expect(r2.state.initials[0]).toMatchObject({ done: true, sent: false, year: 2099, month: 5, day: 6, inspector: '試験 二郎(資格)', updatedAt: 'u9' });
   });
 });
