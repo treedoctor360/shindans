@@ -53,16 +53,20 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
 
   const keys = groupKeys(state.trees, cfg);
   const group = keys.includes(state.group) ? state.group : keys[0];
-  const all = treesOfGroup(state.trees, group, cfg);
+  // 削除した木は「削除した木」の絞り込みでだけ出す（本数にも数えない）
+  const inGroup = treesOfGroup(state.trees, group, cfg);
+  const deleted = inGroup.filter((t) => t.deleted);
+  const all = inGroup.filter((t) => !t.deleted);
   const areas = [...new Set(all.map((t) => t.area || NO_AREA))];
   const area = areas.includes(state.area) ? state.area : '';
-  const filter = state.listFilter || 'all';
+  const filter = state.listFilter === 'deleted' && !deleted.length ? 'all' : state.listFilter || 'all';
   const inArea = (t) => !area || (t.area || NO_AREA) === area;
   const rsOf = (t) => (t.conflict ? 'conflict' : reviewState(t, state, cfg));
-  const list = all
+  const list = (filter === 'deleted' ? deleted : all)
     .filter(inArea)
     .filter(
       (t) =>
+        filter === 'deleted' ||
         filter === 'all' ||
         (filter === 'todo' && !t.done) ||
         (filter === 'wait' && treeState(t, cfg) === 'wait') ||
@@ -106,7 +110,7 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
           style={{ minHeight: 44, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--sunk)', padding: '0 8px' }}
         >
           {keys.map((k) => {
-            const ts = treesOfGroup(state.trees, k, cfg);
+            const ts = treesOfGroup(state.trees, k, cfg).filter((t) => !t.deleted);
             return (
               <option key={k} value={k}>
                 {groupLabel(state.trees, k, cfg)}（{ts.filter((t) => t.done).length}/{ts.length}）
@@ -142,8 +146,9 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
           ['all', 'すべて'],
           ['todo', '未入力'],
           ['wait', waitLabel],
+          ...(deleted.length ? [['deleted', `削除した木（${deleted.length}）`]] : []),
         ].map(([k, l]) => (
-          <button key={k} type="button" className={`chip${filter === k ? ' on' : ''}`} onClick={() => set({ listFilter: k })}>
+          <button key={k} type="button" className={`chip${filter === k ? ' on' : ''}`} onClick={() => set({ listFilter: k })} data-filter={k}>
             {l}
           </button>
         ))}
@@ -208,6 +213,7 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
                 )}
                 {t.appBackup && <span className="tag w">アプリ入力の控えあり</span>}
                 {t.ledgerDuplicate > 0 && <span className="tag w">番号重複</span>}
+                {t.deleted && <span className="tag w">削除</span>}
                 {t.status && <span className="tag new">{statusLabel(t.status)}</span>}
                 {t.planInitial && <span className="tag w">{cfg.initial.pill || '診断'}予定</span>}
                 {nWarn > 0 && <span className="tag w">要確認{nWarn}</span>}

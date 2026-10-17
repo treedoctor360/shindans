@@ -44,6 +44,7 @@ export const stickiesOf = (state, key) => Object.values(state.stickies || {}).fi
 
 // 木の確認の段階
 export function reviewState(tree, state, cfg, survey = SIMPLE) {
+  if (tree.deleted) return 'deleted';
   if (!tree.done || tree.source !== 'app') return tree.source === 'ledger' ? 'ledger' : 'draft';
   const key = survey.keyOf(tree, cfg);
   const st = stickiesOf(state, key);
@@ -54,7 +55,7 @@ export function reviewState(tree, state, cfg, survey = SIMPLE) {
   return 'submitted';
 }
 
-export const REVIEW_LABEL = { draft: '未入力', ledger: '台帳で入力済み', submitted: '提出済み', asked: '確認依頼', answered: '回答済み', confirmed: '確定' };
+export const REVIEW_LABEL = { deleted: '削除', draft: '未入力', ledger: '台帳で入力済み', submitted: '提出済み', asked: '確認依頼', answered: '回答済み', confirmed: '確定' };
 
 // ---------- 事務の操作 ----------
 
@@ -136,6 +137,7 @@ export function treesForDb(state, cfg, { includeUnconfirmed = false } = {}, surv
   const useReview = !!state.server?.url;
   const excluded = [];
   const trees = recordsOf(state, survey).filter((t) => {
+    if (t.deleted) return false; // 削除した木は書き込まない
     if (!useReview || includeUnconfirmed || !t.done || t.source !== 'app') return true;
     if (reviewState(t, state, cfg, survey) === 'confirmed') return true;
     excluded.push(t);

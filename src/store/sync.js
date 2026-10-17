@@ -34,8 +34,9 @@ export async function callServer(server, body, fetchFn = fetch) {
 
 const LOCAL_ONLY = ['id', 'sent', 'rev', 'conflict', 'order'];
 
-// まだ送っていない記録（入力済み・アプリで入力・送信待ち）
-const isUnsent = (t) => t.done && t.source === 'app' && !t.sent;
+// まだ送っていない記録（アプリで入力・送信待ちで、入力済みか、サーバーに一度届いたもの）
+//  サーバーに届いた後で「入力の取り消し」をした木は、未入力に戻ったことを送る
+const isUnsent = (t) => t.source === 'app' && !t.sent && (t.done || t.rev > 0);
 const unsentOf = (state, survey) => recordsOf(state, survey).filter(isUnsent);
 export const unsentTrees = (state) => state.trees.filter(isUnsent); // 簡易診断の木
 const dirtyStickies = (state) => Object.values(state.stickies || {}).filter((x) => x.dirty);
