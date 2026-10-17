@@ -78,9 +78,26 @@ export function inheritFrom(tree, cfg) {
   return { values, keys };
 }
 
+// ブックに入力済みの行の中身（なければ null）。返す形：{ initial?, environment?, dup? }（各書式の値と _sheet・_row）
+export function bookEntry(state, tree, cfg) {
+  const rows = state.initialBookInfo?.rows;
+  if (!rows) return null;
+  const codeKey = cfg.dbFormat.sheets.find((x) => x.type === tree.siteType)?.code;
+  return rows[bookKey('', tree.siteType, codeKey ? tree[codeKey] : '', tree.treeNo).slice(1)] || null;
+}
+
+// ブックの値を、記録と同じ形（項目: 値）にする。行の番号などの印（_ で始まる項目）と、通し番号は入れない
+export function bookValues(entry, cfg) {
+  if (!entry) return null;
+  const v = {};
+  for (const form of ['environment', 'initial'])
+    for (const [k, x] of Object.entries(entry[form] || {})) if (!k.startsWith('_') && k !== (cfg.initialSurvey?.serialKey || 'serial') && x !== '' && x != null) v[k] = x;
+  return v;
+}
+
 // 記録を作る（すでにあれば何もしない）。返す形：{ state, record, created }
 //  元の木を見分ける項目（シートの種類・番号・何本目・uid）と場所の情報を写し、簡易診断の値を引き継ぐ
-//  ブックで入力済みの木は、force を付けたときだけ作る
+//  ブックで入力済みの木は、force を付けたときだけ作る。そのときはブックの値を下書きにする（引き継ぎより優先）
 export function startInitial(state, tree, cfg, { now = new Date().toISOString(), force = false } = {}) {
   if (!isInitialTarget(tree, cfg)) throw new Error('詳しい診断の対象ではない木です');
   const found = initialOf(state, tree, cfg);
@@ -90,11 +107,14 @@ export function startInitial(state, tree, cfg, { now = new Date().toISOString(),
   for (const k of ['siteType', 'treeNo', 'dupIndex', 'uid', 'species', ...cfg.dbFormat.infoKeys])
     if (tree[k] !== undefined && tree[k] !== '') copy[k] = tree[k];
   const { values, keys } = inheritFrom(tree, cfg);
+  const fromBook = bookValues(bookEntry(state, tree, cfg), cfg) || {};
   const record = {
     id: `ini:${tree.id}`,
     ...copy,
     ...values,
-    inherited: keys, // 簡易診断から写した項目（画面で「簡易から」と示す）
+    ...fromBook,
+    inherited: keys.filter((k) => !(k in fromBook)), // 簡易診断から写した項目（画面で「簡易から」と示す）
+    ...(Object.keys(fromBook).length ? { fromBook: Object.keys(fromBook) } : {}), // ブックから写した項目
     source: 'app',
     done: false,
     sent: false,

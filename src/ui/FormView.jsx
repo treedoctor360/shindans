@@ -101,7 +101,7 @@ function InitialPrompt({ state, update, cfg, openInitial }) {
         {toHalf(tree.treeNo) || '(番号なし)'} {tree.species} は{cfg.initialSurvey.label}が必要です。続けて入力しますか。
       </span>
       <div className="acts">
-        <button type="button" className="btn fill" onClick={() => openInitial(tree)} data-testid="initial-prompt-go">
+        <button type="button" className="btn fill" onClick={() => openInitial(tree, false, !initialOf(state, tree, cfg) && inBook(state, tree, cfg))} data-testid="initial-prompt-go">
           続けて{cfg.initialSurvey.label}を入力
         </button>
         <button type="button" className="btn" onClick={() => update((s) => ({ ...s, initialPrompt: '' }))}>
@@ -130,11 +130,9 @@ function InitialBlock({ t, state, cfg, openInitial }) {
           {office ? `${label}を見る` : `${label}を入力`}
         </button>
       ) : (
-        !office && (
-          <button type="button" className="btn" onClick={() => openInitial(t, true)} data-testid="open-initial-force">
-            ブックに入力済みだが、アプリでも入力する
-          </button>
-        )
+        <button type="button" className="btn" onClick={() => openInitial(t, false, true)} data-testid="open-initial-book">
+          ブックの内容を見る
+        </button>
       )}
     </div>
   );
@@ -207,7 +205,13 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   };
 
   // 詳しい診断の画面を開く（記録がなければ作る。ブックで入力済みの木は force を付けたときだけ）
-  const openInitial = (tree, force = false) => {
+  //  viewOnly：記録を作らずに開く（ブックに入力済みの木の内容を見るとき）
+  const openInitial = (tree, force = false, viewOnly = false) => {
+    if (viewOnly) {
+      update((s) => ({ ...s, view: 'initial', initialTreeId: tree.id, initialPrompt: '' }));
+      window.scrollTo(0, 0);
+      return;
+    }
     try {
       update((s) => {
         const r = startInitial(s, s.trees.find((x) => x.id === tree.id) || tree, cfg, { force });
