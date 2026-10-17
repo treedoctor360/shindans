@@ -14,6 +14,16 @@ function Karte({ k, photos, onBig }) {
       <h3>
         {k.title || 'カルテ'} <small>{[slash(k.date), k.inspector].filter(Boolean).join('　')}</small>
       </h3>
+      {k.info?.length > 0 && (
+        <dl className="prev-info" data-testid="prev-info">
+          {k.info.map((x) => (
+            <div key={x.label}>
+              <dt>{x.label}</dt>
+              <dd>{/^\d{4}-\d{2}-\d{2}$/.test(x.value) ? slash(x.value) : x.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
       {k.items?.length > 0 && (
         <div className="prev-items" data-testid="prev-items">
           <small>弱点など（有のもの）</small>

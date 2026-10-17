@@ -70,6 +70,8 @@ test('PC でカルテをまとめて読み込み、スマホで前回の弱点�
   await expect(detail.locator('[data-testid=prev-items] li')).toHaveCount(3);
   await expect(detail).toContainText('幹 ①うろ 有（大）');
   await expect(detail).toContainText('危険度 E うろ・根の傷み');
+  await expect(detail.locator('[data-testid=prev-info]')).toContainText('調べた日2090/09/01');
+  await expect(detail.locator('[data-testid=prev-info]')).toContainText('植えた年1990');
   await expect(phone.locator('.prev-karte[data-kind=place]')).toContainText('人の通行 有');
 
   // 写真・図：この場所の分を端末に入れると見られる（周りの様子の配置の図も）。タップで大きく

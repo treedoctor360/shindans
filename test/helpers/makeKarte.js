@@ -29,6 +29,10 @@ function addTree(wb, { no, code = 'K01', place = '架空公園', species = 'テ�
   set('C3', species);
   // 結合セル（左上だけを読むこと）
   ws.mergeCells('C3:E3');
+  set('B4', '植えた年');
+  set('C4', 1990);
+  set('E4', '手入れ');
+  set('F4', '年に1回');
 
   // 弱点の表：部位・番号つきの項目・印・[ 判定 ]・詳細
   const rows = [
