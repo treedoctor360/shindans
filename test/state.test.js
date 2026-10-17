@@ -77,3 +77,20 @@ describe('台帳の読み込み', () => {
     await expect(importLedger(initialState(), 'x.xlsx', await wb.xlsx.writeBuffer(), cfg, '2099-04-10')).rejects.toThrow(/樹木番号の列/);
   });
 });
+
+describe('木の印（id）の修復', () => {
+  it('印がない木・同じ印の木に新しい印を付ける。正しい木はそのまま', async () => {
+    const { repairIds, migrate: mig } = await import('../src/store/state.js');
+    const a = { id: 'a', treeNo: 'A1' };
+    const r = repairIds([a, { treeNo: 'B1' }, { id: 'a', treeNo: 'C1' }, { id: '', treeNo: '' }, { id: null }]);
+    expect(r[0]).toBe(a);
+    const ids = r.map((t) => t.id);
+    expect(new Set(ids).size).toBe(5);
+    expect(ids.every((x) => typeof x === 'string' && x)).toBe(true);
+    expect(r[2]).toMatchObject({ treeNo: 'C1' });
+    expect(mig({ trees: [{ treeNo: 'X' }] }).trees[0].id).toBeTruthy();
+    // 開いていた木の印が直ったときは、一覧から始める（別の木を開かない）
+    expect(mig({ trees: [{ treeNo: 'X' }], currentId: 'gone', view: 'form' })).toMatchObject({ currentId: '', view: 'list' });
+    expect(mig({ trees: [{ id: 'k', treeNo: 'X' }], currentId: 'k', view: 'form' })).toMatchObject({ currentId: 'k', view: 'form' });
+  });
+});

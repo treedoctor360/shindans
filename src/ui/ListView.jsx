@@ -96,7 +96,11 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
   const statusLabel = (v) => cfg.statusOptions?.find((o) => o.v === v)?.label ?? v;
 
   const set = (patch) => update((s) => ({ ...s, ...patch }));
-  const open = (id) => update((s) => ({ ...s, group, currentId: id, view: 'form' }));
+  const open = (id) => {
+    // 印（id）のない木は開けない（別の木を開いてしまわないように）。端末の状態を読み込むときに直すので、通常は起きない
+    if (!id) return toast?.('この木は開けません。「設定」の「調べるためのデータを書き出す」で書き出して、開発の担当に送ってください');
+    update((s) => ({ ...s, group, currentId: id, view: 'form' }));
+  };
 
   return (
     <section className="view">
