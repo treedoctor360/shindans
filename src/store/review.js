@@ -8,13 +8,16 @@
 // 入力内容を直すのは調査者だけ。事務の修正案は、調査者が「採用」したときに入力内容へ反映する。
 // 付箋の持ち主：質問・修正案は書いた人（事務）、返事は調査者。両方が同時に書いても消し合わないよう、
 // 送るときに「どちらを書いたか（edited）」を覚えておく。
+//
+// 調査の種類（surveys.js の一覧）ごとに記録の鍵が違うので、記録を受け取る関数は最後の引数で種類を選べる。
+// 省略すると簡易診断の木として扱う。
 
-import { toHalf } from '../core/text.js';
 import { dbNoteOf } from '../core/notes.js';
-import { touched, updateTree } from './actions.js';
+import { touched } from './actions.js';
+import { SIMPLE, findByKey, recordsOf, simpleKey, updateRecord } from './surveys.js';
 
 // 木の鍵（年度・シートの種類・番号・何本目）。端末とサーバーで共通
-export const treeKey = (t, cfg) => [cfg.job.year, t.siteType || '', toHalf(t.treeNo).trim(), t.dupIndex || 1].join('|');
+export const treeKey = simpleKey;
 
 // 付箋を付けられる項目（設定 review.fields があればそれ、なければ一般的な文字の項目）
 export function reviewFields(cfg) {
@@ -40,9 +43,9 @@ const now = () => new Date().toISOString();
 export const stickiesOf = (state, key) => Object.values(state.stickies || {}).filter((s) => s.treeId === key && !s.deleted);
 
 // 木の確認の段階
-export function reviewState(tree, state, cfg) {
+export function reviewState(tree, state, cfg, survey = SIMPLE) {
   if (!tree.done || tree.source !== 'app') return tree.source === 'ledger' ? 'ledger' : 'draft';
-  const key = treeKey(tree, cfg);
+  const key = survey.keyOf(tree, cfg);
   const st = stickiesOf(state, key);
   if (st.some((s) => !s.answer)) return 'asked';
   if (st.some((s) => s.answer && !s.closed)) return 'answered';
@@ -56,11 +59,11 @@ export const REVIEW_LABEL = { draft: '未入力', ledger: '台帳で入力済み
 // ---------- 事務の操作 ----------
 
 // 付箋を付ける。field を null にすると木全体へのメモ
-export function addSticky(state, tree, { field = null, question = '', proposal = null }, cfg) {
+export function addSticky(state, tree, { field = null, question = '', proposal = null }, cfg, survey = SIMPLE) {
   const id = newId();
   const s = {
     id,
-    treeId: treeKey(tree, cfg),
+    treeId: survey.keyOf(tree, cfg),
     field,
     question: String(question || '').trim(),
     proposal: proposal == null ? null : String(proposal),
@@ -87,10 +90,10 @@ export const deleteSticky = (state, id) => editSticky(state, id, { deleted: true
 export const closeSticky = (state, id) => editSticky(state, id, { closed: true });
 
 // 確定する・外す（事務）。確定できるのは、未解決の付箋がない、送信済みの木だけ
-export function setConfirm(state, tree, value, cfg) {
-  const key = treeKey(tree, cfg);
+export function setConfirm(state, tree, value, cfg, survey = SIMPLE) {
+  const key = survey.keyOf(tree, cfg);
   if (value) {
-    const rs = reviewState(tree, state, cfg);
+    const rs = reviewState(tree, state, cfg, survey);
     if (rs === 'asked' || rs === 'answered') throw new Error('未解決の付箋があるため、確定できません');
     if (!tree.sent) throw new Error('まだサーバーに届いていない入力があるため、確定できません');
   }
@@ -100,7 +103,8 @@ export function setConfirm(state, tree, value, cfg) {
 }
 
 // まとめて確定できる木（送信済み・付箋がすべて解決・まだ確定していない）
-export const confirmable = (trees, state, cfg) => trees.filter((t) => reviewState(t, state, cfg) === 'submitted' && t.sent && !t.conflict);
+export const confirmable = (trees, state, cfg, survey = SIMPLE) =>
+  trees.filter((t) => reviewState(t, state, cfg, survey) === 'submitted' && t.sent && !t.conflict);
 
 // ---------- 調査者の操作 ----------
 
@@ -113,9 +117,10 @@ export function answerSticky(state, id, { type, text = '' }, cfg) {
   let next = { ...state, stickies: { ...state.stickies, [id]: { ...s, answer, updatedAt: now(), dirty: true, edited: 'answer' } } };
   const value = type === 'adopt' ? s.proposal : type === 'edit' ? answer.text : null;
   if (value != null && s.field) {
-    const t = state.trees.find((x) => treeKey(x, cfg) === s.treeId);
-    if (t)
-      next = updateTree(next, t.id, (x) =>
+    // 付箋の鍵から、どの種類のどの記録かをたどる
+    const hit = findByKey(state, s.treeId, cfg);
+    if (hit)
+      next = updateRecord(next, hit.survey, hit.record.id, (x) =>
         touched({ ...x, [s.field]: value, ...(s.field === 'dbNote' ? { dbNoteManual: true } : {}) }),
       );
   }
@@ -127,12 +132,12 @@ export function answerSticky(state, id, { type, text = '' }, cfg) {
 // 一覧表に書き込む木を選ぶ。確認の流れを使っているとき（サーバーあり）は、アプリで入力した木のうち確定した木だけ。
 //  includeUnconfirmed：途中経過を見るときなど、未確定の木も含める
 //  返す形：{ trees（出力に渡す全体。除いた木は外してある）, excluded: [除いた木…] }
-export function treesForDb(state, cfg, { includeUnconfirmed = false } = {}) {
+export function treesForDb(state, cfg, { includeUnconfirmed = false } = {}, survey = SIMPLE) {
   const useReview = !!state.server?.url;
   const excluded = [];
-  const trees = state.trees.filter((t) => {
+  const trees = recordsOf(state, survey).filter((t) => {
     if (!useReview || includeUnconfirmed || !t.done || t.source !== 'app') return true;
-    if (reviewState(t, state, cfg) === 'confirmed') return true;
+    if (reviewState(t, state, cfg, survey) === 'confirmed') return true;
     excluded.push(t);
     return false;
   });

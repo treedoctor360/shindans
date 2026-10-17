@@ -4,8 +4,7 @@
 //
 // 本文は JSON の文字として送る（Content-Type を付けないことで、ブラウザの事前確認なしに送れる）
 
-import { groupKey } from '../core/groups.js';
-import { treeKey } from './review.js';
+import { SURVEYS, recordsOf, surveyOfKind } from './surveys.js';
 
 // サーバーに送る。返す JSON の ok が false なら、その理由で失敗にする
 export async function callServer(server, body, fetchFn = fetch) {
@@ -24,9 +23,10 @@ export async function callServer(server, body, fetchFn = fetch) {
 
 // ---------- 記録の送受信（版番号つき） ----------
 //
-// サーバーには「記録」を送る。記録の種類は tree（入力内容）・sticky（付箋）・confirm（確定の印）。
+// サーバーには「記録」を送る。記録の種類は、入力内容（調査の種類ごと。surveys.js の一覧。簡易診断は tree）・
+// sticky（付箋）・confirm（確定の印）。
 // 送るときは「自分が最後に見た版（baseRev）」を付け、他の人が先に変えていればサーバーが断る（conflict）。
-//  tree の食い違い … 黙って上書きせず、木に conflict を付けて、どちらを使うか人に選んでもらう
+//  入力内容の食い違い … 黙って上書きせず、記録に conflict を付けて、どちらを使うか人に選んでもらう
 //  sticky の食い違い … 質問・修正案は事務、返事は調査者のものなので、持ち主ごとに合わせて送り直す
 //  confirm の食い違い … 事務どうしの操作なので、サーバーの版に合わせて送り直す
 //
@@ -34,11 +34,14 @@ export async function callServer(server, body, fetchFn = fetch) {
 
 const LOCAL_ONLY = ['id', 'sent', 'rev', 'conflict', 'order'];
 
-// まだ送っていない木（入力済み・アプリで入力・送信待ち）
-export const unsentTrees = (state) => state.trees.filter((t) => t.done && t.source === 'app' && !t.sent);
+// まだ送っていない記録（入力済み・アプリで入力・送信待ち）
+const isUnsent = (t) => t.done && t.source === 'app' && !t.sent;
+const unsentOf = (state, survey) => recordsOf(state, survey).filter(isUnsent);
+export const unsentTrees = (state) => state.trees.filter(isUnsent); // 簡易診断の木
 const dirtyStickies = (state) => Object.values(state.stickies || {}).filter((x) => x.dirty);
 const dirtyConfirms = (state) => Object.values(state.confirms || {}).filter((x) => x.dirty);
-export const unsentCount = (state) => unsentTrees(state).length + dirtyStickies(state).length + dirtyConfirms(state).length;
+export const unsentCount = (state) =>
+  SURVEYS.reduce((n, sv) => n + unsentOf(state, sv).length, 0) + dirtyStickies(state).length + dirtyConfirms(state).length;
 
 const treeData = (t) => {
   const d = { ...t };
@@ -59,11 +62,14 @@ export function outbox(state, cfg) {
   const by = state.user?.name || '';
   const records = [];
   const tokens = new Map();
-  for (const t of unsentTrees(state)) {
-    const key = treeKey(t, cfg);
-    if (t.conflict) continue; // 食い違いを人が選ぶまでは送らない
-    records.push({ id: `tree:${key}`, kind: 'tree', treeId: key, baseRev: t.rev || 0, updatedAt: t.updatedAt || '', by, data: treeData(t) });
-    tokens.set(`tree:${key}`, { localId: t.id, token: t.updatedAt });
+  for (const sv of SURVEYS) {
+    for (const t of unsentOf(state, sv)) {
+      const key = sv.keyOf(t, cfg);
+      if (t.conflict) continue; // 食い違いを人が選ぶまでは送らない
+      const id = `${sv.kind}:${key}`;
+      records.push({ id, kind: sv.kind, treeId: key, baseRev: t.rev || 0, updatedAt: t.updatedAt || '', by, data: treeData(t) });
+      tokens.set(id, { localId: t.id, token: t.updatedAt });
+    }
   }
   for (const s of dirtyStickies(state)) {
     records.push({ id: `sticky:${s.id}`, kind: 'sticky', treeId: s.treeId, baseRev: s.rev || 0, updatedAt: s.updatedAt, by, data: stickyData(s) });
@@ -99,7 +105,7 @@ const stickyBody = (s) => ({ field: s.field, question: s.question, proposal: s.p
 
 // 送った結果を当てはめる。返す形：{ state, saved, conflicts: [木の番号…] }
 export function applyPush(state, results, tokens, cfg) {
-  let trees = state.trees;
+  const lists = Object.fromEntries(SURVEYS.map((sv) => [sv.list, recordsOf(state, sv)]));
   const stickies = { ...(state.stickies || {}) };
   const confirms = { ...(state.confirms || {}) };
   let saved = 0;
@@ -108,8 +114,9 @@ export function applyPush(state, results, tokens, cfg) {
     const tk = tokens.get(r.id);
     if (!tk) continue;
     const kind = r.id.split(':')[0];
-    if (kind === 'tree') {
-      trees = trees.map((t) => {
+    const sv = surveyOfKind(kind);
+    if (sv) {
+      lists[sv.list] = lists[sv.list].map((t) => {
         if (t.id !== tk.localId) return t;
         if (r.ok) {
           saved++;
@@ -143,7 +150,7 @@ export function applyPush(state, results, tokens, cfg) {
       } else if (r.conflict) confirms[tk.localId] = { ...c, rev: r.rev, dirty: true };
     }
   }
-  return { state: { ...state, trees, stickies, confirms }, saved, conflicts };
+  return { state: { ...state, ...lists, stickies, confirms }, saved, conflicts };
 }
 
 // 受け取る（前回から変わった記録だけ）
@@ -155,8 +162,14 @@ export async function pull(state, cfg, fetchFn = fetch) {
 // 受け取った記録を当てはめる
 //  返す形：{ state, changedTrees: [木の番号…]（他の端末で変わった木）, newStickies: 件数, conflicts: [木の番号…] }
 export function applyPull(state, records, lastSeq, cfg) {
-  const trees = state.trees.map((t) => ({ ...t }));
-  const index = new Map(trees.map((t, i) => [treeKey(t, cfg), i]));
+  // 種類ごとに、記録の配列（複製）と「鍵 → 配列の位置」の索引を用意する
+  const lists = {};
+  const indexes = {};
+  const reindex = (sv) => (indexes[sv.list] = new Map(lists[sv.list].map((t, i) => [sv.keyOf(t, cfg), i])));
+  for (const sv of SURVEYS) {
+    lists[sv.list] = recordsOf(state, sv).map((t) => ({ ...t }));
+    reindex(sv);
+  }
   const stickies = { ...(state.stickies || {}) };
   const confirms = { ...(state.confirms || {}) };
   const changedTrees = [];
@@ -164,22 +177,17 @@ export function applyPull(state, records, lastSeq, cfg) {
   let newStickies = 0;
 
   for (const rec of records) {
-    if (rec.kind === 'tree') {
-      const i = index.get(rec.treeId);
+    const sv = surveyOfKind(rec.kind);
+    if (sv) {
+      const trees = lists[sv.list];
+      const i = indexes[sv.list].get(rec.treeId);
       const incoming = { ...rec.data, rev: rec.rev, sent: true, conflict: null };
       if (i === undefined) {
-        // 端末にない木（別の端末で追加した木など）は、同じまとまりの最後に入れる
+        // 端末にない記録（別の端末で追加した木など）は、種類ごとに決めた場所（簡易診断は同じまとまりの最後）に入れる
         const t = { ...incoming, id: `srv:${rec.treeId}` };
-        const g = groupKey(t, cfg);
-        let at = trees.length;
-        for (let j = trees.length - 1; j >= 0; j--)
-          if (groupKey(trees[j], cfg) === g) {
-            at = j + 1;
-            break;
-          }
+        const at = sv.place ? sv.place(trees, t, cfg) : trees.length;
         trees.splice(at, 0, t);
-        index.clear();
-        trees.forEach((x, j) => index.set(treeKey(x, cfg), j));
+        reindex(sv);
         changedTrees.push(t.treeNo);
         continue;
       }
@@ -215,25 +223,24 @@ export function applyPull(state, records, lastSeq, cfg) {
     }
   }
   return {
-    state: { ...state, trees, stickies, confirms, server: { ...state.server, lastSeq: Math.max(state.server.lastSeq || 0, lastSeq) } },
+    state: { ...state, ...lists, stickies, confirms, server: { ...state.server, lastSeq: Math.max(state.server.lastSeq || 0, lastSeq) } },
     changedTrees,
     newStickies,
     conflicts,
   };
 }
 
-// 木の食い違いを解決する
+// 記録の食い違いを解決する（localId の記録を、どの種類の配列からでも探す）
 //  'server' … サーバー（相手）の内容を使う / 'mine' … 自分の内容で上書きする（次の送信で送る）
 export function resolveConflict(state, localId, choice) {
-  return {
-    ...state,
-    trees: state.trees.map((t) => {
-      if (t.id !== localId || !t.conflict) return t;
-      const c = t.conflict;
-      if (choice === 'server') return { ...c.data, id: t.id, order: t.order, rev: c.rev, sent: true, conflict: null };
-      return { ...t, rev: c.rev, sent: false, conflict: null, updatedAt: new Date().toISOString() };
-    }),
+  const resolve = (t) => {
+    if (t.id !== localId || !t.conflict) return t;
+    const c = t.conflict;
+    if (choice === 'server') return { ...c.data, id: t.id, order: t.order, rev: c.rev, sent: true, conflict: null };
+    return { ...t, rev: c.rev, sent: false, conflict: null, updatedAt: new Date().toISOString() };
   };
+  const lists = Object.fromEntries(SURVEYS.map((sv) => [sv.list, recordsOf(state, sv).map(resolve)]));
+  return { ...state, ...lists };
 }
 
 // ArrayBuffer ⇔ base64（ファイルを文字にして送るため）
