@@ -102,3 +102,20 @@ describe('台帳の取り込み', () => {
     expect(r.errors.join('\n')).toMatch(/columns.vigor/);
   });
 });
+
+describe('【再発防止】台帳の木の番号が書き換えられた後に、台帳を読み込み直す', () => {
+  it('台帳の木を作り直しても、印（id）がほかの木と重ならない。台帳にない木からは台帳の行の印を外す', async () => {
+    const { rows } = await readLedger(await makeLedger(), cfg);
+    const first = mergeLedger([], rows, cfg).trees;
+    // 台帳の木 AB002 の番号を消して、別の木（追加した木のつもり）に書き換えてしまった
+    const broken = first.map((t) => (t.treeNo === 'AB002' ? { ...t, treeNo: '', species: '別の木', status: '追加' } : t));
+    const { trees } = mergeLedger(broken, rows, cfg);
+    const ids = trees.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length); // 印が重ならない
+    const again = trees.filter((t) => t.treeNo === 'AB002');
+    expect(again).toHaveLength(1); // 台帳の AB002 は作り直される
+    const other = trees.find((t) => t.species === '別の木');
+    expect(other.ledgerRow).toBeUndefined(); // 台帳にない木は、台帳の行と結び付けない（追加した木として削除できる）
+    expect(other.order).toBeUndefined();
+  });
+});
