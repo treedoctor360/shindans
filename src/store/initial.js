@@ -192,6 +192,27 @@ export function saveInitial(state, id, cfg, { force = false, now = new Date().to
   return { state: next, missing, saved: true };
 }
 
+// ---------- 入力の取り消し（調査者の操作） ----------
+
+// 入力済みの記録を未入力に戻す（値は下書きとして残し、未入力に戻ったことを送る。確定していれば、版が変わるので確定は外れる）
+export function withdrawInitial(state, id, now = new Date().toISOString()) {
+  const r = (state.initials || []).find((x) => x.id === id);
+  if (!r) return state;
+  if (!r.done || r.source !== 'app') throw new Error('アプリで入力済みの記録だけ取り消せます');
+  if (r.conflict) throw new Error('別の端末との食い違いがあります。先にどちらを使うか選んでください');
+  return updateRecord(state, INITIAL, id, (x) => ({ ...x, done: false, sent: false, updatedAt: now }));
+}
+
+// まだサーバーに送っていない下書きの記録を消す（記録を作る前に戻す。間違えて作ったとき用）
+//  サーバーに届いた記録（版がある）は消さない（他の端末にも残るため。未入力に戻すを使う）
+export function discardInitial(state, id) {
+  const r = (state.initials || []).find((x) => x.id === id);
+  if (!r) return state;
+  if (r.done) throw new Error('入力済みの記録は消せません（先に未入力に戻してください）');
+  if (r.rev > 0) throw new Error('サーバーに届いている記録は消せません');
+  return { ...state, [INITIAL.list]: state[INITIAL.list].filter((x) => x.id !== id) };
+}
+
 // ---------- データ入力用ブックへの書き込み ----------
 
 // ブックに書き込む記録を選ぶ
