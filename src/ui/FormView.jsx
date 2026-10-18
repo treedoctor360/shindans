@@ -199,7 +199,8 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
     setMissingAsk(null);
     // 詳しい診断が必要な木なら、次の木の画面で「続けて入力」を聞く
     const prompt = cfg.initialSurvey?.forms && isInitialTarget(r.state.trees.find((x) => x.id === t.id) || t, cfg) ? t.id : '';
-    update(() => ({ ...r.state, initialPrompt: prompt }), { now: true }).then(() => send?.()); // 端末に保存してから、裏でサーバーへ送る
+    // 保存は「その時点の最新の状態」に対して行う（画面を描いた後に送受信で届いた変更を、古い状態で上書きしないように）
+    update((cur) => ({ ...saveTree({ ...cur, currentId: t.id, group }, cfg, { force: true, after }).state, initialPrompt: prompt }), { now: true }).then(() => send?.()); // 端末に保存してから、裏でサーバーへ送る
     toast(`${toHalf(t.treeNo) || 'この木'} を保存しました`);
     window.scrollTo(0, 0);
   };
@@ -222,9 +223,16 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const onRemove = () => {
     setAskRemove('');
     try {
-      const next = removeAct.fn({ ...state, currentId: t.id, group }, t.id);
+      const next = removeAct.fn({ ...state, currentId: t.id, group }, t.id); // できないときはここで止まる（知らせを出す）
       const gone = !next.trees.some((x) => x.id === t.id); // サーバーに届いていない木は端末から消える
-      update(() => (gone ? { ...next, view: 'list' } : next), { now: true }).then(() => send?.());
+      // 実際の変更は、その時点の最新の状態に対して行う（送受信で届いた変更を上書きしないように）
+      update(
+        (cur) => {
+          const n = removeAct.fn({ ...cur, currentId: t.id, group }, t.id);
+          return gone ? { ...n, view: 'list' } : n;
+        },
+        { now: true },
+      ).then(() => send?.());
       toast(removeAct.done);
     } catch (e) {
       toast(e.message);

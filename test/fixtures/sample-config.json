@@ -830,7 +830,8 @@
                 "label": "枝下高（歩道）",
                 "type": "number",
                 "unit": "m",
-                "blank": "-"
+                "blank": "-",
+                "row": "solo"
               },
               {
                 "key": "branchRatio",

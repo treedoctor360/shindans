@@ -1,7 +1,7 @@
 // 設定画面：調査情報、設定ファイル・野帳の原本・台帳の読み込み
 import { useState } from 'react';
 import { bookCount } from '../store/initial.js';
-import { loadConfigText, importInitialBook, importLedger, saveTemplate } from '../store/state.js';
+import { applyLedger, loadConfigText, importInitialBook, readLedgerFile, saveTemplate } from '../store/state.js';
 import PrevSection from './PrevSection.jsx';
 import { diagnosticDump } from '../store/diagnose.js';
 import { APP_VERSION } from '../version.js';
@@ -58,8 +58,13 @@ export default function SettingsView({ state, update, config, setConfig, toast }
   const onLedger = async (file) => {
     setBusy(true);
     try {
-      const r = await importLedger(state, file.name, await file.arrayBuffer(), config, todayYmd());
-      await update((st) => ({ ...st, trees: r.state.trees, ledgerInfo: r.state.ledgerInfo, group: st.group || '' }), { now: true });
+      // 読み終わってから、その時点の最新の状態に入れる（読んでいる間に届いた変更を上書きしないように）
+      const parsed = await readLedgerFile(file.name, await file.arrayBuffer(), config, todayYmd());
+      let r;
+      await update((st) => {
+        r = applyLedger(st, parsed, config);
+        return { ...r.state, group: st.group || '' };
+      }, { now: true });
       const st = r.stats;
       toast(
         `${st.all}本を読み込みました（台帳で入力済み${st.done}本）` +

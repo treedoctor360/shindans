@@ -116,12 +116,20 @@ export async function saveTemplate(name, buffer) {
 export const loadTemplate = () => idbGet('template');
 
 // 台帳を読み込んで、状態に取り込む。返す形：{ state, stats, sheets }
-export async function importLedger(state, name, buffer, cfg, today) {
+//  読む（時間がかかる）のと、状態に入れるのを分けてある。画面では、読み終わってから
+//  「その時点の最新の状態」に applyLedger で入れる（読んでいる間に送受信で届いた変更を、古い状態で上書きしないように）
+export async function readLedgerFile(name, buffer, cfg, today) {
   const { rows, sheets } = await readLedger(buffer.slice(0), cfg);
   if (!rows.length) throw new Error('樹木番号の列が見つかりませんでした。台帳（樹木の一覧の Excel）を選んでください');
-  const { trees, stats } = mergeLedger(state.trees, rows, cfg);
   await idbPut('ledger', { name, date: today, buffer });
-  return { state: { ...state, trees, ledgerInfo: { name, date: today } }, stats, sheets };
+  return { rows, sheets, info: { name, date: today } };
+}
+export function applyLedger(state, parsed, cfg) {
+  const { trees, stats } = mergeLedger(state.trees, parsed.rows, cfg);
+  return { state: { ...state, trees, ledgerInfo: parsed.info }, stats, sheets: parsed.sheets };
+}
+export async function importLedger(state, name, buffer, cfg, today) {
+  return applyLedger(state, await readLedgerFile(name, buffer, cfg, today), cfg);
 }
 export const loadLedgerFile = () => idbGet('ledger');
 

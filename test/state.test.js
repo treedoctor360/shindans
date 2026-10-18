@@ -4,7 +4,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import cfgJson from './fixtures/sample-config.json';
 import { idbGet, idbPut, idbReset } from '../src/store/idb.js';
-import { importLedger, initialState, loadAll, loadConfigText, migrate, saveState } from '../src/store/state.js';
+import { applyLedger, importLedger, initialState, loadAll, loadConfigText, migrate, readLedgerFile, saveState } from '../src/store/state.js';
 import { blankTree } from '../src/core/tree.js';
 import { makeLedger } from './helpers/makeLedger.js';
 
@@ -92,5 +92,20 @@ describe('木の印（id）の修復', () => {
     // 開いていた木の印が直ったときは、一覧から始める（別の木を開かない）
     expect(mig({ trees: [{ treeNo: 'X' }], currentId: 'gone', view: 'form' })).toMatchObject({ currentId: '', view: 'list' });
     expect(mig({ trees: [{ id: 'k', treeNo: 'X' }], currentId: 'k', view: 'form' })).toMatchObject({ currentId: 'k', view: 'form' });
+  });
+});
+
+describe('台帳を読んでいる間に届いた変更を消さない', () => {
+  it('読むのと状態に入れるのを分け、入れるときはその時点の最新の状態に入れる', async () => {
+    const buf = await makeLedger();
+    const before = importLedger(initialState(), '架空の台帳.xlsx', buf, cfg, '2099-04-10');
+    const start = (await before).state;
+    // 読んでいる間に、送受信で AB002 の入力が届いた
+    const parsed = await readLedgerFile('架空の台帳.xlsx', buf, cfg, '2099-04-11');
+    const latest = { ...start, trees: start.trees.map((t) => (t.treeNo === 'ＡＢ００２' || t.treeNo === 'AB002' ? { ...t, source: 'app', done: true, vigor: '並', rev: 3, sent: true } : t)) };
+    const r = applyLedger(latest, parsed, cfg);
+    const ab002 = r.state.trees.find((t) => t.treeNo === 'ＡＢ００２' || t.treeNo === 'AB002');
+    expect(ab002).toMatchObject({ source: 'app', done: true, vigor: '並', rev: 3 });
+    expect(r.state.ledgerInfo).toEqual({ name: '架空の台帳.xlsx', date: '2099-04-11' });
   });
 });

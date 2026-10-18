@@ -104,6 +104,15 @@ describe('一覧表への書き戻し', () => {
     expect(dbValues({ ...entry, initialNeeded: '要' }, cfg).grade).toBeNull(); // 結果がなければ空欄のまま
   });
 
+  it('照合：元のファイルにあったシートが、書き出したファイルからなくなっていれば知らせる', async () => {
+    const { buf } = await setup();
+    const wb = await load(buf);
+    const name = wb.worksheets[0].name;
+    wb.removeWorksheet(wb.worksheets[0].id);
+    const errs = await verifyDb(await wb.xlsx.writeBuffer(), buf, [], cfg);
+    expect(errs.join('\n')).toContain(`シート「${name}」が書き出したファイルにありません`);
+  });
+
   it('罫線の色「自動」を付け直す', async () => {
     const { buf, trees } = await setup();
     const r = await exportDb(buf, trees, cfg);

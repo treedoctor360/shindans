@@ -73,6 +73,8 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   const useReview = !!state.server?.url;
   const db = treesForDb(state, cfg, { includeUnconfirmed: withUnconfirmed });
   const dbCount = mine.length - db.excluded.length;
+  // 未確定の木も書き込んだファイルは、名前に「途中経過」を付ける（提出用と取り違えないように）
+  const draftMark = useReview && withUnconfirmed ? '_途中経過（未確定を含む）' : '';
   const ini = cfg.initialSurvey ? initialsForBook(state, cfg, { includeUnconfirmed: withUnconfirmed }) : null;
   // 詳しい診断が必要な木の健全度：詳しい診断の結果を一覧表に書き戻す（設定 initialSurvey.gradeWriteBack があるとき）
   const gw = gradeWriteBack(state, cfg, db.trees, { includeUnconfirmed: withUnconfirmed, treatOf: (t) => dbValues(t, cfg).treat ?? '' });
@@ -114,7 +116,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
       if (!ledger) throw new Error('台帳がありません。「設定」で読み込んでください');
       const r = await exportDb(ledger.buffer.slice(0), gw.trees, cfg);
       if (r.errors.length) return setCheck({ title: '一覧表の出力検査', errors: r.errors });
-      download(`${safeName(ledger.name.replace(/\.xls[xm]$/i, ''))}_入力反映_${yymmdd()}.xlsx`, r.buffer);
+      download(`${safeName(ledger.name.replace(/\.xls[xm]$/i, ''))}_入力反映${draftMark}_${yymmdd()}.xlsx`, r.buffer);
       const st = r.stats;
       toast(
         `検査OK。${st.written + st.appended}本を書き込みました（既存の行${st.written}・追加${st.appended}）。他の行は変わっていません` +
@@ -133,7 +135,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
       if (r.errors.length) return setCheck({ title: `${cfg.initialSurvey.label}の出力検査`, errors: r.errors });
       const n = new Set(r.stats.written.map((w) => w.treeNo)).size;
       if (!n) return toast('書き込む木がありませんでした（ブックで入力済みの木は書き込みません）');
-      download(`${safeName(file.name.replace(/\.xls[xm]$/i, ''))}_入力反映_${yymmdd()}.xlsx`, r.buffer);
+      download(`${safeName(file.name.replace(/\.xls[xm]$/i, ''))}_入力反映${draftMark}_${yymmdd()}.xlsx`, r.buffer);
       toast(
         `検査OK。${n}本を書き込みました。ほかの行・入力規則などは変わっていません` +
           (r.stats.skippedInBook.length ? `。ブックで入力済みの${r.stats.skippedInBook.length}本（${r.stats.skippedInBook.slice(0, 5).join('・')}）は書き込んでいません` : '') +
