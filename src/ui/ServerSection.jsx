@@ -9,6 +9,7 @@ import { todayYmd } from './SettingsView.jsx';
 
 export default function ServerSection({ state, update, config, setConfig, toast }) {
   const [busy, setBusy] = useState('');
+  const [askPut, setAskPut] = useState(false); // 「サーバーに置く」の確かめ中か
   const sv = state.server || {};
   const setServer = (k, v) => update((s) => ({ ...s, server: { ...s.server, [k]: v.trim() } }));
   const user = state.user || { role: 'surveyor', name: '' };
@@ -100,6 +101,14 @@ export default function ServerSection({ state, update, config, setConfig, toast 
     });
 
   const ready = !!(sv.url && sv.pass);
+  // サーバーに置くのは事務の端末だけ（調査者の端末から古い台帳などを置いて、全員の台帳が入れ替わる事故を防ぐ）
+  const office = user.role === 'office';
+  const putList = [
+    config && `設定ファイル（${config.job?.title || ''} 版${config.version}）`,
+    state.ledgerInfo && `台帳「${state.ledgerInfo.name}」（${state.ledgerInfo.date} に読み込み）`,
+    config?.initialSurvey && state.initialBookInfo && `データ入力用ブック「${state.initialBookInfo.name}」（${state.initialBookInfo.date} に読み込み）`,
+    '野帳の原本・前回の調査（この端末に読み込んであれば）',
+  ].filter(Boolean);
   return (
     <div className="sec">
       <h2>サーバー</h2>
@@ -149,9 +158,40 @@ export default function ServerSection({ state, update, config, setConfig, toast 
       <button type="button" className="btn big" disabled={!ready || !!busy} onClick={onGet} data-testid="server-get">
         {busy === 'サーバーから受け取る' ? '受け取り中…' : 'サーバーから設定・原本・台帳・前回の調査を受け取る'}
       </button>
-      <button type="button" className="btn big" disabled={!ready || !!busy || !config} onClick={onPut} data-testid="server-put">
-        {busy.startsWith('サーバーに置く') ? `送信中…${busy.slice(8)}` : 'この端末の設定・原本・台帳・前回の調査をサーバーに置く'}
-      </button>
+      {office &&
+        (askPut ? (
+          <div className="alert danger" data-testid="server-put-ask">
+            <span>
+              サーバーにある次のファイルを、この端末のもので置き換えます。この後に「受け取る」を押したすべての端末が、これを使います（入力した内容は消えません。前のファイルはサーバーのごみ箱に30日残ります）。
+              {putList.map((t) => (
+                <span key={t}>
+                  <br />・{t}
+                </span>
+              ))}
+            </span>
+            <div className="acts">
+              <button
+                type="button"
+                className="btn fill"
+                onClick={() => {
+                  setAskPut(false);
+                  onPut();
+                }}
+                data-testid="server-put-ok"
+              >
+                置き換える
+              </button>
+              <button type="button" className="btn" onClick={() => setAskPut(false)}>
+                やめる
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="btn big" disabled={!ready || !!busy || !config} onClick={() => setAskPut(true)} data-testid="server-put">
+            {busy.startsWith('サーバーに置く') ? `送信中…${busy.slice(8)}` : 'この端末の設定・原本・台帳・前回の調査をサーバーに置く'}
+          </button>
+        ))}
+      {!office && <p className="hint" data-testid="server-put-office-only">設定・台帳などをサーバーに置くのは、事務の端末だけです。</p>}
       <button type="button" className="btn" disabled={!ready || !!busy} onClick={onGetPhotos} data-testid="prev-get-all">
         {busy.startsWith('前回の写真') ? `受け取り中…${busy.slice(5)}` : '前回の写真をすべて端末に入れる（Wi-Fi のある所で）'}
       </button>

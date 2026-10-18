@@ -51,7 +51,9 @@ test('追加した木を削除すると他の端末でも消え、元に戻せ�
   await office.setInputFiles('[data-testid=template-file]', tmp('d-template.xlsx', await makeTemplate()));
   await office.setInputFiles('[data-testid=ledger-file]', tmp('d-ledger.xlsx', await makeLedger()));
   await expect(office.locator('[data-testid=ledger-status] .ok')).toBeVisible();
+  await office.click('[data-testid=role-office]'); // サーバーに置くのは事務の端末だけ
   await office.click('[data-testid=server-put]');
+  await office.click('[data-testid=server-put-ok]');
   await expect(office.locator('.toast')).toContainText('サーバーに置きました');
 
   const phone = await open(browser, gas);
