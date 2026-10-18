@@ -12,7 +12,7 @@
 //   size   … [{ w: '20', h: '40' }, …]       → 「20×40cm、7×7cm（2箇所）」（unit 省略時「cm」。places を付けると2つ以上のとき箇所の数）
 //   number … '18'                            → prefix＋値＋unit（例「枝直径18cm」）
 //   choice … '＜1/3'（options から選ぶ）       → prefix＋値（例「周囲長比＜1/3」）
-//   text   … 'ベッコウタケ'                    → そのまま
+//   text   … '（種名など）'                    → そのまま
 //   pair   … { a: '35', b: '100' }            → 「35cm/100cm」（unit・sep 省略時「/」）
 
 import { toHalf } from './text.js';
