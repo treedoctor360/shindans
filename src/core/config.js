@@ -284,6 +284,7 @@ function validateInitialForms(forms, need) {
         const ok = isObj(it) && isStr(it.key) && isStr(it.label) && INITIAL_ITEM_TYPES.includes(it.type) && (it.options == null || (isArr(it.options) && it.options.every((o) => typeof o === 'string')));
         need(ok, `${at}.sections[${i}].items[${j}] は { key, label, type（${INITIAL_ITEM_TYPES.join('・')}）, options? } の形にしてください`);
         if (ok) keys.push(it.key, ...(it.type === 'weak' ? [it.detailKey || `${it.key}Detail`] : []));
+        if (ok && it.blank != null) need(isStr(it.blank) && ['number', 'text'].includes(it.type), `${at}.sections[${i}].items[${j}].blank（空欄のときの値）は、数・1行の文字の項目に文字で付けてください`);
       });
     });
     need(new Set(keys).size === keys.length, `${at}：項目の key が重複しています`);

@@ -188,7 +188,11 @@ export function saveInitial(state, id, cfg, { force = false, now = new Date().to
   const [y, m, d] = String(state.session?.date || '').split('-').map(Number);
   if (st.date && y) [stamp[st.date[0]], stamp[st.date[1]], stamp[st.date[2]]] = [y, m, d];
   if (st.inspector && state.session?.inspector) stamp[st.inspector] = state.session.inspector;
-  const next = updateRecord(state, INITIAL, id, (x) => ({ ...x, ...stamp, done: true, sent: false, source: 'app', updatedAt: now }));
+  // 空欄のときに入れる値（項目の blank。例：枝下高がなければ「-」）
+  const blanks = {};
+  for (const form of Object.values(cfg.initialSurvey?.forms || {}))
+    for (const sec of form.sections) for (const it of sec.items) if (it.blank != null && isEmpty(r[it.key])) blanks[it.key] = it.blank;
+  const next = updateRecord(state, INITIAL, id, (x) => ({ ...x, ...blanks, ...stamp, done: true, sent: false, source: 'app', updatedAt: now }));
   return { state: next, missing, saved: true };
 }
 

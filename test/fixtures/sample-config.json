@@ -824,6 +824,13 @@
                 "unit": "m"
               },
               {
+                "key": "clearWalk",
+                "label": "枝下高（歩道）",
+                "type": "number",
+                "unit": "m",
+                "blank": "-"
+              },
+              {
                 "key": "branchRatio",
                 "label": "枝長/枝径",
                 "type": "text",

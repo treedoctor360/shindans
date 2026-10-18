@@ -44,7 +44,7 @@
 | `fieldSheet` | 野帳の書式（見出し・各欄の列、選択肢の欄と図形に描く文字、1枚の本数）。原本（空の様式）は設定と一緒に外から読み込む |
 | `review` | 付箋を付けられる項目（省略可。省略時は一覧表用の特記・特記事項・樹種・処置（追記）） |
 | `previous` | 前回の調査の読み方（省略可）。`kartes`：1本1シートのカルテの種類ごとに、表題（`match`）・どの見出しの右に何があるか・「有」の印・部位・評価の欄・写真の見出し・野帳に書く印（`fieldSheetMark`）・基本情報（`info`）。並び順が画面の表示順 |
-| `initialSurvey` | 詳しい診断（初期診断など）の設定（省略可。版6〜）。`book`：データ入力用ブックの書式。シートごとに書式（`form`：initial／environment）・シートの種類（`siteType`）・シート名（正規表現）・見出しの行数・データの最初の行・項目ごとの列（`col`）と確かめる見出し（`header`）。このブックは別の仕組みが列の位置で読むので、列は見出しで探さず設定の列を使い、見出しが違えばそのシートは使わない。`inherit`：簡易診断から引き継ぐ項目。`forms`：入力画面の並び（書式ごとに区切りと項目。項目の type は choice・weak・number・text・textarea、`desk` は後で（机上）、区切りの `none` で「すべて無」）。選択肢は項目の `options` か、ブックの入力規則。`stamp`：保存したときに調査日（年・月・日）と調査者を入れる項目。`detailParts`／`detailPartsDefault`／項目の `parts`／`detailJoin`：弱点の詳細の文を組み立てる部品（省略可。種類は `src/core/detailParts.js` の `PART_TYPES`）。`gradeWriteBack`：一覧表の健全度へ書き戻す詳しい診断の項目（`from`）・書く値（`values`）・比べる処置の項目（`treatFrom`）（省略可） |
+| `initialSurvey` | 詳しい診断（初期診断など）の設定（省略可。版6〜）。`book`：データ入力用ブックの書式。シートごとに書式（`form`：initial／environment）・シートの種類（`siteType`）・シート名（正規表現）・見出しの行数・データの最初の行・項目ごとの列（`col`）と確かめる見出し（`header`）。このブックは別の仕組みが列の位置で読むので、列は見出しで探さず設定の列を使い、見出しが違えばそのシートは使わない。`inherit`：簡易診断から引き継ぐ項目。`forms`：入力画面の並び（書式ごとに区切りと項目。項目の type は choice・weak・number・text・textarea、`desk` は後で（机上）、`blank` は空欄のまま保存したときに入れる値（例「-」）、区切りの `none` で「すべて無」）。選択肢は項目の `options` か、ブックの入力規則。`stamp`：保存したときに調査日（年・月・日）と調査者を入れる項目。`detailParts`／`detailPartsDefault`／項目の `parts`／`detailJoin`：弱点の詳細の文を組み立てる部品（省略可。種類は `src/core/detailParts.js` の `PART_TYPES`）。`gradeWriteBack`：一覧表の健全度へ書き戻す詳しい診断の項目（`from`）・書く値（`values`）・比べる処置の項目（`treatFrom`）（省略可） |
 
 - 設定の形式を変えたら `version` を上げ、読み込み時に検証する。不正な設定は使わず前の版で動かす。
 - テスト用の設定・台帳は `test/fixtures/` に**架空のデータ**で置く（実在の番号・地名を使わない）。
