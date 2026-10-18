@@ -6,7 +6,7 @@ import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
-import { bookEntry, bookValues, fillNone, initialOf, initialsForBook, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
+import { bookEntry, bookValues, discardInitial, fillNone, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
 import { addSticky, answerSticky, closeSticky, fieldLabel, reviewFields, reviewState, reviewStatesOf, setConfirm, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
 import { INITIAL, initialKey } from '../src/store/surveys.js';
@@ -248,5 +248,29 @@ describe('データ入力用ブックに書き込む記録の選び方', () => {
     expect(initialsForBook(withServer, cfg).excluded.map((x) => x.treeNo)).toEqual(['AB001']);
     expect(initialsForBook(withServer, cfg).notTarget.map((x) => x.treeNo)).toEqual(['AB002']);
     expect(initialsForBook(withServer, cfg, { includeUnconfirmed: true }).records.map((x) => x.treeNo)).toEqual(['AB001']);
+  });
+});
+
+describe('詳しい診断の入力の取り消し・下書きを消す', () => {
+  it('入力済みは未入力に戻す（値は残る・送り直す・確定は外れる・ブックの対象から外れる）。送っていない下書きは消せる', () => {
+    let s = startInitial(S([need('AB001', { sent: true, rev: 1 })], { server: null }), need('AB001'), cfg).state;
+    const id = s.initials[0].id;
+    expect(() => withdrawInitial(s, id)).toThrow('入力済み');
+    s = updateInitial(s, id, (r) => ({ ...r, b4: '有（小）' }));
+    s = saveInitial(s, id, cfg, { force: true }).state;
+    s = { ...s, initials: s.initials.map((r) => ({ ...r, sent: true, rev: 2 })) };
+    expect(initialsForBook(s, cfg).records).toHaveLength(1);
+    expect(() => discardInitial(s, id)).toThrow('入力済み');
+
+    s = withdrawInitial(s, id, '2099-05-07T00:00:00.000Z');
+    expect(s.initials[0]).toMatchObject({ done: false, sent: false, b4: '有（小）', rev: 2 });
+    expect(initialsForBook(s, cfg).records).toHaveLength(0);
+    expect(initialStatus(s.trees[0], s, cfg)).toBe('draft');
+    expect(() => discardInitial(s, id)).toThrow('サーバーに届いている'); // 版があるものは消さない
+
+    const fresh = startInitial(S([need('AB002')]), need('AB002'), cfg).state;
+    const gone = discardInitial(fresh, fresh.initials[0].id);
+    expect(gone.initials).toEqual([]);
+    expect(initialStatus(gone.trees[0], gone, cfg)).toBe('todo');
   });
 });

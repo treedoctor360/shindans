@@ -10,6 +10,7 @@ import {
   bookEntry,
   bookValues,
   detailKeyOf,
+  discardInitial,
   fillNone,
   formOf,
   initialOf,
@@ -19,6 +20,7 @@ import {
   saveInitial,
   startInitial,
   updateInitial,
+  withdrawInitial,
 } from '../../store/initial.js';
 import { manualKeyOf, partsKeyOf, partsOf, rebuildDetail, setDetailText, setPart } from '../../core/detailParts.js';
 import PrevPanel from '../../ui/PrevPanel.jsx';
@@ -187,6 +189,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const [form, setForm] = useState(forms[0] || 'initial');
   const [missingAsk, setMissingAsk] = useState(null);
   const [showBook, setShowBook] = useState(false); // アプリの記録があるとき、ブックの内容を見るか
+  const [askRemove, setAskRemove] = useState(false); // 取り消し・下書きを消すの確かめ中か
   const tree = state.trees.find((t) => t.id === state.initialTreeId);
   const appRec = tree && cfg ? initialOf(state, tree, cfg) : null;
   const entry = tree && cfg?.initialSurvey ? bookEntry(state, tree, cfg) : null;
@@ -229,6 +232,37 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const press = (k, v) => update((s) => updateInitial(s, rec.id, (r) => ({ ...r, [k]: r[k] === v ? '' : v })));
   const status = initialStatus(tree, state, cfg);
   const missing = readOnly ? [] : missingInitial(rec, cfg);
+
+  // 入力の取り消し・下書きを消す
+  const label = cfg.initialSurvey.label;
+  const removeAct = rec.done
+    ? {
+        label: '入力を取り消す（未入力に戻す）',
+        ok: '取り消す',
+        text: `この木の${label}の入力を取り消して未入力に戻します（入力した値は下書きとして残ります。確定していれば外れ、ブックへの出力の対象からも外れます）。`,
+        fn: withdrawInitial,
+        done: '未入力に戻しました',
+      }
+    : !(rec.rev > 0) && !rec.conflict
+      ? {
+          label: '下書きを消す（記録を作る前に戻す）',
+          ok: '消す',
+          text: `この木の${label}の下書きを消します。まだサーバーに送っていないので、この端末から消えます（元に戻せません）。`,
+          fn: discardInitial,
+          done: '下書きを消しました',
+        }
+      : null;
+  const onRemove = () => {
+    setAskRemove(false);
+    try {
+      const next = removeAct.fn(state, rec.id); // 取り消せないときはここで止まる（知らせを出す）
+      const gone = removeAct.fn === discardInitial;
+      update(() => (gone ? { ...next, view: 'form', currentId: tree.id } : next), { now: true }).then(() => send?.()); // 消したら簡易診断の画面へ
+      toast(removeAct.done);
+    } catch (e) {
+      toast(e.message);
+    }
+  };
 
   const onNone = (sec) => {
     const r = fillNone(rec, sec, cfg, optionsFor);
@@ -329,6 +363,29 @@ export default function InitialView({ state, update, config: cfg, toast, send })
           </div>
         ))}
       </fieldset>
+
+      {/* 入力の取り消し（入力済み → 未入力）・下書きを消す（まだ送っていない下書きだけ）。どちらも調査者だけ */}
+      {!readOnly && removeAct && (
+        <div className="sec">
+          {askRemove ? (
+            <div className="alert danger" data-testid="initial-remove-ask">
+              <span>{removeAct.text}</span>
+              <div className="acts">
+                <button type="button" className="btn fill" onClick={onRemove} data-testid="initial-remove-ok">
+                  {removeAct.ok}
+                </button>
+                <button type="button" className="btn" onClick={() => setAskRemove(false)}>
+                  やめる
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" className="btn" onClick={() => setAskRemove(true)} data-testid="initial-remove">
+              {removeAct.label}
+            </button>
+          )}
+        </div>
+      )}
 
       {!readOnly && (
         <div className="savebar">
