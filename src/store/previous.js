@@ -39,16 +39,25 @@ export function buildPrevious(kartes, now = new Date().toISOString(), order = []
       list.splice(i, 1); // 後から読んだ方を使う
     }
     fresh.add(`${key}#${t.kind}`);
+    // 以前の形（1種類だけ）で読んだ分が、同じ日の調査なら、今の形で読み直した分に入れ替える（二重に出さない）
+    for (let j = list.length - 1; j >= 0; j--) if (isLegacyOf(list[j], t)) list.splice(j, 1);
     list.push({ ...rest, photoCount: photos.length, packId });
     list.sort((a, b) => rank(a.kind) - rank(b.kind));
     packs[packId] = packs[packId] || {};
     const had = packs[packId][key];
-    packs[packId][key] = { ...(Array.isArray(had) ? { karte: had } : had || {}), [t.kind]: photos.map((p) => ({ caption: p.caption, type: p.type, data: toBase64(p.buffer) })) };
+    const byKind = { ...(Array.isArray(had) ? { karte: had } : had || {}), [t.kind]: photos.map((p) => ({ caption: p.caption, type: p.type, data: toBase64(p.buffer) })) };
+    if (t.kind !== LEGACY && !list.some((x) => x.kind === LEGACY)) delete byKind[LEGACY]; // 入れ替えた以前の形の写真も消す
+    packs[packId][key] = byKind;
   }
   const count = (id) => Object.values(packs[id]).reduce((n, byKind) => n + Object.values(byKind).reduce((m, ps) => m + ps.length, 0), 0);
   const packList = Object.fromEntries(Object.entries(packOf).map(([code, id]) => [id, { code, count: count(id) }]));
   return { index: { version: 2, updated: now, trees, packs: packList }, packs, duplicates: [...new Set(duplicates)] };
 }
+
+// 以前の形（版1：カルテは1種類だけ）の種類の名前
+const LEGACY = 'karte';
+// 以前の形で読んだ分（表題なし）が、今の形で読んだ k と同じ日の調査か
+const isLegacyOf = (old, k) => old.kind === LEGACY && !old.title && k.kind !== LEGACY && !!old.date && old.date === k.date;
 
 // 前の形（版1：1本1カルテ）の要点を、今の形にそろえる
 function treesOf(index) {
@@ -80,6 +89,8 @@ export function prevOf(tree, index, cfg) {
     if (hits.length === 1) kartes = hits[0][1];
   }
   if (!kartes?.length) return null;
+  // 以前の形で読んだ分が、今の形で読み直した分と同じ日の調査なら出さない（サーバーに古い分が残っていても二重にしない）
+  kartes = kartes.filter((k) => !kartes.some((x) => isLegacyOf(k, x)));
   const norm = (s) => toHalf(s || '').replace(/\s/g, '');
   const speciesMismatch = kartes.some((k) => k.species && tree.species && norm(k.species) !== norm(tree.species));
   return { kartes, speciesMismatch };
