@@ -85,6 +85,7 @@ exports[`答え合わせ：確認の流れ > 付箋を付ける・返事をす�
     "group": "",
     "initialBookInfo": null,
     "initials": [],
+    "karteTemplateInfo": null,
     "ledgerInfo": null,
     "server": {
       "deviceId": "dev1",
@@ -736,6 +737,7 @@ exports[`答え合わせ：送受信 > 受け取った記録の当てはめ（�
     "group": "",
     "initialBookInfo": null,
     "initials": [],
+    "karteTemplateInfo": null,
     "ledgerInfo": null,
     "server": {
       "deviceId": "dev1",
@@ -1243,6 +1245,7 @@ exports[`答え合わせ：送受信 > 送った結果の当てはめ（成功�
     "group": "",
     "initialBookInfo": null,
     "initials": [],
+    "karteTemplateInfo": null,
     "ledgerInfo": null,
     "server": {
       "deviceId": "dev1",

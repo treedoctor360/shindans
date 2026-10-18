@@ -9,6 +9,7 @@
 import { chooseConfig } from '../core/config.js';
 import { mergeLedger, readLedger } from '../excel/ledger.js';
 import { bookKey, filledIndex, readInitialBook } from '../excel/initialBook.js';
+import { readKarteTemplate } from '../excel/karteExport.js';
 import { idbGet, idbPut } from './idb.js';
 
 // 保存する状態の形の版（形を変えたら上げ、migrate で古い形を直す）
@@ -22,6 +23,7 @@ export function initialState() {
     trees: [],
     initials: [], // 詳しい診断（初期診断など）の記録。1本の木に1件（surveys.js の INITIAL）
     initialBookInfo: null, // 読み込んだデータ入力用ブック { name, date, filled: [入力済みの鍵…], errors: [...] }
+    karteTemplateInfo: null, // 読み込んだカルテの様式（確認用カルテ用）{ name, date, sheets: [シート名…], errors: [...] }
     group: '', // 表示中の公園・路線
     currentId: '',
     ledgerInfo: null, // { name, date }
@@ -146,6 +148,16 @@ export async function importInitialBook(state, name, buffer, cfg, today) {
   return { state: { ...state, initialBookInfo: { name, date: today, filled, errors: result.errors, options, rows } }, result };
 }
 export const loadInitialBookFile = () => idbGet('initialBook');
+
+// 確認用カルテの様式（カルテの空の様式が入ったブック）を読み込む。この端末にだけ置く（サーバーには置かない）
+//  返す形：状態に入れる情報 { name, date, sheets: [見つかったシート名…], errors: [...] }
+export async function readKarteTemplateFile(name, buffer, cfg, today) {
+  const r = await readKarteTemplate(buffer.slice(0), cfg);
+  if (!r.sheets.length) throw new Error('設定にあるカルテの様式のシートが見つかりませんでした。カルテの様式が入ったブックを選んでください');
+  await idbPut('karteTemplate', { name, date: today, buffer });
+  return { name, date: today, sheets: r.sheets.map((s) => s.name), errors: r.errors };
+}
+export const loadKarteTemplateFile = () => idbGet('karteTemplate');
 
 // ブックの入力済みの行の中身（入力画面で見るため）。鍵は「シートの種類|場所のコード|樹木番号」、中身は書式ごとの値
 //  { 'park|K01|AB009': { initial: { …値, _sheet, _row }, environment: {…}, dup: ['initial'] } }
