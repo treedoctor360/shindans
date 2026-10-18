@@ -193,6 +193,8 @@ function groupItems(items) {
     if (short && it.row && last?.grid && last.row === it.row) last.items.push(it);
     else out.push({ grid: short && !!it.row, row: it.row, items: [it] });
   }
+  // 組が1項目だけなら、横に並べず1行で出す（半分の幅にならないように）
+  for (const g of out) if (g.grid && g.items.length < 2) g.grid = false;
   return out;
 }
 
@@ -279,9 +281,16 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const onRemove = () => {
     setAskRemove(false);
     try {
-      const next = removeAct.fn(state, rec.id); // 取り消せないときはここで止まる（知らせを出す）
+      removeAct.fn(state, rec.id); // 取り消せないときはここで止まる（知らせを出す）
       const gone = removeAct.fn === discardInitial;
-      update(() => (gone ? { ...next, view: 'form', currentId: tree.id } : next), { now: true }).then(() => send?.()); // 消したら簡易診断の画面へ
+      // 実際の変更は、その時点の最新の状態に対して行う（送受信で届いた変更を上書きしないように）
+      update(
+        (cur) => {
+          const next = removeAct.fn(cur, rec.id);
+          return gone ? { ...next, view: 'form', currentId: tree.id } : next;
+        },
+        { now: true },
+      ).then(() => send?.()); // 消したら簡易診断の画面へ
       toast(removeAct.done);
     } catch (e) {
       toast(e.message);
@@ -298,7 +307,8 @@ export default function InitialView({ state, update, config: cfg, toast, send })
     const r = saveInitial(state, rec.id, cfg, { force });
     if (!r.saved) return setMissingAsk(r.missing);
     setMissingAsk(null);
-    update(() => ({ ...r.state, view: 'list' }), { now: true }).then(() => send?.());
+    // 保存は、その時点の最新の状態に対して行う（送受信で届いた変更を古い状態で上書きしないように）
+    update((cur) => ({ ...saveInitial(cur, rec.id, cfg, { force: true }).state, view: 'list' }), { now: true }).then(() => send?.());
     toast(`${toHalf(tree.treeNo) || 'この木'} の${cfg.initialSurvey.label}を保存しました`);
     window.scrollTo(0, 0);
   };

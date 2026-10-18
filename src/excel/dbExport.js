@@ -196,6 +196,9 @@ export async function verifyDb(outBuffer, origBuffer, plan, cfg) {
   const wbN = new ExcelJS.Workbook();
   await wbN.xlsx.load(outBuffer);
 
+  // 元のファイルのシートが、書き出したファイルにも全部あるか（シートごと消えていないか）
+  for (const wsO of wbO.worksheets) if (!wbN.getWorksheet(wsO.name)) errs.push(`シート「${wsO.name}」が書き出したファイルにありません`);
+
   for (const wsN of wbN.worksheets) {
     const wsO = wbO.getWorksheet(wsN.name);
     if (!wsO) {

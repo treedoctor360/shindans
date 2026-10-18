@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { idbGet } from '../store/idb.js';
 import { bookCount } from '../store/initial.js';
-import { importInitialBook, importLedger, loadConfigText, saveTemplate } from '../store/state.js';
+import { applyLedger, importInitialBook, loadConfigText, readLedgerFile, saveTemplate } from '../store/state.js';
 import { callServer, getFile, putFile } from '../store/sync.js';
 import { getPreviousIndex, getPreviousPhotos, loadIndex, putPrevious } from '../store/previous.js';
 import { todayYmd } from './SettingsView.jsx';
@@ -70,8 +70,13 @@ export default function ServerSection({ state, update, config, setConfig, toast 
       }
       const ledger = await getFile(sv, 'ledger');
       if (ledger && cfg) {
-        const r = await importLedger(state, ledger.name, ledger.buffer, cfg, todayYmd());
-        await update((s) => ({ ...s, trees: r.state.trees, ledgerInfo: r.state.ledgerInfo }), { now: true });
+        // 読み終わってから、その時点の最新の状態に入れる（読んでいる間に届いた変更を上書きしないように）
+        const parsed = await readLedgerFile(ledger.name, ledger.buffer, cfg, todayYmd());
+        let r;
+        await update((s) => {
+          r = applyLedger(s, parsed, cfg);
+          return r.state;
+        }, { now: true });
         got.push(`台帳（${r.stats.all}本）`);
       }
       if (cfg?.initialSurvey) {
