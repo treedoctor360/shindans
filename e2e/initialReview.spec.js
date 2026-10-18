@@ -51,7 +51,9 @@ test('詳しい診断：付箋 → 採用 → 確定 → 確定した記録だ�
   await pc.setInputFiles('[data-testid=initial-book-file]', tmp('ir-book.xlsx', await makeInitialBook()));
   await expect(pc.locator('[data-testid=initial-book-status] .ok')).toBeVisible();
   await setServer(pc, 'office', '事務 花子');
+  await pc.click('[data-testid=role-office]'); // サーバーに置くのは事務の端末だけ
   await pc.click('[data-testid=server-put]');
+  await pc.click('[data-testid=server-put-ok]');
   await expect(pc.locator('.toast')).toContainText('サーバーに置きました');
 
   // スマホ：受け取って、AB001（台帳で「必要」）の詳しい診断を入力・保存

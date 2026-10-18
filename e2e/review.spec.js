@@ -52,7 +52,9 @@ test('付箋 → 採用 → 確定（事務が書き直さずに、修正案が�
   await pc.setInputFiles('[data-testid=ledger-file]', tmp('r-ledger.xlsx', await makeLedger()));
   await expect(pc.locator('[data-testid=ledger-status] .ok')).toBeVisible();
   await setServer(pc, 'office', '事務 花子');
+  await pc.click('[data-testid=role-office]'); // サーバーに置くのは事務の端末だけ
   await pc.click('[data-testid=server-put]');
+  await pc.click('[data-testid=server-put-ok]');
   await expect(pc.locator('.toast')).toContainText('サーバーに置きました');
 
   // スマホ（調査者）：受け取って1本入力・保存（自動で送信）
@@ -149,7 +151,9 @@ test('同じ木を2台で直したら、後の端末で食い違いとして出�
   await pc.setInputFiles('[data-testid=ledger-file]', tmp('c-ledger.xlsx', await makeLedger()));
   await expect(pc.locator('[data-testid=ledger-status] .ok')).toBeVisible();
   await setServer(pc, 'office', '事務');
+  await pc.click('[data-testid=role-office]'); // サーバーに置くのは事務の端末だけ
   await pc.click('[data-testid=server-put]');
+  await pc.click('[data-testid=server-put-ok]');
   await expect(pc.locator('.toast')).toContainText('サーバーに置きました');
 
   const open = async (name) => {

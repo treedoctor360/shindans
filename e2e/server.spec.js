@@ -43,7 +43,9 @@ test('事務所 → スマホ → 事務所（送信が一度失敗しても、�
   await office.setInputFiles('[data-testid=ledger-file]', tmp('s-ledger.xlsx', await makeLedger()));
   await expect(office.locator('[data-testid=ledger-status] .ok')).toBeVisible();
   await setServer(office);
+  await office.click('[data-testid=role-office]'); // サーバーに置くのは事務の端末だけ
   await office.click('[data-testid=server-put]');
+  await office.click('[data-testid=server-put-ok]');
   await expect(office.locator('.toast')).toContainText('サーバーに置きました（設定・原本・台帳）');
 
   // スマホ：受け取って入力（最初は電波なし）
@@ -91,4 +93,20 @@ test('事務所 → スマホ → 事務所（送信が一度失敗しても、�
   const ws = wb.getWorksheet('公園');
   expect(ws.getCell('L4').value).toBe('並');
   expect(ws.getCell('G4').value).toBe('試験 二郎(資格)');
+});
+
+test('サーバーに置くのは事務の端末だけ。置く前に、何を置き換えるかを確かめる', async ({ page }) => {
+  await page.goto('./');
+  await page.setInputFiles('[data-testid=config-file]', 'test/fixtures/sample-config.json');
+  await expect(page.locator('[data-testid=config-status] .ok')).toBeVisible();
+  await setServer(page);
+  await page.click('[data-testid=role-surveyor]');
+  await expect(page.locator('[data-testid=server-put]')).toHaveCount(0);
+  await expect(page.locator('[data-testid=server-put-office-only]')).toBeVisible();
+  await page.click('[data-testid=role-office]');
+  await page.click('[data-testid=server-put]');
+  await expect(page.locator('[data-testid=server-put-ask]')).toContainText('設定ファイル');
+  await page.click('[data-testid=server-put-ask] >> text=やめる'); // やめれば何も送らない
+  await expect(page.locator('[data-testid=server-put-ask]')).toHaveCount(0);
+  await expect(page.locator('[data-testid=server-put]')).toBeVisible();
 });

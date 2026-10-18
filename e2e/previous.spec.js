@@ -45,7 +45,9 @@ test('PC でカルテをまとめて読み込み、スマホで前回の弱点�
   await expect(pc.locator('.toast')).toContainText('1ファイルから読み込みました');
   await expect(pc.locator('[data-testid=prev-status]')).toContainText('3本・2か所');
   await setServer(pc);
+  await pc.click('[data-testid=role-office]'); // サーバーに置くのは事務の端末だけ
   await pc.click('[data-testid=server-put]');
+  await pc.click('[data-testid=server-put-ok]');
   await expect(pc.locator('.toast')).toContainText('前回の調査3本');
 
   // スマホ：受け取る（写真はまだ入らない）
