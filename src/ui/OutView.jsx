@@ -299,25 +299,26 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
               ? `読み込んだ「${state.initialBookInfo.name}」の、入力済みの最後の行より下の空き行に書き込みます。ブックで入力済みの木は書き込みません。書き込むセルのほかは変えません（列の並び・入力規則・書式もそのまま）。保存する前に、書き出したファイルを読み直して全件照合します。元のファイルは変わりません。`
               : '先に「設定」でデータ入力用ブックを読み込んでください。'}
           </p>
-          {cfg.initialSurvey.karte && (
-            <>
-              <h3>確認用カルテ</h3>
-              <button
-                type="button"
-                className="btn"
-                disabled={!!busy || !karteRecs.length || !state.karteTemplateInfo || state.karteTemplateInfo.errors?.length > 0}
-                onClick={onKarte}
-                data-testid="export-karte"
-              >
-                {busy === '確認用カルテ' ? '作成中…' : `確認用カルテを出力（入力済みの${karteRecs.length}本）`}
-              </button>
-              <p className="hint">
-                {state.karteTemplateInfo
-                  ? '入力済みの記録を、カルテの様式に1本1シートで書き込みます（未確定の記録も入れます。写真は入りません）。中身を確かめるためのもので、提出用ではありません。提出用のカルテは、データ入力用ブックからマクロで作ってください。'
-                  : '先に「設定」でカルテの様式を読み込んでください。'}
-              </p>
-            </>
-          )}
+        </div>
+      )}
+
+      {ini && cfg.initialSurvey.karte && (
+        <div className="sec" data-testid="karte-sec">
+          <h2>{cfg.initialSurvey.label}：確認用カルテ</h2>
+          <button
+            type="button"
+            className="btn big"
+            disabled={!!busy || !karteRecs.length || !state.karteTemplateInfo || state.karteTemplateInfo.errors?.length > 0}
+            onClick={onKarte}
+            data-testid="export-karte"
+          >
+            {busy === '確認用カルテ' ? '作成中…' : `確認用カルテを出力（入力済みの${karteRecs.length}本）`}
+          </button>
+          <p className="hint">
+            {state.karteTemplateInfo
+              ? '入力済みの記録を、カルテの様式に1本1シートで書き込みます（未確定の記録も入れます。写真は入りません）。中身を確かめるためのもので、提出用ではありません。提出用のカルテは、データ入力用ブックからマクロで作ってください。'
+              : '先に「設定」でカルテの様式を読み込んでください。'}
+          </p>
         </div>
       )}
 
