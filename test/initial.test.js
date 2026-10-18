@@ -7,7 +7,7 @@ import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
 import { bookEntry, bookValues, fillNone, initialOf, initialsForBook, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
-import { addSticky, reviewState, treeKey } from '../src/store/review.js';
+import { addSticky, answerSticky, closeSticky, fieldLabel, reviewFields, reviewState, reviewStatesOf, setConfirm, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
 import { INITIAL, initialKey } from '../src/store/surveys.js';
 import { makeFakeGas } from './helpers/fakeGas.js';
@@ -130,6 +130,36 @@ describe('詳しい診断の記録の送受信と付箋', () => {
     expect(r.state.stickies[r.id].treeId).toBe('initial|2099|park|AB001|1');
     expect(reviewState(r.state.initials[0], r.state, cfg, INITIAL)).toBe('asked');
     expect(reviewState(r.state.trees[0], r.state, cfg)).toBe('submitted');
+  });
+
+  it('付箋を付けられる項目は入力画面のすべての項目（弱点は詳細も）。採用すると記録に入り、数の項目は数のまま', () => {
+    const fields = reviewFields(cfg, INITIAL);
+    expect(fields.map((f) => f.key)).toEqual(expect.arrayContaining(['b4', 'b4Detail', 'height']));
+    expect(fieldLabel('b4Detail', cfg, INITIAL)).toMatch(/（詳細）$/);
+    expect(fieldLabel(null, cfg, INITIAL)).toBe('記録全体');
+
+    let s = startInitial(S([need('AB001', { sent: true, rev: 1 })]), need('AB001'), cfg).state;
+    s = { ...s, initials: s.initials.map((r) => ({ ...r, done: true, sent: true, rev: 1 })) };
+    expect(s.initials[0].height).toBe(12);
+    const a = addSticky(s, s.initials[0], { field: 'height', question: '樹高は？', proposal: '１３．５' }, cfg, INITIAL);
+    const b = addSticky(a.state, a.state.initials[0], { field: 'b4', proposal: '有（小）' }, cfg, INITIAL);
+    expect(reviewStatesOf(b.state.trees[0], b.state, cfg)).toEqual(['submitted', 'asked']);
+
+    s = { ...b.state, user: { role: 'surveyor', name: '試験' } };
+    s = answerSticky(s, a.id, { type: 'adopt' }, cfg);
+    s = answerSticky(s, b.id, { type: 'adopt' }, cfg);
+    expect(s.initials[0]).toMatchObject({ height: 13.5, b4: '有（小）', sent: false }); // 数は数のまま（全角でも）
+    expect(reviewState(s.initials[0], s, cfg, INITIAL)).toBe('answered');
+    expect(() => setConfirm(s, s.initials[0], true, cfg, INITIAL)).toThrow('付箋');
+
+    // 確認済みにして、送信済みになれば確定できる。確定した記録だけがブックに書き込む対象
+    s = closeSticky(closeSticky(s, a.id), b.id);
+    s = { ...s, initials: s.initials.map((r) => ({ ...r, sent: true, rev: 2 })) };
+    s = setConfirm(s, s.initials[0], true, cfg, INITIAL);
+    expect(reviewState(s.initials[0], s, cfg, INITIAL)).toBe('confirmed');
+    expect(initialsForBook(s, cfg).records.map((r) => r.treeNo)).toEqual(['AB001']);
+    expect(s.confirms['initial|2099|park|AB001|1'].value).toBe(true);
+    expect(s.confirms['2099|park|AB001|1']).toBeUndefined(); // 簡易診断の木は確定していない
   });
 });
 

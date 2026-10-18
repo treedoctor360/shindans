@@ -7,7 +7,7 @@ import ListView, { activeGroup } from './ui/ListView.jsx';
 import OutView from './ui/OutView.jsx';
 import SettingsView from './ui/SettingsView.jsx';
 import { useAppState } from './ui/useAppState.js';
-import { reviewState } from './store/review.js';
+import { reviewStatesOf } from './store/review.js';
 import { APP_VERSION } from './version.js';
 
 const TABS = [
@@ -65,9 +65,11 @@ export default function App() {
       {app.config && state.server?.url && (() => {
         // 気付いてほしいこと：調査者には返事待ちの付箋、事務には回答済みの付箋、どちらにも食い違い
         const role = state.user?.role || 'surveyor';
-        const conflicts = state.trees.filter((t) => t.conflict).length;
+        //  詳しい診断の記録も、その木の分として数える
         const want = role === 'office' ? 'answered' : 'asked';
-        const n = state.trees.filter((t) => !t.conflict && reviewState(t, state, app.config) === want).length;
+        const states = state.trees.map((t) => reviewStatesOf(t, state, app.config));
+        const conflicts = states.filter((x) => x.includes('conflict')).length;
+        const n = states.filter((x) => !x.includes('conflict') && x.includes(want)).length;
         if (!conflicts && !n) return null;
         const msg = [
           n ? (role === 'office' ? `調査者から返事が来た木が${n}本あります` : `事務から付箋が届いた木が${n}本あります`) : '',

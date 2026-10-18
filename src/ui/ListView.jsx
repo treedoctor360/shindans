@@ -4,7 +4,8 @@ import { alertsOf } from '../core/rules.js';
 import { monthDay, toHalf } from '../core/text.js';
 import { useState } from 'react';
 import { addTree } from '../store/actions.js';
-import { REVIEW_LABEL, confirmable, reviewState, setConfirm } from '../store/review.js';
+import { REVIEW_LABEL, confirmable, initialRecordOf, reviewState, reviewStatesOf, setConfirm } from '../store/review.js';
+import { INITIAL } from '../store/surveys.js';
 import { prevOf } from '../store/previous.js';
 import { INITIAL_STATUS_LABEL, initialStatus, isInitialTarget } from '../store/initial.js';
 import { usePrevIndex } from './usePrevious.js';
@@ -63,6 +64,12 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
   const filter = state.listFilter === 'deleted' && !deleted.length ? 'all' : state.listFilter || 'all';
   const inArea = (t) => !area || (t.area || NO_AREA) === area;
   const rsOf = (t) => (t.conflict ? 'conflict' : reviewState(t, state, cfg));
+  // 確認の段階での絞り込みは、木と、その木の詳しい診断の記録のどちらかが当てはまれば出す
+  const rsHas = (t, k) => reviewStatesOf(t, state, cfg).includes(k);
+  const iniRs = (t) => {
+    const r = initialRecordOf(state, t, cfg);
+    return r ? (r.conflict ? 'conflict' : reviewState(r, state, cfg, INITIAL)) : null;
+  };
   const list = (filter === 'deleted' ? deleted : all)
     .filter(inArea)
     .filter(
@@ -71,22 +78,39 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
         filter === 'all' ||
         (filter === 'todo' && !t.done) ||
         (filter === 'wait' && treeState(t, cfg) === 'wait') ||
-        rsOf(t) === filter,
+        rsHas(t, filter),
     );
   const useReview = !!state.server?.url;
   const role = state.user?.role || 'surveyor';
   const bulk = role === 'office' ? confirmable(all.filter(inArea), state, cfg) : [];
+  // 詳しい診断の記録も、付箋のない提出済みのものはまとめて確定できる
+  const bulkIni =
+    role === 'office'
+      ? confirmable(
+          all
+            .filter(inArea)
+            .map((t) => initialRecordOf(state, t, cfg))
+            .filter(Boolean),
+          state,
+          cfg,
+          INITIAL,
+        )
+      : [];
+  const iniLabel = cfg.initialSurvey?.label || '詳しい診断';
+  const bulkText = [bulk.length ? `${bulk.length}本` : '', bulkIni.length ? `${iniLabel}${bulkIni.length}件` : ''].filter(Boolean).join('・');
   const onBulk = () => {
     const ids = new Set(bulk.map((t) => t.id));
+    const iniIds = new Set(bulkIni.map((r) => r.id));
     update(
       (s) => {
         let next = s;
         for (const t of s.trees.filter((x) => ids.has(x.id))) next = setConfirm(next, t, true, cfg);
+        for (const r of (s.initials || []).filter((x) => iniIds.has(x.id))) next = setConfirm(next, r, true, cfg, INITIAL);
         return next;
       },
       { now: true },
     ).then(() => send?.());
-    toast?.(`${bulk.length}本を確定しました`);
+    toast?.(`${bulkText}を確定しました`);
     setAskBulk(false);
   };
   const done = all.filter((t) => t.done).length;
@@ -161,7 +185,7 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
       {useReview && (
         <div className="filters" data-testid="review-filters">
           {REVIEW_FILTERS.map(([k, l]) => {
-            const n = all.filter(inArea).filter((t) => rsOf(t) === k).length;
+            const n = all.filter(inArea).filter((t) => rsHas(t, k)).length;
             return (
               <button key={k} type="button" className={`chip${filter === k ? ' on' : ''}`} onClick={() => set({ listFilter: k })} data-filter={k}>
                 {l}（{n}）
@@ -170,10 +194,10 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
           })}
         </div>
       )}
-      {bulk.length > 0 &&
+      {bulk.length + bulkIni.length > 0 &&
         (askBulk ? (
           <div className="alert info">
-            <span>付箋のない提出済みの{bulk.length}本を確定します（{area || 'すべての区画'}）。</span>
+            <span>付箋のない提出済みの{bulkText}を確定します（{area || 'すべての区画'}）。</span>
             <div className="acts">
               <button type="button" className="btn fill" onClick={onBulk} data-testid="bulk-confirm-ok">
                 確定する
@@ -185,7 +209,7 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
           </div>
         ) : (
           <button type="button" className="btn" onClick={() => setAskBulk(true)} data-testid="bulk-confirm">
-            付箋のない提出済みの{bulk.length}本をまとめて確定
+            付箋のない提出済みの{bulkText}をまとめて確定
           </button>
         ))}
 
@@ -224,6 +248,11 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
                 {isInitialTarget(t, cfg) && (
                   <span className={`tag${['both'].includes(initialStatus(t, state, cfg)) ? ' w' : ''}`} data-initial={initialStatus(t, state, cfg)}>
                     {cfg.initial.pill || '診断'}：{INITIAL_STATUS_LABEL[initialStatus(t, state, cfg)]}
+                  </span>
+                )}
+                {useReview && ['asked', 'answered', 'confirmed', 'conflict'].includes(iniRs(t)) && (
+                  <span className={`tag rs-${iniRs(t)}`} data-initial-review={iniRs(t)}>
+                    {cfg.initial.pill || '診断'}：{iniRs(t) === 'conflict' ? '食い違い' : REVIEW_LABEL[iniRs(t)]}
                   </span>
                 )}
                 {nWarn > 0 && <span className="tag w">要確認{nWarn}</span>}
