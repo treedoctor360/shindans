@@ -38,7 +38,7 @@ async function addNoNumber(page, height) {
   await page.click('text=一覧にない木を追加');
   await page.fill('#f-species', 'テストノキ');
   await page.fill('#f-height', height);
-  await page.click('text=保存して次の木へ');
+  await page.click('[data-testid=save-to-list]');
   await page.click('text=未入力のまま保存する');
 }
 
