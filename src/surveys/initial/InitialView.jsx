@@ -3,7 +3,7 @@
 //  選択肢は設定かデータ入力用ブックの入力規則から。簡易診断から引き継いだ項目には「簡易から」と出す。
 //  事務の端末では表示だけ（直すのは調査者）。
 //  データ入力用ブックに手で入力済みの木は、ブックの内容を表示だけする（「アプリで入力し直す」でブックの値を下書きにできる）。
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toHalf } from '../../core/text.js';
 import {
   INITIAL_STATUS_LABEL,
@@ -121,7 +121,7 @@ function Item({ it, rec, cfg, opts, set, press, edit }) {
     const dk = detailKeyOf(it);
     const showDetail = it.type === 'weak' && v !== '' && !isNone(v, cfg);
     return (
-      <div className="row" data-item={it.key}>
+      <div className="row choice" data-item={it.key}>
         <span className="lbl">
           {it.label} {tags}
         </span>
@@ -132,6 +132,7 @@ function Item({ it, rec, cfg, opts, set, press, edit }) {
             id={`i-${dk}`}
             type="text"
             value={rec[dk] ?? ''}
+            className="detail"
             placeholder={it.detailHint || '位置・大きさなど'}
             // 部品のある項目で文を手で直したら、部品を変えても文を上書きしない
             onChange={(e) => (partsOf(it, cfg).length && edit ? edit((r) => setDetailText(r, dk, e.target.value)) : set(dk, e.target.value))}
@@ -161,6 +162,7 @@ function Item({ it, rec, cfg, opts, set, press, edit }) {
             id={id}
             type="text"
             inputMode={it.type === 'number' ? 'decimal' : undefined}
+            placeholder={it.blank != null ? `空欄なら ${it.blank}` : undefined}
             value={v}
             onChange={(e) => set(it.key, e.target.value)}
             onBlur={() => {
@@ -177,6 +179,19 @@ function Item({ it, rec, cfg, opts, set, press, edit }) {
   );
 }
 
+// 区切りの項目を、画面の並べ方ごとにまとめる
+//  続いている数・1行の文字の項目は2列のまとまり（grid）にする。返す形：[{ grid, items }]
+function groupItems(items) {
+  const out = [];
+  for (const it of items) {
+    const short = it.type === 'number' || it.type === 'text';
+    const last = out.at(-1);
+    if (short && last?.grid) last.items.push(it);
+    else out.push({ grid: short, items: [it] });
+  }
+  return out;
+}
+
 // 項目の名前から、その項目（設定の入力画面の項目）と書式を探す。付箋の修正案の選択肢に使う
 function itemOf(cfg, key) {
   for (const [form, f] of Object.entries(cfg.initialSurvey?.forms || {}))
@@ -190,6 +205,11 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const [missingAsk, setMissingAsk] = useState(null);
   const [showBook, setShowBook] = useState(false); // アプリの記録があるとき、ブックの内容を見るか
   const [askRemove, setAskRemove] = useState(false); // 取り消し・下書きを消すの確かめ中か
+  // 区切りの見出しを画面の上に残す（いま何の項目を入力しているか分かるように）。上の帯の高さだけ下げる
+  useEffect(() => {
+    const bar = document.querySelector('.top');
+    if (bar) document.documentElement.style.setProperty('--top-h', `${bar.offsetHeight}px`);
+  }, []);
   const tree = state.trees.find((t) => t.id === state.initialTreeId);
   const appRec = tree && cfg ? initialOf(state, tree, cfg) : null;
   const entry = tree && cfg?.initialSurvey ? bookEntry(state, tree, cfg) : null;
@@ -280,7 +300,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   };
 
   return (
-    <section className="view" data-testid="initial-view">
+    <section className="view initial-form" data-testid="initial-view">
       <div className="sub" style={{ justifyContent: 'space-between' }}>
         <button type="button" className="btn" onClick={() => back('form')} data-testid="back-to-simple">
           ← 簡易診断へ
@@ -357,9 +377,18 @@ export default function InitialView({ state, update, config: cfg, toast, send })
                 まだ選んでいない項目をすべて「{cfg.initialSurvey.noneValue || '無'}」にする
               </button>
             )}
-            {sec.items.map((it) => (
-              <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} edit={readOnly ? null : edit} />
-            ))}
+            {/* 数・1行の文字の項目は2列に並べる（縦に長くならないように）。選択肢・数行の文字は1行ずつ */}
+            {groupItems(sec.items).map((g) =>
+              g.grid ? (
+                <div className="grid2" key={g.items[0].key}>
+                  {g.items.map((it) => (
+                    <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} edit={readOnly ? null : edit} />
+                  ))}
+                </div>
+              ) : (
+                <Item key={g.items[0].key} it={g.items[0]} rec={rec} cfg={cfg} opts={optionsFor(g.items[0])} set={set} press={press} edit={readOnly ? null : edit} />
+              ),
+            )}
           </div>
         ))}
       </fieldset>

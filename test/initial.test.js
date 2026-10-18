@@ -307,3 +307,18 @@ describe('一覧表の健全度への書き戻し', () => {
     expect(gradeWriteBack(s, c, s.trees).trees).toBe(s.trees);
   });
 });
+
+describe('空欄のときに入れる値（blank）', () => {
+  it('保存したとき、空欄の項目に blank の値を入れる（入っていれば変えない）', () => {
+    let s = startInitial(S([need('AB001'), need('AB002')]), need('AB001'), cfg).state;
+    s = startInitial(s, need('AB002'), cfg).state;
+    const [a, b] = s.initials.map((r) => r.id);
+    s = updateInitial(s, b, (r) => ({ ...r, clearWalk: 2.5 }));
+    s = saveInitial(s, a, cfg, { force: true }).state;
+    s = saveInitial(s, b, cfg, { force: true }).state;
+    expect(s.initials.map((r) => r.clearWalk)).toEqual(['-', 2.5]);
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.forms.initial.sections[0].items[2].blank = 3;
+    expect(validateConfig(c).errors.join()).toContain('blank');
+  });
+});
