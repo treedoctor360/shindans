@@ -94,6 +94,16 @@ describe('一覧表への書き戻し', () => {
     expect(again).toMatchObject({ source: 'ledger', vigor: '並', deadBranch: '有', deadBranchCount: '2', fungusName: '名前不明', ledgerDate: '2099-05-06' });
   });
 
+  it('詳しい診断が必要な木は、詳しい診断の結果（initialGrade）があるときだけ健全度を書き、照合に通る', async () => {
+    const { buf, trees } = await setup();
+    const mine = trees.map((t) => (t.treeNo === 'AB002' ? { ...t, ...entry, initialNeeded: '要', initialGrade: 'D' } : t));
+    const r = await exportDb(buf, mine, cfg);
+    expect(r.errors).toEqual([]);
+    const again = mergeLedger([], (await readLedger(r.buffer, cfg)).rows, cfg).trees.find((t) => t.treeNo === 'AB002');
+    expect(again.grade).toBe('D');
+    expect(dbValues({ ...entry, initialNeeded: '要' }, cfg).grade).toBeNull(); // 結果がなければ空欄のまま
+  });
+
   it('罫線の色「自動」を付け直す', async () => {
     const { buf, trees } = await setup();
     const r = await exportDb(buf, trees, cfg);

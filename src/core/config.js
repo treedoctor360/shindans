@@ -209,6 +209,17 @@ function validateInitialSurvey(s, cfg, need) {
     );
   if (s.forms != null) validateInitialForms(s.forms, need);
   validateDetailParts(s, need); // 弱点の詳細を組み立てる部品（省略可）
+  // 一覧表の健全度への書き戻し（省略可）：{ from: "詳しい診断の項目", values: [書く値…], treatFrom?: "処置の項目" }
+  if (s.gradeWriteBack != null)
+    need(
+      isObj(s.gradeWriteBack) &&
+        isStr(s.gradeWriteBack.from) &&
+        isArr(s.gradeWriteBack.values) &&
+        s.gradeWriteBack.values.length > 0 &&
+        s.gradeWriteBack.values.every(isStr) &&
+        (s.gradeWriteBack.treatFrom == null || isStr(s.gradeWriteBack.treatFrom)),
+      'initialSurvey.gradeWriteBack は { from: "項目", values: ["A", …], treatFrom?: "項目" } の形にしてください',
+    );
   if (s.stamp != null)
     need(
       isObj(s.stamp) && (s.stamp.date == null || (isArr(s.stamp.date) && s.stamp.date.length === 3 && s.stamp.date.every(isStr))) && (s.stamp.inspector == null || isStr(s.stamp.inspector)),

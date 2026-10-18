@@ -46,7 +46,8 @@ export function dbValues(tree, cfg) {
     heightRatio: () => heightRatioOf(tree, cfg), // 実際には式で書く（下の writeRow）
     branchRatio: () => branchRatioCell(tree, cfg),
     note: () => toHalf(dbNoteOf(tree, cfg)),
-    grade: () => (tree.initialNeeded === cfg.initial.yes ? '' : tree.grade),
+    // 詳しい診断が必要な木の健全度は、詳しい診断の結果を書き戻すとき（initialGrade）だけ書く。それまでは空欄
+    grade: () => (tree.initialNeeded === cfg.initial.yes ? tree.initialGrade || '' : tree.grade),
     treat: () => toHalf(composeTreat(tree, cfg)),
     photo: () => photoFlag(tree, cfg),
   };

@@ -192,6 +192,43 @@ export function saveInitial(state, id, cfg, { force = false, now = new Date().to
   return { state: next, missing, saved: true };
 }
 
+// ---------- 一覧表の健全度への書き戻し ----------
+
+// 処置の文を比べるための形（全角・半角、空白、区切りの違いは無視する）
+const treatForm = (s) => toHalf(String(s ?? '')).replace(/[\s　]/g, '').replace(/[、,，]/g, '・');
+
+// 一覧表に書く木に、詳しい診断の結果（設定 initialSurvey.gradeWriteBack.from）を健全度として付ける
+//  書くのは、詳しい診断の記録がブックに出せる状態（入力済み・確定。initialsForBook と同じ）で、値が values のどれかのときだけ。
+//  一覧表の処置は書き換えない。詳しい診断の処置（treatFrom）と違えば知らせるだけ。
+//  台帳で入力済みの木（手で入力した行）には書かない（アプリで入力した木の行だけに書く約束のため）。知らせるだけ。
+//  返す形：{ trees（initialGrade を付けた木）, written: [{ tree, grade }], treatDiff: [{ tree, simple, initial }],
+//            ledger: [{ tree, grade }]（台帳の行なので書かなかった）, pending: [tree]（詳しい診断の結果がまだない） }
+export function gradeWriteBack(state, cfg, trees, { includeUnconfirmed = false, treatOf = () => '' } = {}) {
+  const gw = cfg.initialSurvey?.gradeWriteBack;
+  const out = { trees, written: [], treatDiff: [], ledger: [], pending: [] };
+  if (!gw) return out;
+  const ready = new Map(initialsForBook(state, cfg, { includeUnconfirmed }).records.map((r) => [initialKey(r, cfg), r]));
+  out.trees = trees.map((t) => {
+    if (!isInitialTarget(t, cfg)) return t;
+    const r = ready.get(`initial|${simpleKey(t, cfg)}`);
+    const grade = r ? String(r[gw.from] ?? '').trim() : '';
+    if (!gw.values.includes(grade)) {
+      if (t.source === 'app' && t.done) out.pending.push(t);
+      return t;
+    }
+    if (t.source !== 'app') {
+      out.ledger.push({ tree: t, grade });
+      return t;
+    }
+    out.written.push({ tree: t, grade });
+    const it = gw.treatFrom ? String(r[gw.treatFrom] ?? '').trim() : '';
+    const st = treatOf(t);
+    if (it && treatForm(it) !== treatForm(st)) out.treatDiff.push({ tree: t, simple: st, initial: it });
+    return { ...t, initialGrade: grade };
+  });
+  return out;
+}
+
 // ---------- 入力の取り消し（調査者の操作） ----------
 
 // 入力済みの記録を未入力に戻す（値は下書きとして残し、未入力に戻ったことを送る。確定していれば、版が変わるので確定は外れる）

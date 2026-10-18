@@ -857,6 +857,30 @@
                 ]
               }
             ]
+          },
+          {
+            "title": "総合評価（後で）",
+            "items": [
+              {
+                "key": "overall",
+                "label": "総合評価",
+                "type": "choice",
+                "options": [
+                  "A",
+                  "B",
+                  "C",
+                  "D",
+                  "E",
+                  "-"
+                ],
+                "desk": true
+              },
+              {
+                "key": "treatment",
+                "label": "改善的処置",
+                "type": "text"
+              }
+            ]
           }
         ]
       },
@@ -1039,6 +1063,17 @@
       "height",
       "size",
       "name"
-    ]
+    ],
+    "gradeWriteBack": {
+      "from": "overall",
+      "values": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "treatFrom": "treatment"
+    }
   }
 }
