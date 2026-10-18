@@ -146,6 +146,22 @@ describe('まとめて、木と結び付ける', () => {
     expect(fieldSheetMarks(park({ treeNo: 'AB001' }), null, cfg, specs)).toEqual([]);
   });
 
+  it('以前の形（1種類だけの「カルテ」）で読んだ分と、同じ調査を今の形で読み直した分が、二重に出ない', async () => {
+    const now = (await read([{ no: 'AB001' }]))[0];
+    const legacy = { treeNo: 'AB001', code: 'K01', species: 'テストノキ', date: now.date, items: [], packId: 'p1' };
+    const base = { index: { version: 1, karte: { 'K01|AB001': legacy }, packs: { p1: { code: 'K01', count: 1 } } }, packs: { p1: { 'K01|AB001': [{ caption: '古い写真' }] } } };
+    // 端末やサーバーに古い分が残ったままでも、画面には二重に出さない
+    const mixed = { ...base.index, version: 2, trees: { 'K01|AB001': [{ kind: 'karte', title: '', ...legacy }, { ...now, packId: 'p1' }] } };
+    expect(prevOf(park({ treeNo: 'AB001' }), mixed, cfg).kartes.map((k) => k.kind)).toEqual(['detail']);
+    // 読み直すと、古い分（と写真）は入れ替わって消える
+    const p = buildPrevious([now], 'later', order, base);
+    expect(p.index.trees['K01|AB001'].map((k) => k.kind)).toEqual(['detail']);
+    expect(Object.keys(p.packs.p1['K01|AB001'])).toEqual(['detail']);
+    // 日付が違う（別の回の調査）なら残す
+    const other = { ...base, index: { ...base.index, karte: { 'K01|AB001': { ...legacy, date: '2000-01-01' } } } };
+    expect(buildPrevious([now], 'later', order, other).index.trees['K01|AB001'].map((k) => k.kind)).toEqual(['detail', 'karte']);
+  });
+
   it('以前の形（版1）の要点・写真も読める', () => {
     const v1 = { version: 1, karte: { 'K01|AB001': { treeNo: 'AB001', code: 'K01', species: 'テストノキ', items: [], packId: 'p1' } }, packs: {} };
     expect(prevCount(v1)).toBe(1);
