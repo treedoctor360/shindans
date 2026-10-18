@@ -4,6 +4,7 @@
 
 import { RULE_TYPES } from './rules.js';
 import { validateDetailParts } from './detailParts.js';
+import { validateKarte } from './karteCells.js';
 
 // このアプリが読める設定の版。形式を変えたら上げる
 export const CONFIG_VERSION = 6; // 2: dbFormat（台帳の列）/ 3: 一覧表への書き戻し / 4: fieldSheet（野帳）/ 5: 入力画面の選択肢 / 6: initialSurvey（詳しい診断のデータ入力用ブック。省略可）
@@ -220,6 +221,11 @@ function validateInitialSurvey(s, cfg, need) {
         (s.gradeWriteBack.treatFrom == null || isStr(s.gradeWriteBack.treatFrom)),
       'initialSurvey.gradeWriteBack は { from: "項目", values: ["A", …], treatFrom?: "項目" } の形にしてください',
     );
+  // 確認用のカルテの様式（省略可）
+  if (s.karte != null) {
+    const siteTypesK = isObj(cfg.dbFormat) && isArr(cfg.dbFormat.sheets) ? cfg.dbFormat.sheets.map((x) => x?.type) : [];
+    validateKarte(s.karte, (form) => initialKeys(s, form), siteTypesK, need);
+  }
   if (s.stamp != null)
     need(
       isObj(s.stamp) && (s.stamp.date == null || (isArr(s.stamp.date) && s.stamp.date.length === 3 && s.stamp.date.every(isStr))) && (s.stamp.inspector == null || isStr(s.stamp.inspector)),
@@ -263,6 +269,23 @@ function validateInitialSurvey(s, cfg, need) {
     }
     need(new Set(cols).size === cols.length, `${at}.columns の列が重複しています`);
   });
+}
+
+// 詳しい診断の記録で使える項目の名前（書式 form ごと）：入力画面の項目・弱点の詳細・ブックの列・調査日と調査者・引き継ぎ
+function initialKeys(s, form) {
+  const keys = new Set();
+  const f = isObj(s.forms) ? s.forms[form] : null;
+  for (const sec of (isObj(f) && isArr(f.sections) ? f.sections : []))
+    for (const it of isObj(sec) && isArr(sec.items) ? sec.items : []) {
+      if (!isObj(it) || !isStr(it.key)) continue;
+      keys.add(it.key);
+      if (it.type === 'weak') keys.add(it.detailKey || `${it.key}Detail`);
+    }
+  for (const sh of isObj(s.book) && isArr(s.book.sheets) ? s.book.sheets : []) if (isObj(sh) && sh.form === form && isObj(sh.columns)) Object.keys(sh.columns).forEach((k) => keys.add(k));
+  if (isObj(s.stamp)) [...(isArr(s.stamp.date) ? s.stamp.date : []), s.stamp.inspector].filter(isStr).forEach((k) => keys.add(k));
+  if (isObj(s.inherit)) Object.keys(s.inherit).forEach((k) => keys.add(k));
+  ['treeNo', 'species'].forEach((k) => keys.add(k));
+  return keys;
 }
 
 // 詳しい診断の入力画面の並び（省略可）

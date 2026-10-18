@@ -1084,6 +1084,117 @@
         "E"
       ],
       "treatFrom": "treatment"
+    },
+    "karte": {
+      "mark": "確認用（提出不可）",
+      "sheets": [
+        {
+          "form": "initial",
+          "siteType": "park",
+          "sheet": "^公園_カルテ$",
+          "checks": {
+            "A1": "詳しい診断カルテ",
+            "A3": "樹高"
+          },
+          "cells": [
+            {
+              "cell": "E1",
+              "keys": [
+                "year",
+                "month",
+                "day"
+              ],
+              "join": "/"
+            },
+            {
+              "cell": "F1",
+              "key": "inspector"
+            },
+            {
+              "cell": "C2",
+              "key": "treeNo"
+            },
+            {
+              "cell": "C3",
+              "key": "height",
+              "num": true
+            },
+            {
+              "cell": "C4",
+              "key": "girth",
+              "num": true
+            },
+            {
+              "cell": "C6",
+              "key": "lean",
+              "boxes": "□無 □有",
+              "match": "first"
+            },
+            {
+              "cell": "E6",
+              "key": "lean",
+              "boxes": "□安全　□危険",
+              "match": "contains"
+            },
+            {
+              "cell": "C7",
+              "key": "b4",
+              "boxes": "□無 □有",
+              "match": "first",
+              "full": true
+            },
+            {
+              "cell": "E7",
+              "key": "b4Detail"
+            },
+            {
+              "cell": "C8",
+              "key": "overall",
+              "boxes": "□A □B □C □D □E",
+              "map": {
+                "-": ""
+              }
+            }
+          ],
+          "markCell": "A10"
+        },
+        {
+          "form": "environment",
+          "siteType": "park",
+          "sheet": "^公園_環境カルテ$",
+          "suffix": "_環境",
+          "checks": {
+            "A3": "気象"
+          },
+          "cells": [
+            {
+              "cell": "C2",
+              "key": "treeNo"
+            },
+            {
+              "cell": "C3",
+              "key": "weather",
+              "boxes": "□無 □有",
+              "match": "first"
+            },
+            {
+              "cell": "C4",
+              "key": "stake",
+              "boxes": "□無 □有",
+              "match": "first"
+            },
+            {
+              "cell": "E4",
+              "key": "stake",
+              "omit": [
+                "無",
+                "有"
+              ],
+              "pattern": "｜(.*)$"
+            }
+          ]
+        }
+      ]
     }
   }
 }

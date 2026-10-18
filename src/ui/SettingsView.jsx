@@ -1,7 +1,7 @@
 // 設定画面：調査情報、設定ファイル・野帳の原本・台帳の読み込み
 import { useState } from 'react';
 import { bookCount } from '../store/initial.js';
-import { applyLedger, loadConfigText, importInitialBook, readLedgerFile, saveTemplate } from '../store/state.js';
+import { applyLedger, loadConfigText, importInitialBook, readKarteTemplateFile, readLedgerFile, saveTemplate } from '../store/state.js';
 import PrevSection from './PrevSection.jsx';
 import { diagnosticDump } from '../store/diagnose.js';
 import { APP_VERSION } from '../version.js';
@@ -97,6 +97,21 @@ export default function SettingsView({ state, update, config, setConfig, toast }
     }
   };
   const book = state.initialBookInfo;
+
+  // 確認用カルテの様式（設定に initialSurvey.karte があるときだけ）
+  const onKarteTemplate = async (file) => {
+    setBusy(true);
+    try {
+      const info = await readKarteTemplateFile(file.name, await file.arrayBuffer(), config, todayYmd());
+      await update((st) => ({ ...st, karteTemplateInfo: info }), { now: true });
+      toast(info.errors.length ? `様式に設定と違う所があります（${info.errors.length}か所）` : `カルテの様式を読み込みました（${info.sheets.length}種類）`);
+    } catch (e) {
+      toast(e.message || 'カルテの様式を読み込めませんでした');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const kt = state.karteTemplateInfo;
 
   return (
     <section className="view settings">
@@ -207,6 +222,37 @@ export default function SettingsView({ state, update, config, setConfig, toast }
             testId="initial-book-file"
           />
           <p className="hint">手で入力済みの木を知り、二重入力を防ぎます。列の並びは変えずに、空いている行へ書き込みます（書き込みは出力の画面から）。</p>
+        </div>
+      )}
+
+      {config?.initialSurvey?.karte && (
+        <div className="sec">
+          <h2>カルテの様式（確認用カルテ）</h2>
+          <div className="hint" data-testid="karte-template-status">
+            {kt ? (
+              <>
+                <span className="ok">読み込み済み</span>：{kt.name}（{kt.date}）・{kt.sheets.join('・')}
+              </>
+            ) : (
+              'まだ読み込んでいません。'
+            )}
+          </div>
+          {kt?.errors?.length > 0 && (
+            <div className="alert warn" data-testid="karte-template-errors">
+              <span>様式が設定と違うため、確認用カルテを作れません。様式のシートが変わっていないか確かめてください。</span>
+              {kt.errors.map((e) => (
+                <span key={e}>・{e}</span>
+              ))}
+            </div>
+          )}
+          <FileButton
+            label={busy ? '読み込み中…' : 'カルテの様式が入ったブック（Excel）を読み込む'}
+            accept=".xlsx,.xlsm"
+            onFile={onKarteTemplate}
+            disabled={busy}
+            testId="karte-template-file"
+          />
+          <p className="hint">カルテを作るマクロの入ったブックなど、空のカルテの様式があるブックを選びます。この端末にだけ置きます（マクロは動かしません）。確認用カルテは「出力」から作ります。</p>
         </div>
       )}
 

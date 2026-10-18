@@ -5,8 +5,9 @@ import { toHalf } from '../core/text.js';
 import { dbValues, exportDb } from '../excel/dbExport.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
 import { exportInitialBook } from '../excel/initialExport.js';
+import { exportKarte } from '../excel/karteExport.js';
 import { gradeWriteBack, initialsForBook } from '../store/initial.js';
-import { loadInitialBookFile, loadLedgerFile, loadTemplate } from '../store/state.js';
+import { loadInitialBookFile, loadKarteTemplateFile, loadLedgerFile, loadTemplate } from '../store/state.js';
 import { unsentCount } from '../store/sync.js';
 import { treesForDb } from '../store/review.js';
 import { fieldSheetMarks, loadIndex } from '../store/previous.js';
@@ -141,6 +142,20 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
           (r.stats.skippedInBook.length ? `。ブックで入力済みの${r.stats.skippedInBook.length}本（${r.stats.skippedInBook.slice(0, 5).join('・')}）は書き込んでいません` : '') +
           (r.stats.skippedNoNumber ? `。番号のない${r.stats.skippedNoNumber}本は書き込んでいません` : ''),
       );
+    });
+
+  // 確認用のカルテ（1本1シート）を作る。入力済みなら未確定の記録も入れる（途中の確認用）
+  const karteRecs = cfg.initialSurvey?.karte ? initialsForBook(state, cfg, { includeUnconfirmed: true }).records : [];
+  const onKarte = () =>
+    run('確認用カルテ', async () => {
+      const file = await loadKarteTemplateFile();
+      if (!file) throw new Error('カルテの様式がありません。「設定」で読み込んでください');
+      const r = await exportKarte(file.buffer.slice(0), karteRecs, cfg);
+      if (r.errors.length) return setCheck({ title: '確認用カルテの出力検査', errors: r.errors });
+      if (!r.stats.sheets.length) return toast('カルテにする記録がありませんでした');
+      const n = new Set(r.stats.sheets.map((s) => s.treeNo)).size;
+      download(`確認用カルテ_${safeName(cfg.initialSurvey.label)}_${n}本_提出不可_${yymmdd()}.xlsx`, r.buffer);
+      toast(`検査OK。${n}本・${r.stats.sheets.length}枚のカルテを作りました（確認用。提出はマクロで作ったカルテで）`);
     });
 
   const unsent = unsentCount(state);
@@ -284,6 +299,25 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
               ? `読み込んだ「${state.initialBookInfo.name}」の、入力済みの最後の行より下の空き行に書き込みます。ブックで入力済みの木は書き込みません。書き込むセルのほかは変えません（列の並び・入力規則・書式もそのまま）。保存する前に、書き出したファイルを読み直して全件照合します。元のファイルは変わりません。`
               : '先に「設定」でデータ入力用ブックを読み込んでください。'}
           </p>
+          {cfg.initialSurvey.karte && (
+            <>
+              <h3>確認用カルテ</h3>
+              <button
+                type="button"
+                className="btn"
+                disabled={!!busy || !karteRecs.length || !state.karteTemplateInfo || state.karteTemplateInfo.errors?.length > 0}
+                onClick={onKarte}
+                data-testid="export-karte"
+              >
+                {busy === '確認用カルテ' ? '作成中…' : `確認用カルテを出力（入力済みの${karteRecs.length}本）`}
+              </button>
+              <p className="hint">
+                {state.karteTemplateInfo
+                  ? '入力済みの記録を、カルテの様式に1本1シートで書き込みます（未確定の記録も入れます。写真は入りません）。中身を確かめるためのもので、提出用ではありません。提出用のカルテは、データ入力用ブックからマクロで作ってください。'
+                  : '先に「設定」でカルテの様式を読み込んでください。'}
+              </p>
+            </>
+          )}
         </div>
       )}
 
