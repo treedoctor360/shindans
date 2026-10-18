@@ -3,6 +3,7 @@
 //  事務（role: office）… 付箋を付ける・書き直す・消す、返事を読んで「確認済み」にする、確定する
 //  調査者（role: surveyor）… 付箋に答える（採用／このままで良い／自分で直す／返事だけ）
 //  どちらも … 同じ木を2台で直したときの食い違いを、どちらの内容を使うか選んで解決する
+//  survey（surveys.js の種類）で、簡易診断の木にも、詳しい診断の記録にも使う
 import { useState } from 'react';
 import {
   REVIEW_LABEL,
@@ -17,9 +18,9 @@ import {
   reviewState,
   setConfirm,
   stickiesOf,
-  treeKey,
 } from '../store/review.js';
 import { resolveConflict } from '../store/sync.js';
+import { SIMPLE, recordsOf } from '../store/surveys.js';
 
 const ANSWER_LABEL = { adopt: '修正案を採用', keep: 'このままで良い', edit: '自分で直した', reply: '返事' };
 
@@ -45,17 +46,21 @@ const BASE_LABELS = {
   treatFree: '処置（追記）',
   photoOverride: '写真',
 };
-const labelOf = (k, cfg) =>
-  cfg.checks?.find((c) => c.key === k)?.label || cfg.details?.find((d) => d.field === k)?.label || BASE_LABELS[k] || k;
-export function conflictDiff(t, cfg) {
+const labelOf = (k, cfg, survey = SIMPLE) =>
+  (survey.id !== SIMPLE.id && reviewFields(cfg, survey).find((f) => f.key === k)?.label) ||
+  cfg.checks?.find((c) => c.key === k)?.label ||
+  cfg.details?.find((d) => d.field === k)?.label ||
+  BASE_LABELS[k] ||
+  k;
+export function conflictDiff(t, cfg, survey = SIMPLE) {
   const theirs = t.conflict?.data || {};
   const keys = [...new Set([...Object.keys(t), ...Object.keys(theirs)])].filter((k) => !SKIP.has(k));
   const show = (v) => (v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
-  return keys.filter((k) => show(t[k]) !== show(theirs[k])).map((k) => ({ key: k, label: labelOf(k, cfg), mine: show(t[k]), theirs: show(theirs[k]) }));
+  return keys.filter((k) => show(t[k]) !== show(theirs[k])).map((k) => ({ key: k, label: labelOf(k, cfg, survey), mine: show(t[k]), theirs: show(theirs[k]) }));
 }
 
 // 付箋1枚
-function Sticky({ s, t, cfg, role, act }) {
+function Sticky({ s, t, cfg, role, act, survey, options }) {
   const [mode, setMode] = useState(''); // 'edit' 自分で直す / 'reply' 返事だけ / 'rewrite' 事務が書き直す
   const [text, setText] = useState('');
   const [q, setQ] = useState(s.question);
@@ -67,7 +72,7 @@ function Sticky({ s, t, cfg, role, act }) {
   return (
     <div className={cls} data-sticky={s.id}>
       <div className="sticky-head">
-        <b>{fieldLabel(s.field, cfg)}</b>
+        <b>{fieldLabel(s.field, cfg, survey)}</b>
         <small>
           {s.by || '事務'}　{s.at?.slice(5, 16).replace('T', ' ')}
         </small>
@@ -135,7 +140,19 @@ function Sticky({ s, t, cfg, role, act }) {
           )}
           {mode && (
             <div className="row">
-              <textarea rows={mode === 'edit' && s.field === 'notes' ? 4 : 2} value={text} onChange={(e) => setText(e.target.value)} aria-label={mode === 'edit' ? '直した値' : '返事'} />
+              {mode === 'edit' && options?.length ? (
+                // 選択肢の項目は、選択肢から選ぶ
+                <select value={text} onChange={(e) => setText(e.target.value)} aria-label="直した値">
+                  <option value="">（空）</option>
+                  {options.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <textarea rows={mode === 'edit' && s.field === 'notes' ? 4 : 2} value={text} onChange={(e) => setText(e.target.value)} aria-label={mode === 'edit' ? '直した値' : '返事'} />
+              )}
               <div className="acts">
                 <button
                   type="button"
@@ -208,8 +225,8 @@ function Sticky({ s, t, cfg, role, act }) {
 }
 
 // 事務：新しい付箋を書く
-function NewSticky({ t, cfg, act }) {
-  const fields = reviewFields(cfg);
+function NewSticky({ t, cfg, act, survey, optionsFor }) {
+  const fields = reviewFields(cfg, survey);
   const [open, setOpen] = useState(false);
   const [field, setField] = useState(fields[0]?.key || '');
   const [question, setQuestion] = useState('');
@@ -252,7 +269,20 @@ function NewSticky({ t, cfg, act }) {
             <input type="checkbox" checked={withProposal} onChange={(e) => setWithProposal(e.target.checked)} /> 修正案{' '}
             <small>調査者が「採用」すると、この値がそのまま入ります</small>
           </label>
-          {withProposal && <textarea id="st-p" rows={field === 'notes' ? 4 : 2} value={proposal} onChange={(e) => setProposal(e.target.value)} />}
+          {withProposal &&
+            (optionsFor?.(field)?.length ? (
+              // 選択肢の項目は、修正案も選択肢から選ぶ（ブックの入力規則にない値にならないように）
+              <select id="st-p" value={proposal} onChange={(e) => setProposal(e.target.value)}>
+                <option value="">（空）</option>
+                {optionsFor(field).map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <textarea id="st-p" rows={field === 'notes' ? 4 : 2} value={proposal} onChange={(e) => setProposal(e.target.value)} />
+            ))}
         </div>
       )}
       <div className="acts">
@@ -261,7 +291,7 @@ function NewSticky({ t, cfg, act }) {
           className="btn fill"
           disabled={!question.trim() && !(field && withProposal)}
           onClick={() => {
-            act((st) => addSticky(st, t, { field: field || null, question, proposal: field && withProposal ? proposal : null }, cfg).state);
+            act((st) => addSticky(st, t, { field: field || null, question, proposal: field && withProposal ? proposal : null }, cfg, survey).state);
             setOpen(false);
             setQuestion('');
           }}
@@ -277,12 +307,14 @@ function NewSticky({ t, cfg, act }) {
   );
 }
 
-export default function ReviewPanel({ t, state, update, config: cfg, toast, send }) {
+//  survey：簡易診断の木（省略時）か、詳しい診断の記録か。optionsFor：項目の選択肢（詳しい診断の記録のとき）
+export default function ReviewPanel({ t, state, update, config: cfg, toast, send, survey = SIMPLE, optionsFor }) {
   const role = state.user?.role || 'surveyor';
   if (t.source !== 'app' || !t.done) return null;
-  const key = treeKey(t, cfg);
+  const key = survey.keyOf(t, cfg);
   const list = stickiesOf(state, key).sort((a, b) => String(a.at).localeCompare(String(b.at)));
-  const rs = reviewState(t, state, cfg);
+  const rs = reviewState(t, state, cfg, survey);
+  const what = survey.id === SIMPLE.id ? 'この木' : `この${cfg.initialSurvey?.label || '記録'}`;
   const confirm = state.confirms?.[key];
 
   // 操作して、すぐ端末に保存し、サーバーへ送る
@@ -296,7 +328,7 @@ export default function ReviewPanel({ t, state, update, config: cfg, toast, send
   // 確定は、その時点の最新の状態に対して行う（画面の表示が古くても、送受信の結果を消さないように）
   const onConfirm = (value) => {
     try {
-      update((s) => setConfirm(s, s.trees.find((x) => x.id === t.id), value, cfg), { now: true }).then(() => send?.());
+      update((s) => setConfirm(s, recordsOf(s, survey).find((x) => x.id === t.id), value, cfg, survey), { now: true }).then(() => send?.());
       toast(value ? '確定しました' : '確定を外しました');
     } catch (e) {
       toast(e.message);
@@ -307,7 +339,7 @@ export default function ReviewPanel({ t, state, update, config: cfg, toast, send
   if (!list.length && !t.conflict && role !== 'office' && rs !== 'confirmed') return null;
 
   return (
-    <div className="sec review" data-testid="review">
+    <div className="sec review" data-testid={survey.id === SIMPLE.id ? 'review' : `review-${survey.id}`}>
       <h2>
         確認 <span className={`rs rs-${rs}`}>{REVIEW_LABEL[rs]}</span>
       </h2>
@@ -315,7 +347,7 @@ export default function ReviewPanel({ t, state, update, config: cfg, toast, send
       {t.conflict && (
         <div className="alert danger" data-testid="conflict">
           <span>
-            この木は、別の端末でも直されています（{t.conflict.by || '別の端末'}　{String(t.conflict.updatedAt || '').slice(5, 16).replace('T', ' ')}）。どちらの内容を使うか選んでください。選ぶまでは送信しません。
+            {what}は、別の端末でも直されています（{t.conflict.by || '別の端末'}　{String(t.conflict.updatedAt || '').slice(5, 16).replace('T', ' ')}）。どちらの内容を使うか選んでください。選ぶまでは送信しません。
           </span>
           <table className="diff">
             <thead>
@@ -326,7 +358,7 @@ export default function ReviewPanel({ t, state, update, config: cfg, toast, send
               </tr>
             </thead>
             <tbody>
-              {conflictDiff(t, cfg).map((d) => (
+              {conflictDiff(t, cfg, survey).map((d) => (
                 <tr key={d.key}>
                   <td>{d.label}</td>
                   <td>{d.mine}</td>
@@ -347,10 +379,10 @@ export default function ReviewPanel({ t, state, update, config: cfg, toast, send
       )}
 
       {list.map((s) => (
-        <Sticky key={s.id} s={s} t={t} cfg={cfg} role={role} act={act} />
+        <Sticky key={s.id} s={s} t={t} cfg={cfg} role={role} act={act} survey={survey} options={s.field ? optionsFor?.(s.field) : null} />
       ))}
 
-      {role === 'office' && <NewSticky key={t.id} t={t} cfg={cfg} act={act} />}
+      {role === 'office' && <NewSticky key={t.id} t={t} cfg={cfg} act={act} survey={survey} optionsFor={optionsFor} />}
 
       {role === 'office' &&
         (rs === 'confirmed' ? (
@@ -365,7 +397,7 @@ export default function ReviewPanel({ t, state, update, config: cfg, toast, send
             onClick={() => onConfirm(true)}
             data-testid="confirm"
           >
-            この木を確定する
+            {what}を確定する
           </button>
         ))}
       {role === 'office' && (rs === 'asked' || rs === 'answered') && <p className="hint">付箋がすべて「確認済み」になると確定できます。</p>}

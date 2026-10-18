@@ -13,14 +13,30 @@
 // 省略すると簡易診断の木として扱う。
 
 import { dbNoteOf } from '../core/notes.js';
+import { toHalf } from '../core/text.js';
 import { touched } from './actions.js';
-import { SIMPLE, findByKey, recordsOf, simpleKey, updateRecord } from './surveys.js';
+import { INITIAL, SIMPLE, findByKey, recordsOf, simpleKey, updateRecord } from './surveys.js';
 
 // 木の鍵（年度・シートの種類・番号・何本目）。端末とサーバーで共通
 export const treeKey = simpleKey;
 
+// 詳しい診断の、付箋を付けられる項目：入力画面（設定 initialSurvey.forms）のすべての項目。
+//  弱点の項目（weak）は、詳細の欄も別の項目として付けられる。返す形：[{ key, label, options? }]
+function initialReviewFields(cfg) {
+  const out = [];
+  for (const form of Object.values(cfg.initialSurvey?.forms || {}))
+    for (const sec of form.sections)
+      for (const it of sec.items) {
+        out.push({ key: it.key, label: it.label, ...(it.options?.length ? { options: it.options } : {}), type: it.type });
+        if (it.type === 'weak') out.push({ key: it.detailKey || `${it.key}Detail`, label: `${it.label}（詳細）` });
+      }
+  return out;
+}
+
 // 付箋を付けられる項目（設定 review.fields があればそれ、なければ一般的な文字の項目）
-export function reviewFields(cfg) {
+//  詳しい診断の記録では、入力画面のすべての項目
+export function reviewFields(cfg, survey = SIMPLE) {
+  if (survey.id === INITIAL.id) return initialReviewFields(cfg);
   const base = cfg.review?.fields || [
     { key: 'dbNote', label: '一覧表用の特記' },
     { key: 'notes', label: '特記事項（野帳）' },
@@ -31,7 +47,7 @@ export function reviewFields(cfg) {
 }
 
 // 項目の名前（null は木全体）
-export const fieldLabel = (key, cfg) => (key ? reviewFields(cfg).find((f) => f.key === key)?.label || key : '木全体');
+export const fieldLabel = (key, cfg, survey = SIMPLE) => (key ? reviewFields(cfg, survey).find((f) => f.key === key)?.label || key : survey.id === INITIAL.id ? '記録全体' : '木全体');
 
 // 項目の今の値（一覧表用の特記は、自動で作った文も含める）
 export const fieldValue = (tree, key, cfg) => (key === 'dbNote' ? dbNoteOf(tree, cfg) : String(tree?.[key] ?? ''));
@@ -41,6 +57,23 @@ const now = () => new Date().toISOString();
 
 // その木の付箋（消したものは除く）
 export const stickiesOf = (state, key) => Object.values(state.stickies || {}).filter((s) => s.treeId === key && !s.deleted);
+
+// 付箋の鍵から、どの調査の種類の付箋かを返す
+export const surveyOfSticky = (s) => (String(s?.treeId || '').startsWith('initial|') ? INITIAL : SIMPLE);
+
+// その木の詳しい診断の記録（なければ null）
+export function initialRecordOf(state, tree, cfg) {
+  const key = INITIAL.keyOf(tree, cfg);
+  return recordsOf(state, INITIAL).find((r) => INITIAL.keyOf(r, cfg) === key) || null;
+}
+
+// 一覧の絞り込み用：木と、その木の詳しい診断の記録の、確認の段階（食い違いは 'conflict'）。
+//  返す形：[簡易診断の段階, 詳しい診断の段階（記録がなければ入れない）]
+export function reviewStatesOf(tree, state, cfg) {
+  const one = (r, survey) => (r.conflict ? 'conflict' : reviewState(r, state, cfg, survey));
+  const rec = initialRecordOf(state, tree, cfg);
+  return [one(tree, SIMPLE), ...(rec ? [one(rec, INITIAL)] : [])];
+}
 
 // 木の確認の段階
 export function reviewState(tree, state, cfg, survey = SIMPLE) {
@@ -121,9 +154,12 @@ export function answerSticky(state, id, { type, text = '' }, cfg) {
     // 付箋の鍵から、どの種類のどの記録かをたどる
     const hit = findByKey(state, s.treeId, cfg);
     if (hit)
-      next = updateRecord(next, hit.survey, hit.record.id, (x) =>
-        touched({ ...x, [s.field]: value, ...(s.field === 'dbNote' ? { dbNoteManual: true } : {}) }),
-      );
+      next = updateRecord(next, hit.survey, hit.record.id, (x) => {
+        // 数の項目は数のまま入れる（ブックの数の欄に、文字ではなく数で書くため）
+        const half = toHalf(String(value)).trim();
+        const v = typeof x[s.field] === 'number' && /^-?\d+(\.\d+)?$/.test(half) ? Number(half) : value;
+        return touched({ ...x, [s.field]: v, ...(s.field === 'dbNote' ? { dbNoteManual: true } : {}) });
+      });
   }
   return next;
 }

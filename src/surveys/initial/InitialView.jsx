@@ -21,6 +21,8 @@ import {
   updateInitial,
 } from '../../store/initial.js';
 import PrevPanel from '../../ui/PrevPanel.jsx';
+import ReviewPanel from '../../ui/ReviewPanel.jsx';
+import { INITIAL } from '../../store/surveys.js';
 
 const isNone = (v, cfg) => v === (cfg.initialSurvey?.noneValue || '無');
 
@@ -90,6 +92,13 @@ function Item({ it, rec, cfg, opts, set, press }) {
       )}
     </div>
   );
+}
+
+// 項目の名前から、その項目（設定の入力画面の項目）と書式を探す。付箋の修正案の選択肢に使う
+function itemOf(cfg, key) {
+  for (const [form, f] of Object.entries(cfg.initialSurvey?.forms || {}))
+    for (const sec of f.sections) for (const it of sec.items) if (it.key === key) return { form, it };
+  return null;
 }
 
 export default function InitialView({ state, update, config: cfg, toast, send }) {
@@ -204,6 +213,22 @@ export default function InitialView({ state, update, config: cfg, toast, send })
           </div>
         )}
       </div>
+
+      {!viewingBook && (
+        <ReviewPanel
+          t={rec}
+          state={state}
+          update={update}
+          config={cfg}
+          toast={toast}
+          send={send}
+          survey={INITIAL}
+          optionsFor={(key) => {
+            const hit = itemOf(cfg, key);
+            return hit && ['choice', 'weak'].includes(hit.it.type) ? optionsOf(hit.it, state, hit.form, tree.siteType) : null;
+          }}
+        />
+      )}
 
       <PrevPanel t={tree} state={state} config={cfg} toast={toast} />
 
