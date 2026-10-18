@@ -6,7 +6,7 @@ import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
-import { bookEntry, bookValues, fillNone, initialOf, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
+import { bookEntry, bookValues, fillNone, initialOf, initialsForBook, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
 import { addSticky, reviewState, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
 import { INITIAL, initialKey } from '../src/store/surveys.js';
@@ -199,5 +199,24 @@ describe('ブックに入力済みの木の中身', () => {
     expect(record.fromBook).toContain('height');
     expect(record.inherited).not.toContain('height'); // ブックの値を使ったので「簡易から」ではない
     expect(record.inherited).toContain('girth');
+  });
+});
+
+describe('データ入力用ブックに書き込む記録の選び方', () => {
+  it('入力済みの記録だけ。元の木が対象でなくなった記録は除いて知らせる。サーバーを使うときは確定した記録だけ', () => {
+    let s = S([need('AB001'), need('AB002'), need('AB003')], { server: null });
+    for (const t of s.trees) s = startInitial(s, t, cfg).state;
+    s = saveInitial(s, 'ini:ledger:AB001', cfg, { force: true }).state;
+    s = saveInitial(s, 'ini:ledger:AB002', cfg, { force: true }).state; // AB003 は入力中のまま
+    s = { ...s, trees: s.trees.map((t) => (t.treeNo === 'AB002' ? { ...t, initialNeeded: '否' } : t)) }; // 後で「不要」に直した
+    const r = initialsForBook(s, cfg);
+    expect(r.records.map((x) => x.treeNo)).toEqual(['AB001']);
+    expect(r.notTarget.map((x) => x.treeNo)).toEqual(['AB002']);
+
+    const withServer = { ...s, server: { ...server } };
+    expect(initialsForBook(withServer, cfg).records).toEqual([]);
+    expect(initialsForBook(withServer, cfg).excluded.map((x) => x.treeNo)).toEqual(['AB001']);
+    expect(initialsForBook(withServer, cfg).notTarget.map((x) => x.treeNo)).toEqual(['AB002']);
+    expect(initialsForBook(withServer, cfg, { includeUnconfirmed: true }).records.map((x) => x.treeNo)).toEqual(['AB001']);
   });
 });

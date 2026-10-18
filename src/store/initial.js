@@ -11,6 +11,7 @@ import { toHalf } from '../core/text.js';
 import { bookKey } from '../excel/initialBook.js';
 import { INITIAL, initialKey, simpleKey, updateRecord } from './surveys.js';
 import { touched } from './actions.js';
+import { treesForDb } from './review.js';
 
 const round2 = (x) => Math.round(x * 100) / 100;
 
@@ -189,4 +190,32 @@ export function saveInitial(state, id, cfg, { force = false, now = new Date().to
   if (st.inspector && state.session?.inspector) stamp[st.inspector] = state.session.inspector;
   const next = updateRecord(state, INITIAL, id, (x) => ({ ...x, ...stamp, done: true, sent: false, source: 'app', updatedAt: now }));
   return { state: next, missing, saved: true };
+}
+
+// ---------- データ入力用ブックへの書き込み ----------
+
+// ブックに書き込む記録を選ぶ
+//  入力済み・アプリで入力・元の木が今も詳しい診断の対象（削除していない・「必要」のまま）の記録だけ。
+//  サーバーを使うときは、確定した記録だけ（includeUnconfirmed で未確定も含める）。
+//  返す形：{ records, excluded: [未確定の記録…], notTarget: [元の木が対象でなくなった記録…] }
+export function initialsForBook(state, cfg, { includeUnconfirmed = false } = {}) {
+  const notTarget = [];
+  const isTarget = (r) => {
+    const tree = state.trees.find((t) => `initial|${simpleKey(t, cfg)}` === initialKey(r, cfg));
+    return !!tree && isInitialTarget(tree, cfg);
+  };
+  const { trees: picked, excluded } = treesForDb(state, cfg, { includeUnconfirmed }, INITIAL);
+  const records = picked.filter((r) => {
+    if (!r.done || r.source !== 'app') return false;
+    if (isTarget(r)) return true;
+    notTarget.push(r);
+    return false;
+  });
+  // 未確定の記録（元の木が対象でなくなったものは notTarget の方に入れる）
+  const unconfirmed = excluded.filter((r) => {
+    if (isTarget(r)) return true;
+    notTarget.push(r);
+    return false;
+  });
+  return { records, excluded: unconfirmed, notTarget };
 }
