@@ -9,6 +9,7 @@ import { INITIAL } from '../store/surveys.js';
 import { prevOf } from '../store/previous.js';
 import { INITIAL_STATUS_LABEL, initialStatus, isInitialTarget } from '../store/initial.js';
 import { usePrevIndex } from './usePrevious.js';
+import { matchTree } from '../core/search.js';
 
 const NO_AREA = '本区画';
 
@@ -70,7 +71,12 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
     const r = initialRecordOf(state, t, cfg);
     return r ? (r.conflict ? 'conflict' : reviewState(r, state, cfg, INITIAL)) : null;
   };
-  const list = (filter === 'deleted' ? deleted : all)
+  // 検索：言葉があるときは、区画・状態の絞り込みを外して、この公園・路線のすべての木から探す
+  const query = String(state.listQuery || '').trim();
+  const searching = !!query;
+  // ほかの公園・路線で見つかった木（押すとその公園・路線に切り替えて開く）
+  const elsewhere = searching ? state.trees.filter((t) => !t.deleted && groupKey(t, cfg) !== group && matchTree(t, query)) : [];
+  const filtered = (filter === 'deleted' ? deleted : all)
     .filter(inArea)
     .filter(
       (t) =>
@@ -80,6 +86,7 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
         (filter === 'wait' && treeState(t, cfg) === 'wait') ||
         rsHas(t, filter),
     );
+  const list = searching ? all.filter((t) => matchTree(t, query)) : filtered;
   const useReview = !!state.server?.url;
   const role = state.user?.role || 'surveyor';
   const bulk = role === 'office' ? confirmable(all.filter(inArea), state, cfg) : [];
@@ -120,10 +127,10 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
   const statusLabel = (v) => cfg.statusOptions?.find((o) => o.v === v)?.label ?? v;
 
   const set = (patch) => update((s) => ({ ...s, ...patch }));
-  const open = (id) => {
+  const open = (id, g = group) => {
     // 印（id）のない木は開けない（別の木を開いてしまわないように）。端末の状態を読み込むときに直すので、通常は起きない
     if (!id) return toast?.('この木は開けません。「設定」の「調べるためのデータを書き出す」で書き出して、開発の担当に送ってください');
-    update((s) => ({ ...s, group, currentId: id, view: 'form' }));
+    update((s) => ({ ...s, group: g, ...(g !== group ? { area: '' } : {}), currentId: id, view: 'form' }));
   };
 
   return (
@@ -161,7 +168,28 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
         </div>
       </div>
 
-      {areas.length > 1 && (
+      <div className="row search">
+        <input
+          type="search"
+          value={state.listQuery || ''}
+          onChange={(e) => set({ listQuery: e.target.value })}
+          placeholder="樹木番号・樹種で探す（例：830、くすのき）"
+          aria-label="樹木番号・樹種で探す"
+          data-testid="list-search"
+        />
+        {searching && (
+          <button type="button" className="btn" onClick={() => set({ listQuery: '' })} data-testid="list-search-clear">
+            消す
+          </button>
+        )}
+      </div>
+      {searching && (
+        <p className="hint" data-testid="search-note">
+          「{query}」で探しています：この公園・路線で{list.length}本（区画・状態の絞り込みは外しています）
+        </p>
+      )}
+
+      {!searching && areas.length > 1 && (
         <div className="filters">
           {[['', '全区画'], ...areas.map((a) => [a, a])].map(([k, l]) => (
             <button key={k || 'all'} type="button" className={`chip${area === k ? ' on' : ''}`} onClick={() => set({ area: k })}>
@@ -170,19 +198,21 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
           ))}
         </div>
       )}
-      <div className="filters">
-        {[
-          ['all', 'すべて'],
-          ['todo', '未入力'],
-          ['wait', waitLabel],
-          ...(deleted.length ? [['deleted', `削除した木（${deleted.length}）`]] : []),
-        ].map(([k, l]) => (
-          <button key={k} type="button" className={`chip${filter === k ? ' on' : ''}`} onClick={() => set({ listFilter: k })} data-filter={k}>
-            {l}
-          </button>
-        ))}
-      </div>
-      {useReview && (
+      {!searching && (
+        <div className="filters">
+          {[
+            ['all', 'すべて'],
+            ['todo', '未入力'],
+            ['wait', waitLabel],
+            ...(deleted.length ? [['deleted', `削除した木（${deleted.length}）`]] : []),
+          ].map(([k, l]) => (
+            <button key={k} type="button" className={`chip${filter === k ? ' on' : ''}`} onClick={() => set({ listFilter: k })} data-filter={k}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+      {!searching && useReview && (
         <div className="filters" data-testid="review-filters">
           {REVIEW_FILTERS.map(([k, l]) => {
             const n = all.filter(inArea).filter((t) => rsHas(t, k)).length;
@@ -266,6 +296,27 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
         })}
         {!list.length && <p className="hint">該当する木はありません。</p>}
       </div>
+      {elsewhere.length > 0 && (
+        <div className="sec" data-testid="search-elsewhere">
+          <h2>ほかの公園・路線で見つかった木（{elsewhere.length}本）</h2>
+          <div className="cards">
+            {elsewhere.slice(0, 30).map((t) => (
+              <button key={t.id} type="button" className="card" onClick={() => open(t.id, groupKey(t, cfg))} data-tree={toHalf(t.treeNo)}>
+                <span className={`pill ${t.done ? t.grade || '' : 'none'}`}>{t.done ? t.grade || '?' : '未'}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span className="no">{t.treeNo || '(番号なし)'}</span>
+                  <br />
+                  <span className="sp">{t.species || '樹種未入力'}</span>
+                </span>
+                <span className="tags">
+                  <span className="tag">{groupLabel(state.trees, groupKey(t, cfg), cfg)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          {elsewhere.length > 30 && <p className="hint">ほか{elsewhere.length - 30}本。言葉を足して絞り込んでください。</p>}
+        </div>
+      )}
       <button
         type="button"
         className="btn big"
