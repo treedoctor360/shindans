@@ -20,6 +20,7 @@ import {
   startInitial,
   updateInitial,
 } from '../../store/initial.js';
+import { manualKeyOf, partsKeyOf, partsOf, rebuildDetail, setDetailText, setPart } from '../../core/detailParts.js';
 import PrevPanel from '../../ui/PrevPanel.jsx';
 import ReviewPanel from '../../ui/ReviewPanel.jsx';
 import { INITIAL } from '../../store/surveys.js';
@@ -39,7 +40,71 @@ function Choice({ k, opts, value, onPress }) {
   );
 }
 
-function Item({ it, rec, cfg, opts, set, press }) {
+// 弱点の詳細の部品（本数・高さ・大きさなど）。入れると、下の詳細の文を組み立てる
+function DetailParts({ it, dk, rec, cfg, edit }) {
+  const parts = partsOf(it, cfg);
+  const values = rec[partsKeyOf(dk)] || {};
+  const put = (name, v) => edit((r) => setPart(r, it, dk, name, v, cfg));
+  const num = (name, v, onChange, ph) => (
+    <input type="text" inputMode="decimal" value={v ?? ''} placeholder={ph} onChange={(e) => onChange(e.target.value)} data-part={name} />
+  );
+  return (
+    <div className="parts" data-parts={dk}>
+      {parts.map((p) => {
+        const v = values[p.name];
+        let input;
+        if (p.type === 'height' || p.type === 'pair') {
+          const x = v || {};
+          input = (
+            <span className="pair">
+              {num(`${p.name}.a`, x.a, (a) => put(p.name, { ...x, a }), p.type === 'height' ? '例 2' : '')}
+              <span>{p.type === 'height' ? p.sep || '～' : p.sep || '/'}</span>
+              {num(`${p.name}.b`, x.b, (b) => put(p.name, { ...x, b }), p.type === 'height' ? '上端' : '')}
+              <span>{p.unit ?? (p.type === 'height' ? 'm' : '')}</span>
+            </span>
+          );
+        } else if (p.type === 'size') {
+          const list = Array.isArray(v) && v.length ? v : [{}];
+          const setAt = (i, patch) => put(p.name, list.map((y, j) => (j === i ? { ...y, ...patch } : y)));
+          input = (
+            <span className="sizes">
+              {list.map((y, i) => (
+                <span className="pair" key={i}>
+                  {num(`${p.name}.${i}.w`, y.w, (w) => setAt(i, { w }), '縦')}
+                  <span>×</span>
+                  {num(`${p.name}.${i}.h`, y.h, (h) => setAt(i, { h }), '横')}
+                  <span>{p.unit ?? 'cm'}</span>
+                </span>
+              ))}
+              <button type="button" className="btn" onClick={() => put(p.name, [...list, {}])} data-add-size={p.name}>
+                ＋ もう1か所
+              </button>
+            </span>
+          );
+        } else if (p.type === 'choice') {
+          input = <Choice k={`${dk}.${p.name}`} opts={p.options} value={v ?? ''} onPress={(_, o) => put(p.name, v === o ? '' : o)} />;
+        } else if (p.type === 'text') {
+          input = <input type="text" value={v ?? ''} onChange={(e) => put(p.name, e.target.value)} data-part={p.name} />;
+        } else {
+          input = (
+            <span className="pair">
+              {num(p.name, v, (x) => put(p.name, x))}
+              <span>{p.unit ?? (p.type === 'count' ? '本' : '')}</span>
+            </span>
+          );
+        }
+        return (
+          <label className="part" key={p.name}>
+            <small>{p.label}</small>
+            {input}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function Item({ it, rec, cfg, opts, set, press, edit }) {
   const v = rec[it.key] ?? '';
   const tags = (
     <>
@@ -59,8 +124,24 @@ function Item({ it, rec, cfg, opts, set, press }) {
           {it.label} {tags}
         </span>
         <Choice k={it.key} opts={opts} value={v} onPress={press} />
+        {showDetail && edit && partsOf(it, cfg).length > 0 && <DetailParts it={it} dk={dk} rec={rec} cfg={cfg} edit={edit} />}
         {(showDetail || (it.type === 'weak' && rec[dk])) && (
-          <input id={`i-${dk}`} type="text" value={rec[dk] ?? ''} placeholder={it.detailHint || '位置・大きさなど'} onChange={(e) => set(dk, e.target.value)} />
+          <input
+            id={`i-${dk}`}
+            type="text"
+            value={rec[dk] ?? ''}
+            placeholder={it.detailHint || '位置・大きさなど'}
+            // 部品のある項目で文を手で直したら、部品を変えても文を上書きしない
+            onChange={(e) => (partsOf(it, cfg).length && edit ? edit((r) => setDetailText(r, dk, e.target.value)) : set(dk, e.target.value))}
+          />
+        )}
+        {rec[manualKeyOf(dk)] && edit && partsOf(it, cfg).length > 0 && (
+          <div className="hint">
+            文を手で直しています（部品を変えても文は変わりません）。{' '}
+            <button type="button" className="btn" onClick={() => edit((r) => rebuildDetail(r, it, dk, cfg))} data-rebuild={dk}>
+              部品から作り直す
+            </button>
+          </div>
         )}
       </div>
     );
@@ -144,6 +225,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const f = formOf(cfg, form);
   const optionsFor = (it) => optionsOf(it, state, form, tree.siteType);
   const set = (k, v) => update((s) => updateInitial(s, rec.id, (r) => ({ ...r, [k]: v })));
+  const edit = (fn) => update((s) => updateInitial(s, rec.id, fn));
   const press = (k, v) => update((s) => updateInitial(s, rec.id, (r) => ({ ...r, [k]: r[k] === v ? '' : v })));
   const status = initialStatus(tree, state, cfg);
   const missing = readOnly ? [] : missingInitial(rec, cfg);
@@ -242,7 +324,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
               </button>
             )}
             {sec.items.map((it) => (
-              <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} />
+              <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} edit={readOnly ? null : edit} />
             ))}
           </div>
         ))}

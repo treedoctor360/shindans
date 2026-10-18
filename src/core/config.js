@@ -3,6 +3,7 @@
 // 使う前に形を確かめる。不正なら使わず、前に使えていた設定で動かす。
 
 import { RULE_TYPES } from './rules.js';
+import { validateDetailParts } from './detailParts.js';
 
 // このアプリが読める設定の版。形式を変えたら上げる
 export const CONFIG_VERSION = 6; // 2: dbFormat（台帳の列）/ 3: 一覧表への書き戻し / 4: fieldSheet（野帳）/ 5: 入力画面の選択肢 / 6: initialSurvey（詳しい診断のデータ入力用ブック。省略可）
@@ -207,6 +208,7 @@ function validateInitialSurvey(s, cfg, need) {
       `initialSurvey.inherit は { 項目: "簡易診断の項目名" か { from, map } } の形にしてください（計算した値は ${INHERIT_CALC.join('・')}）`,
     );
   if (s.forms != null) validateInitialForms(s.forms, need);
+  validateDetailParts(s, need); // 弱点の詳細を組み立てる部品（省略可）
   if (s.stamp != null)
     need(
       isObj(s.stamp) && (s.stamp.date == null || (isArr(s.stamp.date) && s.stamp.date.length === 3 && s.stamp.date.every(isStr))) && (s.stamp.inspector == null || isStr(s.stamp.inspector)),

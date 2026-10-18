@@ -14,6 +14,7 @@
 
 import { dbNoteOf } from '../core/notes.js';
 import { toHalf } from '../core/text.js';
+import { manualKeyOf, partsKeyOf } from '../core/detailParts.js';
 import { touched } from './actions.js';
 import { INITIAL, SIMPLE, findByKey, recordsOf, simpleKey, updateRecord } from './surveys.js';
 
@@ -158,7 +159,9 @@ export function answerSticky(state, id, { type, text = '' }, cfg) {
         // 数の項目は数のまま入れる（ブックの数の欄に、文字ではなく数で書くため）
         const half = toHalf(String(value)).trim();
         const v = typeof x[s.field] === 'number' && /^-?\d+(\.\d+)?$/.test(half) ? Number(half) : value;
-        return touched({ ...x, [s.field]: v, ...(s.field === 'dbNote' ? { dbNoteManual: true } : {}) });
+        // 部品から組み立てる詳細の文を付箋で直したときは、手で直した印を付ける（部品を変えても上書きしない）
+        const manual = x[partsKeyOf(s.field)] ? { [manualKeyOf(s.field)]: true } : {};
+        return touched({ ...x, [s.field]: v, ...manual, ...(s.field === 'dbNote' ? { dbNoteManual: true } : {}) });
       });
   }
   return next;
