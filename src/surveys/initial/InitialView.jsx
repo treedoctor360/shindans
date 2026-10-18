@@ -106,7 +106,10 @@ function DetailParts({ it, dk, rec, cfg, edit }) {
   );
 }
 
-function Item({ it, rec, cfg, opts, set, press, edit }) {
+// 選択肢が多い・長い項目は、見出しの下にボタンを並べる（見出しの横だと、どの項目のボタンか分かりにくいため）
+const isWide = (opts) => opts.length > 3 || opts.some((o) => String(o).length > 4) || opts.join('').length > 10;
+
+function Item({ it, rec, cfg, opts, set, press, edit, inGrid = false }) {
   const v = rec[it.key] ?? '';
   const tags = (
     <>
@@ -121,7 +124,7 @@ function Item({ it, rec, cfg, opts, set, press, edit }) {
     const dk = detailKeyOf(it);
     const showDetail = it.type === 'weak' && v !== '' && !isNone(v, cfg);
     return (
-      <div className="row choice" data-item={it.key}>
+      <div className={`row item choice ${isWide(opts) ? 'stack' : 'inline'}`} data-item={it.key}>
         <span className="lbl">
           {it.label} {tags}
         </span>
@@ -150,7 +153,7 @@ function Item({ it, rec, cfg, opts, set, press, edit }) {
     );
   }
   return (
-    <div className="row" data-item={it.key}>
+    <div className={`row item field ${inGrid || it.type === 'textarea' ? 'stack' : 'inline'}`} data-item={it.key}>
       <label className="lbl" htmlFor={id}>
         {it.label} {tags}
       </label>
@@ -180,14 +183,15 @@ function Item({ it, rec, cfg, opts, set, press, edit }) {
 }
 
 // 区切りの項目を、画面の並べ方ごとにまとめる
-//  続いている数・1行の文字の項目は2列のまとまり（grid）にする。返す形：[{ grid, items }]
+//  設定で同じ row を付けた、続いている数・1行の文字の項目を横に並べる（例：枝下高の歩道と車道）。返す形：[{ grid, items }]
+//  それ以外は1項目ずつ（見出しを左、入力を右の1行）
 function groupItems(items) {
   const out = [];
   for (const it of items) {
     const short = it.type === 'number' || it.type === 'text';
     const last = out.at(-1);
-    if (short && last?.grid) last.items.push(it);
-    else out.push({ grid: short, items: [it] });
+    if (short && it.row && last?.grid && last.row === it.row) last.items.push(it);
+    else out.push({ grid: short && !!it.row, row: it.row, items: [it] });
   }
   return out;
 }
@@ -377,12 +381,12 @@ export default function InitialView({ state, update, config: cfg, toast, send })
                 まだ選んでいない項目をすべて「{cfg.initialSurvey.noneValue || '無'}」にする
               </button>
             )}
-            {/* 数・1行の文字の項目は2列に並べる（縦に長くならないように）。選択肢・数行の文字は1行ずつ */}
+            {/* 設定で row を付けた数・文字の項目は横に並べる。ほかは1項目ずつ、区切り線で分ける */}
             {groupItems(sec.items).map((g) =>
               g.grid ? (
-                <div className="grid2" key={g.items[0].key}>
+                <div className="grid2 item" key={g.items[0].key}>
                   {g.items.map((it) => (
-                    <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} edit={readOnly ? null : edit} />
+                    <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} edit={readOnly ? null : edit} inGrid />
                   ))}
                 </div>
               ) : (

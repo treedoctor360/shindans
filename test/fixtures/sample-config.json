@@ -815,13 +815,15 @@
                 "key": "height",
                 "label": "樹高",
                 "type": "number",
-                "unit": "m"
+                "unit": "m",
+                "row": "size"
               },
               {
                 "key": "girth",
                 "label": "幹周",
                 "type": "number",
-                "unit": "m"
+                "unit": "m",
+                "row": "size"
               },
               {
                 "key": "clearWalk",

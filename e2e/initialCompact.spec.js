@@ -10,7 +10,7 @@ const tmp = (name, bytes) => {
   return p;
 };
 
-test('2列に並び、空欄の枝下高は保存すると「-」になる', async ({ page }) => {
+test('設定の row で横に並び、選択肢は長さで並べ方が変わる。空欄の枝下高は保存すると「-」になる', async ({ page }) => {
   await page.goto('./');
   await page.fill('#s-date', '2099-05-06');
   await page.fill('#s-insp', '試験 二郎(資格)');
@@ -21,16 +21,23 @@ test('2列に並び、空欄の枝下高は保存すると「-」になる', asy
   await page.click('[data-tree=AB001]');
   await page.click('[data-testid=open-initial]');
 
-  // 樹高・幹周・枝下高は同じ2列のまとまりに入る。選択肢は見出しとボタンが1行
+  // 樹高・幹周は設定の row で横に並ぶ
   await expect(page.locator('.grid2 [data-item=height]')).toBeVisible();
-  await expect(page.locator('.grid2 [data-item=clearWalk]')).toBeVisible();
+  await expect(page.locator('[data-item=clearWalk].inline')).toBeVisible(); // 組（row）のない項目は1行に見出しと入力
   const h = await page.locator('[data-item=height]').boundingBox();
   const g = await page.locator('[data-item=girth]').boundingBox();
   expect(Math.abs(h.y - g.y)).toBeLessThan(2); // 横に並ぶ
+  // 選択肢が長い項目（有（安全）など）は、見出しの下にボタン。短い項目（無／有）は見出しの右
   const lean = page.locator('[data-item=lean]');
   const lb = await lean.locator('.lbl').boundingBox();
   const bb = await lean.locator('.seg').boundingBox();
-  expect(bb.x).toBeGreaterThan(lb.x + lb.width - 1); // ボタンは見出しの右
+  expect(bb.y).toBeGreaterThan(lb.y + lb.height - 1);
+  await page.click('[data-form=environment]');
+  const w = page.locator('[data-item=weather]');
+  const wl = await w.locator('.lbl').boundingBox();
+  const wb = await w.locator('.seg').boundingBox();
+  expect(wb.x).toBeGreaterThan(wl.x + wl.width - 1);
+  await page.click('[data-form=initial]');
 
   // 枝下高：数のキーボード・単位 m・空欄なら「-」
   await expect(page.locator('#i-clearWalk')).toHaveAttribute('inputmode', 'decimal');

@@ -266,14 +266,24 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .parts .pair input{width:4.5em;min-height:40px}
 .parts .sizes{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
 
-/* 詳しい診断の入力画面：項目が多いので詰めて並べる */
-.initial-form .sec{gap:8px;padding:12px}
-.initial-form .form-body .sec>h2{position:sticky;top:var(--top-h,64px);z-index:3;background:var(--surface);margin:-12px -12px 0;padding:10px 12px 6px;border-radius:10px 10px 0 0;font-size:14px;color:var(--accent);letter-spacing:.04em}
-.initial-form .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}
+/* 詳しい診断の入力画面：項目が多いので詰めて並べる。1項目ずつ区切り線で分け、どのボタンがどの項目か分かるようにする */
+.initial-form .sec{gap:0;padding:12px}
+.initial-form .form-body .sec>h2{position:sticky;top:var(--top-h,64px);z-index:3;background:var(--surface);margin:-12px -12px 0;padding:10px 12px 8px;border-radius:10px 10px 0 0;font-size:14px;color:var(--accent);letter-spacing:.04em;border-bottom:1px solid var(--line)}
+.initial-form .sec>.btn{margin:8px 0}
+.initial-form .item{padding:10px 0;border-top:1px solid var(--line)}
+.initial-form .sec>h2+.item,.initial-form .sec>.btn+.item{border-top:0}
+.initial-form .grid2>.item{padding:0;border-top:0}
+.initial-form .lbl{font-size:14px;line-height:1.35}
+/* 横に並べる項目（設定の row） */
+.initial-form .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}
 .initial-form .grid2>.row{min-width:0}
-.initial-form .row.choice{display:grid;grid-template-columns:minmax(0,38%) minmax(0,1fr);align-items:center;gap:4px 8px}
-.initial-form .row.choice>.lbl{font-size:13px;line-height:1.3}
-.initial-form .row.choice>input.detail,.initial-form .row.choice>.parts,.initial-form .row.choice>.hint{grid-column:1/-1}
-.initial-form .seg.wrap{grid-template-columns:repeat(auto-fit,minmax(52px,1fr));gap:4px}
-.initial-form .seg-b{min-height:36px;padding:3px 2px;font-size:12.5px;line-height:1.2}
-.initial-form input[type=text],.initial-form textarea{min-height:40px;padding:7px 9px}
+/* 見出しを左、入力・ボタンを右の1行 */
+.initial-form .row.inline{display:grid;grid-template-columns:minmax(0,40%) minmax(0,1fr);align-items:center;gap:6px 10px}
+.initial-form .row.inline>input.detail,.initial-form .row.inline>.parts,.initial-form .row.inline>.hint{grid-column:1/-1}
+.initial-form .row.inline .seg.wrap{grid-auto-flow:column;grid-auto-columns:1fr;grid-template-columns:none;gap:5px}
+.initial-form .row.inline .seg-b{font-size:13px;padding:4px 1px;white-space:nowrap}
+/* 見出しの下にボタン（選択肢が多い・長い項目） */
+.initial-form .row.stack{display:flex;flex-direction:column;gap:6px}
+.initial-form .row.stack .seg.wrap{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px}
+.initial-form .seg-b{min-height:42px;padding:4px 4px;font-size:14px;line-height:1.2}
+.initial-form input[type=text],.initial-form textarea{min-height:42px;padding:8px 10px}
