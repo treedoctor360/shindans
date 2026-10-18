@@ -10,6 +10,7 @@ import { prevOf } from '../store/previous.js';
 import { INITIAL_STATUS_LABEL, initialStatus, isInitialTarget } from '../store/initial.js';
 import { usePrevIndex } from './usePrevious.js';
 import { matchTree } from '../core/search.js';
+import InitialPrompt, { openInitialWith } from './InitialPrompt.jsx';
 
 const NO_AREA = '本区画';
 
@@ -135,6 +136,8 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
 
   return (
     <section className="view">
+      {/* 「保存して一覧へ」で戻ったとき、保存した木が詳しい診断の対象なら続けて入力するか聞く */}
+      <InitialPrompt state={state} update={update} cfg={cfg} openInitial={openInitialWith(update, cfg, toast)} />
       <div className="row">
         <label className="lbl" htmlFor="s-group">
           公園・路線

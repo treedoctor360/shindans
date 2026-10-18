@@ -65,6 +65,19 @@ describe('入力の操作', () => {
     expect(saveTree(state([P('x', { source: 'ledger', done: true })]), cfg).saved).toBe(false);
   });
 
+  it('保存の後の行き先：一覧へ／同じ区画にもう1本追加（次の未入力の木は開かない）', () => {
+    const added = P('new:1', { ...full, treeNo: '', uid: 'dev-1', area: '北区画' });
+    const s = state([P('a'), added], { currentId: 'new:1' });
+    const toList = saveTree(s, cfg, { after: 'list', force: true }); // 番号なし（テープなし）は未入力のまま保存
+    expect(toList.state.view).toBe('list');
+    expect(toList.state.currentId).toBe('new:1'); // 台帳の未入力の木 a には移らない
+    const add = saveTree(s, cfg, { after: 'add', force: true, now: '2099-05-06T00:00:00.000Z' });
+    const nt = add.state.trees.find((t) => t.id === add.state.currentId);
+    expect(nt.id).not.toBe('new:1');
+    expect(nt).toMatchObject({ treeNo: '', done: false, area: '北区画', parkCode: 'K01' });
+    expect(add.state.trees.find((t) => t.id === 'new:1').done).toBe(true);
+  });
+
   it('次の未入力は、今の木より後ろ→前の順に探す', () => {
     const s = state([P('a'), P('b', { done: true }), P('c')], { currentId: 'c' });
     expect(nextTodo(s, cfg).id).toBe('a');

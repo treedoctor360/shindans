@@ -22,7 +22,8 @@ import {
   withdrawTree,
 } from '../store/actions.js';
 import { activeGroup } from './ListView.jsx';
-import { INITIAL_STATUS_LABEL, inBook, initialOf, initialStatus, isInitialTarget, startInitial } from '../store/initial.js';
+import { INITIAL_STATUS_LABEL, inBook, initialOf, initialStatus, isInitialTarget } from '../store/initial.js';
+import InitialPrompt, { openInitialWith } from './InitialPrompt.jsx';
 import PrevPanel from './PrevPanel.jsx';
 import ReviewPanel from './ReviewPanel.jsx';
 
@@ -91,27 +92,6 @@ function Alerts({ list, onAct, asking, onAsk, onCancel }) {
   );
 }
 
-// 保存した木が詳しい診断の対象なら「続けて入力する？」と聞く（次の木の画面の上に出す）
-function InitialPrompt({ state, update, cfg, openInitial }) {
-  const tree = state.initialPrompt && state.trees.find((x) => x.id === state.initialPrompt);
-  if (!tree || state.user?.role === 'office') return null;
-  return (
-    <div className="alert info" data-testid="initial-prompt">
-      <span>
-        {toHalf(tree.treeNo) || '(番号なし)'} {tree.species} は{cfg.initialSurvey.label}が必要です。続けて入力しますか。
-      </span>
-      <div className="acts">
-        <button type="button" className="btn fill" onClick={() => openInitial(tree, false, !initialOf(state, tree, cfg) && inBook(state, tree, cfg))} data-testid="initial-prompt-go">
-          続けて{cfg.initialSurvey.label}を入力
-        </button>
-        <button type="button" className="btn" onClick={() => update((s) => ({ ...s, initialPrompt: '' }))}>
-          あとで
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // 簡易診断の画面の中の、詳しい診断の欄（進み具合と、入力の画面を開くボタン）
 function InitialBlock({ t, state, cfg, openInitial }) {
   const status = initialStatus(t, state, cfg);
@@ -144,6 +124,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const [asking, setAsking] = useState(null); // 確かめ中のボタン { alertId, act }
   const [undo, setUndo] = useState(null); // 直前の操作を取り消すための、押す前の木 { treeId, before, label }
   const [askRemove, setAskRemove] = useState(''); // 削除・入力の取り消しを確かめ中の木の id
+  const [askAfter, setAskAfter] = useState('next'); // 未入力を確かめ中の保存の行き先
 
   if (!cfg || !state.trees.length) {
     return (
@@ -204,29 +185,15 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
     if (act.type === 'useApp') toast('アプリの入力に戻しました');
   };
 
-  // 詳しい診断の画面を開く（記録がなければ作る。ブックで入力済みの木は force を付けたときだけ）
-  //  viewOnly：記録を作らずに開く（ブックに入力済みの木の内容を見るとき）
-  const openInitial = (tree, force = false, viewOnly = false) => {
-    if (viewOnly) {
-      update((s) => ({ ...s, view: 'initial', initialTreeId: tree.id, initialPrompt: '' }));
-      window.scrollTo(0, 0);
-      return;
-    }
-    try {
-      update((s) => {
-        const r = startInitial(s, s.trees.find((x) => x.id === tree.id) || tree, cfg, { force });
-        return { ...r.state, view: 'initial', initialTreeId: tree.id, initialPrompt: '' };
-      }, { now: true });
-      window.scrollTo(0, 0);
-    } catch (e) {
-      toast(e.message);
-    }
-  };
+  // 詳しい診断の画面を開く（InitialPrompt.jsx の openInitialWith）
+  const openInitial = openInitialWith(update, cfg, toast);
 
-  const onSave = (force = false) => {
-    const r = saveTree({ ...state, currentId: t.id, group }, cfg, { force });
+  // 保存。after：保存の後に 'next'（次の未入力の木）/ 'list'（一覧へ）/ 'add'（もう1本追加）
+  const onSave = (force = false, after = 'next') => {
+    const r = saveTree({ ...state, currentId: t.id, group }, cfg, { force, after });
     if (!r.saved) {
       setMissingAsk(r.missing);
+      setAskAfter(after); // 「未入力のまま保存する」を押したときも、同じ行き先にする
       return;
     }
     setMissingAsk(null);
@@ -691,7 +658,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
           <div className="alert warn" role="alert">
             <span>未入力があります：{missing.join('、')}</span>
             <div className="acts">
-              <button type="button" className="btn" onClick={() => onSave(true)}>
+              <button type="button" className="btn" onClick={() => onSave(true, askAfter)}>
                 未入力のまま保存する
               </button>
             </div>
@@ -703,10 +670,21 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
             </div>
           )
         )}
-        {!readOnly && (
+        {/* 追加した木は台帳の並びの外にあるので、「次の木」に進まない（台帳の別の木を開いてしまわないように） */}
+        {!readOnly && !isAddedTree(t) && (
           <button type="button" className="btn fill big" onClick={() => onSave(false)}>
             保存して次の木へ
           </button>
+        )}
+        {!readOnly && isAddedTree(t) && (
+          <>
+            <button type="button" className="btn fill big" onClick={() => onSave(false, 'list')} data-testid="save-to-list">
+              保存して一覧へ
+            </button>
+            <button type="button" className="btn big" onClick={() => onSave(false, 'add')} data-testid="save-and-add">
+              保存してもう1本追加
+            </button>
+          </>
         )}
         {sheet && <span className="hint" style={{ textAlign: 'center' }}>{sheet.label}</span>}
       </div>
