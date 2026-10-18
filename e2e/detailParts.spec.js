@@ -40,7 +40,10 @@ test('部品から詳細の文を作る・手で直す・作り直す。保存�
   await page.fill('#i-b4Detail', '1本、地上2m付近');
   await parts.locator('[data-part=branchLen]').fill('5');
   await expect(page.locator('#i-b4Detail')).toHaveValue('1本、地上2m付近');
+  // 書き換えた後だけ、詳細の下に「数値から作り直す」が出る
+  await expect(page.locator('[data-rebuild=b4Detail]')).toHaveText('数値から作り直す');
   await page.click('[data-rebuild=b4Detail]');
+  await expect(page.locator('[data-rebuild=b4Detail]')).toHaveCount(0);
   await expect(page.locator('#i-b4Detail')).toHaveValue('1本、地上2m、枝直径18cm、枝長5m');
 
   // 保存して開き直しても、部品と文が残っている

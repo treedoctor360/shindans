@@ -143,9 +143,9 @@ function Item({ it, rec, cfg, opts, set, press, edit, inGrid = false }) {
         )}
         {rec[manualKeyOf(dk)] && edit && partsOf(it, cfg).length > 0 && (
           <div className="hint">
-            文を手で直しています（部品を変えても文は変わりません）。{' '}
+            詳細を書き換えたため、上の数値を変えても詳細は変わりません。{' '}
             <button type="button" className="btn" onClick={() => edit((r) => rebuildDetail(r, it, dk, cfg))} data-rebuild={dk}>
-              部品から作り直す
+              数値から作り直す
             </button>
           </div>
         )}
