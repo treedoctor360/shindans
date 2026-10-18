@@ -5,7 +5,7 @@ import { toHalf } from '../core/text.js';
 import { dbValues, exportDb } from '../excel/dbExport.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
 import { exportInitialBook } from '../excel/initialExport.js';
-import { initialsForBook } from '../store/initial.js';
+import { gradeWriteBack, initialsForBook } from '../store/initial.js';
 import { loadInitialBookFile, loadLedgerFile, loadTemplate } from '../store/state.js';
 import { unsentCount } from '../store/sync.js';
 import { treesForDb } from '../store/review.js';
@@ -74,6 +74,9 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   const db = treesForDb(state, cfg, { includeUnconfirmed: withUnconfirmed });
   const dbCount = mine.length - db.excluded.length;
   const ini = cfg.initialSurvey ? initialsForBook(state, cfg, { includeUnconfirmed: withUnconfirmed }) : null;
+  // 詳しい診断が必要な木の健全度：詳しい診断の結果を一覧表に書き戻す（設定 initialSurvey.gradeWriteBack があるとき）
+  const gw = gradeWriteBack(state, cfg, db.trees, { includeUnconfirmed: withUnconfirmed, treatOf: (t) => dbValues(t, cfg).treat ?? '' });
+  const noLabel = (list) => list.slice(0, 8).map((x) => toHalf((x.tree || x).treeNo) || '(番号なし)').join('・') + (list.length > 8 ? 'ほか' : '');
 
   const run = async (name, fn) => {
     setBusy(name);
@@ -109,14 +112,15 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
     run('一覧表の出力', async () => {
       const ledger = await loadLedgerFile();
       if (!ledger) throw new Error('台帳がありません。「設定」で読み込んでください');
-      const r = await exportDb(ledger.buffer.slice(0), db.trees, cfg);
+      const r = await exportDb(ledger.buffer.slice(0), gw.trees, cfg);
       if (r.errors.length) return setCheck({ title: '一覧表の出力検査', errors: r.errors });
       download(`${safeName(ledger.name.replace(/\.xls[xm]$/i, ''))}_入力反映_${yymmdd()}.xlsx`, r.buffer);
       const st = r.stats;
       toast(
         `検査OK。${st.written + st.appended}本を書き込みました（既存の行${st.written}・追加${st.appended}）。他の行は変わっていません` +
           (st.skippedLedgerDone.length ? `。台帳で入力済みの${st.skippedLedgerDone.length}本は書き込んでいません` : '') +
-          (db.excluded.length ? `。未確定の${db.excluded.length}本は書き込んでいません` : ''),
+          (db.excluded.length ? `。未確定の${db.excluded.length}本は書き込んでいません` : '') +
+          (gw.written.length ? `。${cfg.initialSurvey.label}の結果を健全度に書いた木${gw.written.length}本` : ''),
       );
     });
 
@@ -210,6 +214,41 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
               </p>
             )}
           </>
+        )}
+        {cfg.initialSurvey?.gradeWriteBack && (gw.written.length > 0 || gw.treatDiff.length > 0 || gw.ledger.length > 0 || gw.pending.length > 0) && (
+          <div className="hint" data-testid="grade-writeback">
+            {gw.written.length > 0 && (
+              <p>
+                {cfg.initialSurvey.label}の結果を健全度に書く木：{gw.written.length}本（{noLabel(gw.written)}）
+              </p>
+            )}
+            {gw.pending.length > 0 && (
+              <p>
+                {cfg.initialSurvey.label}の結果がまだない（または未確定の）木：{gw.pending.length}本。健全度は空欄のまま書きます（{noLabel(gw.pending)}）
+              </p>
+            )}
+            {gw.treatDiff.length > 0 && (
+              <div className="alert warn" data-testid="treat-diff">
+                <span>
+                  処置が{cfg.initialSurvey.label}と違う木があります。一覧表の処置は書き換えません。どちらにするか確かめて、簡易診断の処置を直すか、そのままにしてください。
+                  {gw.treatDiff.slice(0, 10).map((d) => (
+                    <span key={d.tree.id}>
+                      <br />
+                      {toHalf(d.tree.treeNo) || '(番号なし)'}：一覧表「{d.simple || '（なし）'}」／{cfg.initialSurvey.label}「{d.initial}」
+                    </span>
+                  ))}
+                  {gw.treatDiff.length > 10 && <><br />ほか{gw.treatDiff.length - 10}本</>}
+                </span>
+              </div>
+            )}
+            {gw.ledger.length > 0 && (
+              <p data-testid="grade-ledger">
+                台帳で入力済みの木（手で入力した行）には健全度を書きません。手で入れてください：
+                {gw.ledger.slice(0, 10).map((x) => `${toHalf(x.tree.treeNo)}＝${x.grade}`).join('・')}
+                {gw.ledger.length > 10 ? 'ほか' : ''}
+              </p>
+            )}
+          </div>
         )}
         <p className="hint">
           {state.ledgerInfo

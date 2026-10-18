@@ -6,7 +6,7 @@ import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
-import { bookEntry, bookValues, discardInitial, fillNone, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
+import { bookEntry, bookValues, discardInitial, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
 import { addSticky, answerSticky, closeSticky, fieldLabel, reviewFields, reviewState, reviewStatesOf, setConfirm, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
 import { INITIAL, initialKey } from '../src/store/surveys.js';
@@ -272,5 +272,38 @@ describe('詳しい診断の入力の取り消し・下書きを消す', () => {
     const gone = discardInitial(fresh, fresh.initials[0].id);
     expect(gone.initials).toEqual([]);
     expect(initialStatus(gone.trees[0], gone, cfg)).toBe('todo');
+  });
+});
+
+describe('一覧表の健全度への書き戻し', () => {
+  it('入力済み（サーバーを使うなら確定）の総合評価が A〜E の木だけ健全度を付ける。処置の違い・台帳の行・結果待ちを知らせる', () => {
+    const trees = [need('AB001'), need('AB002'), need('AB003'), T('AB004', { source: 'ledger', done: true, initialNeeded: '要' }), T('AB005', { source: 'app', done: true, initialNeeded: '否', grade: 'B' })];
+    let s = S(trees, { server: null });
+    for (const t of s.trees.filter((x) => x.initialNeeded === '要')) s = startInitial(s, t, cfg).state;
+    const set = (no, v) => {
+      const id = s.initials.find((r) => r.treeNo === no).id;
+      s = updateInitial(s, id, (r) => ({ ...r, ...v }));
+      s = saveInitial(s, id, cfg, { force: true }).state;
+    };
+    set('AB001', { overall: 'D', treatment: '枯れ枝剪定・縮小剪定' });
+    set('AB002', { overall: '-' }); // 「-」は書かない
+    set('AB004', { overall: 'C' }); // 台帳の行（手で入力）には書かない
+    const treatOf = (t) => (t.treeNo === 'AB001' ? '枯れ枝剪定' : '');
+    const r = gradeWriteBack(s, cfg, s.trees, { treatOf });
+    expect(r.written.map((x) => [x.tree.treeNo, x.grade])).toEqual([['AB001', 'D']]);
+    expect(r.trees.find((t) => t.treeNo === 'AB001').initialGrade).toBe('D');
+    expect(r.trees.find((t) => t.treeNo === 'AB005')).toBe(s.trees[4]); // 対象でない木はそのまま
+    expect(r.treatDiff).toEqual([{ tree: expect.objectContaining({ treeNo: 'AB001' }), simple: '枯れ枝剪定', initial: '枯れ枝剪定・縮小剪定' }]);
+    expect(r.ledger.map((x) => [x.tree.treeNo, x.grade])).toEqual([['AB004', 'C']]);
+    expect(r.pending.map((t) => t.treeNo)).toEqual(['AB002', 'AB003']);
+
+    // サーバーを使うときは確定した記録だけ
+    expect(gradeWriteBack({ ...s, server: { ...server } }, cfg, s.trees, { treatOf }).written).toEqual([]);
+    // 処置が同じ（書き方の違いだけ）なら知らせない
+    expect(gradeWriteBack(s, cfg, s.trees, { treatOf: () => '枯れ枝剪定，縮小剪定' }).treatDiff).toEqual([]);
+    // 設定がなければ何もしない
+    const c = structuredClone(cfgJson);
+    delete c.initialSurvey.gradeWriteBack;
+    expect(gradeWriteBack(s, c, s.trees).trees).toBe(s.trees);
   });
 });
