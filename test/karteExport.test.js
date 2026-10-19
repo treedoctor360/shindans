@@ -127,6 +127,22 @@ describe('確認用のカルテの出力', () => {
     expect(r.stats.sheets.map((s) => s.form)).toEqual(['initial', 'environment', 'initial', 'environment']);
   });
 
+  it('replaceFormula の欄は、様式の式を値に置き換えて書く（株立の幹周の並び・樹高/幹径の数値など）', async () => {
+    const c2 = structuredClone(cfg);
+    const cells = c2.initialSurvey.karte.sheets[0].cells;
+    cells.find((x) => x.cell === 'C4').key = '@girthList';
+    cells.push({ cell: 'C5', key: '@heightRatio', num: true, replaceFormula: true });
+    expect(validateConfig(c2).errors).toEqual([]);
+    const r = await exportKarte(await makeKarteTemplate(), [{ ...AB001, '@girthList': '2.1、0.80、0.90', '@heightRatio': 13 }], c2);
+    expect(r.errors).toEqual([]);
+    const a = (await load(r.buffer)).getWorksheet('AB001');
+    expect(a.getCell('C4').value).toBe('2.1、0.80、0.90');
+    expect(a.getCell('C5').value).toBe(13);
+    // replaceFormula がなければ、式のセルには書かない
+    cells.at(-1).replaceFormula = false;
+    expect((await exportKarte(await makeKarteTemplate(), [AB001], c2)).errors.join('\n')).toContain('C5 には式');
+  });
+
   it('同じ番号の木（別の場所）はシートの名前を重ねない', async () => {
     const r = await exportKarte(await makeKarteTemplate(), [AB001, { ...AB001, parkCode: 'K02' }], cfg);
     expect(r.errors).toEqual([]);

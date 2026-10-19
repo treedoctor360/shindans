@@ -6,7 +6,7 @@ import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
-import { bookEntry, bookValues, discardInitial, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
+import { bookEntry, bookValues, discardInitial, karteExtras, karteRecords, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
 import { addSticky, answerSticky, closeSticky, fieldLabel, reviewFields, reviewState, reviewStatesOf, setConfirm, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
 import { INITIAL, initialKey } from '../src/store/surveys.js';
@@ -89,6 +89,42 @@ describe('詳しい診断の対象と引き継ぎ', () => {
     const c = structuredClone(cfgJson);
     c.initialSurvey.inherit.x = { from: '@unknown' };
     expect(validateConfig(c).errors.join()).toContain('initialSurvey.inherit');
+  });
+});
+
+describe('確認用カルテに出す値（株立の幹周・樹高/幹径・枝長/枝径）', () => {
+  it('株立は幹ごとの幹周を入力のまま並べる。樹高/幹径・枝長/枝径は数値のまま', () => {
+    const tree = need('AB001', { girths: ['2.1', '０.80', '0.90'], height: '12', branchLen: '400', branchDia: '10' });
+    const rec = { height: 12, girth: 2.66 }; // 詳しい診断の幹周は（和）×係数
+    const x = karteExtras(tree, rec, cfg);
+    expect(x['@girthList']).toBe('2.1、0.80、0.90');
+    expect(x['@heightRatio']).toBe(Math.round(12 / (2.66 / cfg.calc.pi)));
+    expect(x['@branchRatio']).toBe(40); // 上限以上でも「40≦倍」にせず数値
+  });
+  it('単幹は幹周の数。詳しい診断で直した樹高・幹周で樹高/幹径を出す。枝長/枝径は小数第2位まで', () => {
+    const tree = need('AB001', { girths: ['1.5'], height: '10', branchLen: '7', branchDia: '0.3' });
+    const x = karteExtras(tree, { height: 11, girth: 1.5 }, cfg);
+    expect(x['@girthList']).toBe('1.5');
+    expect(x['@heightRatio']).toBe(Math.round(11 / (1.5 / cfg.calc.pi)));
+    expect(x['@branchRatio']).toBe(23.33);
+  });
+  it('記録から元の木を探して値を足す', () => {
+    const tree = need('AB001', { girths: ['1.2', '0.9'] });
+    let s = S([tree]);
+    s = startInitial(s, tree, cfg).state;
+    const [r] = karteRecords(s, s.initials, cfg);
+    expect(r['@girthList']).toBe('1.2、0.9');
+    expect(r.treeNo).toBe('AB001');
+  });
+  it('枯死の木の枝長/枝径は表記の文字', () => {
+    const tree = need('AB001', { vigor: cfg.deadVigor, branchLen: '7', branchDia: '0.3' });
+    expect(karteExtras(tree, { height: 10, girth: 1 }, cfg)['@branchRatio']).toBe(cfg.calc.deadLabel);
+  });
+  it('元の木が分からない・入力が足りないときは空', () => {
+    const x = karteExtras(null, { girth: 1.2 }, cfg);
+    expect(x['@girthList']).toBe('1.2');
+    expect(x['@heightRatio']).toBe('');
+    expect(x['@branchRatio']).toBe('');
   });
 });
 

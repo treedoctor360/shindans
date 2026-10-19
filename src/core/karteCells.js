@@ -4,6 +4,8 @@
 import { toHalf } from './text.js';
 
 export const KARTE_MATCH = ['exact', 'first', 'contains'];
+// 確認用カルテにだけ出す計算した値（store/initial.js の karteExtras が作る）
+export const KARTE_CALC = ['@girthList', '@heightRatio', '@branchRatio'];
 
 const isStr = (x) => typeof x === 'string' && x.length > 0;
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
@@ -44,8 +46,9 @@ export function validateKarte(k, keysOf, siteTypes, need) {
       addrs.push(c.cell);
       const ks = c.keys != null ? c.keys : [c.key];
       if (need(Array.isArray(ks) && ks.length > 0 && ks.every(isStr), `${ct}：key か keys（項目の名前）が必要です`))
-        ks.filter((x) => !known.has(x)).forEach((x) => need(false, `${ct}：項目「${x}」は ${sh.form} の入力画面・ブックの列にありません`));
+        ks.filter((x) => !known.has(x) && !KARTE_CALC.includes(x)).forEach((x) => need(false, `${ct}：項目「${x}」は ${sh.form} の入力画面・ブックの列にありません（計算した値は ${KARTE_CALC.join('・')}）`));
       need(c.join == null || typeof c.join === 'string', `${ct}.join は文字にしてください`);
+      need(c.replaceFormula == null || typeof c.replaceFormula === 'boolean', `${ct}.replaceFormula は true か false にしてください`);
       if (c.boxes != null) {
         need(typeof c.boxes === 'string' && boxOptions(c.boxes).length > 0, `${ct}.boxes は「□無 □有」のような□の付いた文字にしてください`);
         need(c.match == null || KARTE_MATCH.includes(c.match), `${ct}.match は ${KARTE_MATCH.join('・')} のどれかです`);

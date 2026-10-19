@@ -13,6 +13,8 @@
 //                   match：exact（同じ）／first（値がその言葉で始まる）／contains（値にその言葉を含む）。map で値を読み替え
 //      pattern    … 正規表現。当てはまれば1つ目の（ ）の中だけ。omit にある値は空欄
 //      num: true  … 数の形の文字は数として書く（様式の式で計算できるように）
+//      replaceFormula: true … 様式で式が入っているセルに値を書く（その式は消える。確認用なので、入力どおりの値を見せたいとき）
+//    項目の名前が「@」で始まるものは、確認用カルテにだけ出す計算した値（store/initial.js の karteExtras）
 //  - 印刷したときの上の余白（ヘッダー）の右に「確認用」の印（設定 mark）を入れる。markCell があれば、そのセルにも書く
 // 保存する前に、書き出したファイルを読み直して照合する。1件でも食い違えば保存しない。
 
@@ -93,7 +95,7 @@ export async function readKarteTemplate(buffer, cfg) {
       const got = (cells.get(addr)?.text || '').replace(/[\s　]/g, '');
       if (!got.includes(text.replace(/[\s　]/g, ''))) errs.push(`シート「${unescapeXml(hit.name)}」の ${addr} が「${text}」ではありません（${got || '空欄'}）`);
     }
-    for (const c of spec.cells) if (cells.get(c.cell)?.formula) errs.push(`シート「${unescapeXml(hit.name)}」の ${c.cell} には式が入っているため書き込めません`);
+    for (const c of spec.cells) if (cells.get(c.cell)?.formula && !c.replaceFormula) errs.push(`シート「${unescapeXml(hit.name)}」の ${c.cell} には式が入っているため書き込めません`);
     sheets.push({ spec, name: unescapeXml(hit.name), file: hit.file, errors: errs });
     errors.push(...errs);
   }
@@ -191,7 +193,7 @@ export async function exportKarte(templateBuffer, records, cfg) {
     }
     for (const spec of specs) {
       const key = `${spec.form}|${spec.siteType}`;
-      const edits = spec.cells.map((c) => ({ addr: c.cell, value: karteValue(c, rec) }));
+      const edits = spec.cells.map((c) => ({ addr: c.cell, value: karteValue(c, rec), replaceFormula: !!c.replaceFormula }));
       if (spec.markCell && mark) edits.push({ addr: spec.markCell, value: mark }); // 画面でも見える確認用の印
       let xml;
       try {
