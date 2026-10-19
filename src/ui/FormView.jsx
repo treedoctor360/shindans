@@ -523,6 +523,8 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                 </div>
               );
             })}
+          </fieldset>
+          {/* 特記事項は枯死の木でも書ける（点検項目だけを原則空欄にする） */}
             <div className="row" style={{ paddingTop: 8 }}>
               <label className="lbl" htmlFor="f-notes">
                 特記事項（野帳） <small>タップで追加・もう一度で削除。寸法なども書く</small>
@@ -562,7 +564,6 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                 )}
               </div>
             </div>
-          </fieldset>
         </div>
 
         <div className="sec">
