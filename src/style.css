@@ -265,6 +265,9 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 /* 詳しい診断：選択肢が多い・長い項目は折り返す */
 .seg.wrap{grid-auto-flow:row;grid-template-columns:repeat(auto-fit,minmax(92px,1fr))}
 .row.search{flex-direction:row;align-items:center}.row.search input{flex:1;min-width:0;min-height:44px;border-radius:8px;border:1px solid var(--line);background:var(--sunk);padding:0 10px;font-size:16px;color:inherit}
+/* 特記事項に寸法を足す欄 */
+.measure{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.measure .hint{font-weight:700;color:var(--accent)}
 .parts{display:flex;flex-wrap:wrap;gap:8px 12px;padding:8px;border:1px dashed var(--line);border-radius:8px}
 .parts .part{display:flex;flex-direction:column;gap:2px;min-width:0}
 .parts .pair{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
