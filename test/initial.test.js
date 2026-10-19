@@ -100,6 +100,8 @@ describe('確認用カルテに出す値（株立の幹周・樹高/幹径・枝
     expect(x['@girthList']).toBe('2.1、0.80、0.90');
     expect(x['@heightRatio']).toBe(Math.round(12 / (2.66 / cfg.calc.pi)));
     expect(x['@branchRatio']).toBe(40); // 上限以上でも「40≦倍」にせず数値
+    expect(x['@girthStems']).toBe('2.1、0.80、0.90'); // 株立のときだけ
+    expect(x['@branchInput']).toBe('400/10'); // 何を入れたか（枝長/枝径）
   });
   it('単幹は幹周の数。詳しい診断で直した樹高・幹周で樹高/幹径を出す。枝長/枝径は小数第2位まで', () => {
     const tree = need('AB001', { girths: ['1.5'], height: '10', branchLen: '7', branchDia: '0.3' });
@@ -107,6 +109,8 @@ describe('確認用カルテに出す値（株立の幹周・樹高/幹径・枝
     expect(x['@girthList']).toBe('1.5');
     expect(x['@heightRatio']).toBe(Math.round(11 / (1.5 / cfg.calc.pi)));
     expect(x['@branchRatio']).toBe(23.33);
+    expect(x['@girthStems']).toBe(''); // 単幹は空
+    expect(x['@branchInput']).toBe('7/0.3');
   });
   it('記録から元の木を探して値を足す', () => {
     const tree = need('AB001', { girths: ['1.2', '0.9'] });
