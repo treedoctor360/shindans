@@ -1,5 +1,5 @@
 // 入力画面：1本ずつ、紙の野帳と同じ順に入力する
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { branchRatioRaw, branchRatioText, girthOf, heightRatioOf } from '../core/calc.js';
 import { groupLabel, treesOfGroup } from '../core/groups.js';
 import { dbNoteOf, freeNoteLines, noteLines, toggleNote } from '../core/notes.js';
@@ -125,6 +125,11 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const [undo, setUndo] = useState(null); // 直前の操作を取り消すための、押す前の木 { treeId, before, label }
   const [askRemove, setAskRemove] = useState(''); // 削除・入力の取り消しを確かめ中の木の id
   const [askAfter, setAskAfter] = useState('next'); // 未入力を確かめ中の保存の行き先
+  // 前後の木の帯を、上の帯（表題）のすぐ下に止めるため、上の帯の高さを測っておく
+  useEffect(() => {
+    const bar = document.querySelector('.top');
+    if (bar) document.documentElement.style.setProperty('--top-h', `${bar.offsetHeight}px`);
+  }, []);
 
   if (!cfg || !state.trees.length) {
     return (
@@ -272,12 +277,17 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
 
   return (
     <section className="view" data-testid="form">
-      <div className="sub" style={{ justifyContent: 'space-between' }}>
+      {/* 前後の木の帯は画面の上に残す（スクロールしても、いまどの木を入力しているか分かるように） */}
+      <div className="sub tree-bar" style={{ justifyContent: 'space-between' }} data-testid="tree-bar">
         <button type="button" className="btn" disabled={idx <= 0} onClick={() => go(ts[idx - 1].id)}>
           ← 前の木
         </button>
-        <span className="hint">
-          {idx + 1} / {ts.length}
+        <span className="tree-bar-name">
+          <b className="no" data-testid="tree-bar-no">{toHalf(t.treeNo) || '(番号なし)'}</b>{' '}
+          <span data-testid="tree-bar-species">{t.species}</span>
+          <small className="hint">
+            {idx + 1} / {ts.length}
+          </small>
         </span>
         <button type="button" className="btn" disabled={idx >= ts.length - 1} onClick={() => go(ts[idx + 1].id)}>
           次の木 →
