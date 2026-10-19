@@ -7,6 +7,7 @@ import ListView, { activeGroup } from './ui/ListView.jsx';
 import OutView from './ui/OutView.jsx';
 import SettingsView from './ui/SettingsView.jsx';
 import { useAppState } from './ui/useAppState.js';
+import { useTopHeight } from './ui/useTopHeight.js';
 import { reviewStatesOf } from './store/review.js';
 import { APP_VERSION } from './version.js';
 
@@ -26,6 +27,7 @@ const slashDate = (ymd) => {
 export default function App() {
   const app = useAppState();
   const { state, update, ready, saveError } = app;
+  useTopHeight(ready); // 上の帯の高さ（入力画面で、帯のすぐ下に樹木番号などを止めるため）
 
   // 画面下に短いお知らせを出す
   const [toastMsg, setToastMsg] = useState('');

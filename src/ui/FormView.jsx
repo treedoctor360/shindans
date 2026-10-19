@@ -188,7 +188,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   // 詳しい診断の画面を開く（InitialPrompt.jsx の openInitialWith）
   const openInitial = openInitialWith(update, cfg, toast);
 
-  // 保存。after：保存の後に 'next'（次の未入力の木）/ 'list'（一覧へ）/ 'add'（もう1本追加）
+  // 保存。after：保存の後に 'next'（次の未入力の木）/ 'list'（一覧へ）/ 'add'（もう1本追加）/ 'stay'（同じ木のまま）
   const onSave = (force = false, after = 'next') => {
     const r = saveTree({ ...state, currentId: t.id, group }, cfg, { force, after });
     if (!r.saved) {
@@ -197,12 +197,12 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
       return;
     }
     setMissingAsk(null);
-    // 詳しい診断が必要な木なら、次の木の画面で「続けて入力」を聞く
-    const prompt = cfg.initialSurvey?.forms && isInitialTarget(r.state.trees.find((x) => x.id === t.id) || t, cfg) ? t.id : '';
+    // 詳しい診断が必要な木なら、次の木の画面で「続けて入力」を聞く（同じ木のままなら、画面の「詳しい診断を入力」から開ける）
+    const prompt = after !== 'stay' && cfg.initialSurvey?.forms && isInitialTarget(r.state.trees.find((x) => x.id === t.id) || t, cfg) ? t.id : '';
     // 保存は「その時点の最新の状態」に対して行う（画面を描いた後に送受信で届いた変更を、古い状態で上書きしないように）
     update((cur) => ({ ...saveTree({ ...cur, currentId: t.id, group }, cfg, { force: true, after }).state, initialPrompt: prompt }), { now: true }).then(() => send?.()); // 端末に保存してから、裏でサーバーへ送る
     toast(`${toHalf(t.treeNo) || 'この木'} を保存しました`);
-    window.scrollTo(0, 0);
+    if (after !== 'stay') window.scrollTo(0, 0); // 同じ木のままなら、見ていた所から続けて直せるよう動かさない
   };
 
   // 削除（追加した木）・入力の取り消し（台帳の木）・元に戻す
@@ -272,12 +272,17 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
 
   return (
     <section className="view" data-testid="form">
-      <div className="sub" style={{ justifyContent: 'space-between' }}>
+      {/* 前後の木の帯は画面の上に残す（スクロールしても、いまどの木を入力しているか分かるように） */}
+      <div className="sub tree-bar" style={{ justifyContent: 'space-between' }} data-testid="tree-bar">
         <button type="button" className="btn" disabled={idx <= 0} onClick={() => go(ts[idx - 1].id)}>
           ← 前の木
         </button>
-        <span className="hint">
-          {idx + 1} / {ts.length}
+        <span className="tree-bar-name">
+          <b className="no" data-testid="tree-bar-no">{toHalf(t.treeNo) || '(番号なし)'}</b>{' '}
+          <span data-testid="tree-bar-species">{t.species}</span>
+          <small className="hint">
+            {idx + 1} / {ts.length}
+          </small>
         </span>
         <button type="button" className="btn" disabled={idx >= ts.length - 1} onClick={() => go(ts[idx + 1].id)}>
           次の木 →
@@ -523,46 +528,47 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                 </div>
               );
             })}
-            <div className="row" style={{ paddingTop: 8 }}>
-              <label className="lbl" htmlFor="f-notes">
-                特記事項（野帳） <small>タップで追加・もう一度で削除。寸法なども書く</small>
-              </label>
-              <div className="chips" data-testid="note-chips">
-                {cfg.noteChips.map((c, i) =>
-                  !showAllChips && i >= chipsShow ? null : (
-                    <button
-                      key={c.t}
-                      type="button"
-                      className={`chip${lines.includes(c.t) ? ' on' : ''}`}
-                      onClick={() => change((x) => ({ ...x, notes: toggleNote(x.notes, c.t) }))}
-                    >
-                      {c.t}
-                    </button>
-                  ),
-                )}
-              </div>
-              {!showAllChips && cfg.noteChips.length > chipsShow && (
-                <button type="button" className="more" onClick={() => setShowAllChips(true)}>
-                  定型文をもっと見る（{cfg.noteChips.length - chipsShow}件）
+          </fieldset>
+          {/* 特記事項は枯死の木でも書ける（点検項目だけを原則空欄にする） */}
+          <div className="row" style={{ paddingTop: 8 }}>
+            <label className="lbl" htmlFor="f-notes">
+              特記事項（野帳） <small>タップで追加・もう一度で削除。寸法なども書く</small>
+            </label>
+            <div className="chips" data-testid="note-chips">
+              {cfg.noteChips.map((c, i) =>
+                !showAllChips && i >= chipsShow ? null : (
+                  <button
+                    key={c.t}
+                    type="button"
+                    className={`chip${lines.includes(c.t) ? ' on' : ''}`}
+                    onClick={() => change((x) => ({ ...x, notes: toggleNote(x.notes, c.t) }))}
+                  >
+                    {c.t}
+                  </button>
+                ),
+              )}
+            </div>
+            {!showAllChips && cfg.noteChips.length > chipsShow && (
+              <button type="button" className="more" onClick={() => setShowAllChips(true)}>
+                定型文をもっと見る（{cfg.noteChips.length - chipsShow}件）
+              </button>
+            )}
+            <textarea id="f-notes" rows={4} value={t.notes} placeholder="1行に1項目（音声入力も可）" onChange={(e) => setField('notes', e.target.value)} />
+            <label className="lbl" htmlFor="f-dbnote" style={{ marginTop: 6 }}>
+              一覧表用の特記 <small>{t.dbNoteManual ? '手入力' : '定型文から自動で作成'}</small>
+            </label>
+            <textarea id="f-dbnote" rows={2} value={dbNoteOf(t, cfg)} onChange={(e) => setField('dbNote', e.target.value)} />
+            <div className="sub">
+              {free.length > 0 && !t.dbNoteManual && (
+                <span className="hint">自由記述（{free.length}行）は一覧表に入りません。必要なら手で追記してください</span>
+              )}
+              {t.dbNoteManual && (
+                <button type="button" className="more" onClick={() => change((x) => ({ ...x, dbNoteManual: false }))}>
+                  自動に戻す
                 </button>
               )}
-              <textarea id="f-notes" rows={4} value={t.notes} placeholder="1行に1項目（音声入力も可）" onChange={(e) => setField('notes', e.target.value)} />
-              <label className="lbl" htmlFor="f-dbnote" style={{ marginTop: 6 }}>
-                一覧表用の特記 <small>{t.dbNoteManual ? '手入力' : '定型文から自動で作成'}</small>
-              </label>
-              <textarea id="f-dbnote" rows={2} value={dbNoteOf(t, cfg)} onChange={(e) => setField('dbNote', e.target.value)} />
-              <div className="sub">
-                {free.length > 0 && !t.dbNoteManual && (
-                  <span className="hint">自由記述（{free.length}行）は一覧表に入りません。必要なら手で追記してください</span>
-                )}
-                {t.dbNoteManual && (
-                  <button type="button" className="more" onClick={() => change((x) => ({ ...x, dbNoteManual: false }))}>
-                    自動に戻す
-                  </button>
-                )}
-              </div>
             </div>
-          </fieldset>
+          </div>
         </div>
 
         <div className="sec">
@@ -682,6 +688,12 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
         {!readOnly && !isAddedTree(t) && (
           <button type="button" className="btn fill big" onClick={() => onSave(false)}>
             保存して次の木へ
+          </button>
+        )}
+        {/* 保存だけ：同じ木のまま続けて直せる */}
+        {!readOnly && (
+          <button type="button" className="btn big" onClick={() => onSave(false, 'stay')} data-testid="save-stay">
+            保存（この木のまま）
           </button>
         )}
         {!readOnly && isAddedTree(t) && (

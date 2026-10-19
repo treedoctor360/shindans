@@ -57,6 +57,20 @@ describe('入力の操作', () => {
     expect(r2.state.currentId).toBe('c'); // 台帳で入力済みの b は飛ばす
   });
 
+  it('「保存」だけ：同じ木のまま（次の木・一覧に移らない）。最後の木でも一覧に戻らない', () => {
+    const s = state([P('a', full), P('c')]);
+    const r = saveTree(s, cfg, { after: 'stay' });
+    expect(r.saved).toBe(true);
+    expect(r.state.trees[0]).toMatchObject({ done: true, source: 'app', date: '2099-05-06' });
+    expect(r.state.currentId).toBe('a');
+    expect(r.state.view).toBe(s.view);
+    const last = saveTree(state([P('a', full)]), cfg, { after: 'stay' });
+    expect(last.state.currentId).toBe('a');
+    expect(last.state.view).toBe(s.view);
+    // 未入力があれば、ほかの保存と同じく止める
+    expect(saveTree(state([P('a')]), cfg, { after: 'stay' }).saved).toBe(false);
+  });
+
   it('最後の未入力を保存したら一覧に戻る。台帳で入力済みの木は保存しない', () => {
     const s = state([P('a', full)]);
     const r = saveTree(s, cfg);
