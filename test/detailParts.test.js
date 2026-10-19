@@ -20,12 +20,27 @@ describe('部品の文', () => {
     expect(partText(P.name, ' 菌の名前 ')).toBe('菌の名前');
     expect(partText({ type: 'pair', label: 'x', unit: 'cm' }, { a: '35', b: '100' })).toBe('35cm/100cm');
     expect(partText(P.height, {})).toBe('');
+    // 縦×横×奥行・数ごとに単位（設定 depth・unitEach）
+    expect(partText({ type: 'size', label: 'x', depth: true, unitEach: true }, [{ w: '20', h: '50', d: '15' }])).toBe('20cm×50cm×15cm');
+    expect(partText({ type: 'size', label: 'x', unitEach: true }, [{ w: '20', h: '50' }])).toBe('20cm×50cm');
+    expect(partText({ type: 'size', label: 'x', depth: true }, [{ w: '20', h: '50' }])).toBe('20×50cm'); // 奥行が空なら2つだけ
+    // 印（芯達など）：押してあるときだけ、前の文に続けて付ける
+    expect(partText({ type: 'flag', label: '芯達', text: '（芯達）' }, true)).toBe('（芯達）');
+    expect(partText({ type: 'flag', label: '芯達', text: '（芯達）' }, false)).toBe('');
   });
 
   it('項目の部品（parts）か、なければ既定の部品で、並び順につなぐ', () => {
     expect(partsOf(b4, cfg).map((p) => p.name)).toEqual(['count', 'height', 'branchDia', 'branchLen']);
     expect(partsOf({ key: 'x', type: 'weak' }, cfg).map((p) => p.name)).toEqual(['height', 'size', 'name']);
     expect(buildDetail({ count: '1', height: { a: '2' }, branchDia: '18', branchLen: '4' }, partsOf(b4, cfg), cfg)).toBe('1本、地上2m、枝直径18cm、枝長4m');
+    // 印は「、」でつながず、前の文のすぐ後ろに付ける
+    const parts = [
+      { name: 'rod', type: 'pair', label: '鋼棒', unit: 'cm' },
+      { name: 'core', type: 'flag', label: '芯達', text: '（芯達）' },
+    ];
+    expect(buildDetail({ rod: { a: '29', b: '50' }, core: true }, parts, cfg)).toBe('29cm/50cm（芯達）');
+    expect(buildDetail({ core: true }, parts, cfg)).toBe('（芯達）');
+    expect(buildDetail({ len: '1.5', core: true }, [{ name: 'len', type: 'number', label: '長さ', prefix: '長さ', unit: 'm' }, { name: 'core', type: 'flag', label: '芯達', text: '芯達', attach: false }], cfg)).toBe('長さ1.5m、芯達');
   });
 });
 
@@ -54,6 +69,7 @@ describe('設定の確かめ', () => {
     };
     expect(bad((s) => (s.detailParts.count.type = 'slider'))).toContain('initialSurvey.detailParts.count');
     expect(bad((s) => delete s.detailParts.ratio.options)).toContain('choice には options');
+    expect(bad((s) => (s.detailParts.core = { type: 'flag', label: '芯達' }))).toContain('flag には text');
     expect(bad((s) => s.detailPartsDefault.push('nothing'))).toContain('detailPartsDefault');
     expect(bad((s) => (s.forms.initial.sections[0].items[0].parts = ['count']))).toContain('弱点の項目（weak）にだけ');
     expect(bad((s) => (s.forms.initial.sections[1].items[0].parts = ['nothing']))).toContain('.parts に、detailParts にない部品');

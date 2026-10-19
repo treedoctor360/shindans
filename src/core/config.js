@@ -5,6 +5,7 @@
 import { RULE_TYPES } from './rules.js';
 import { validateDetailParts } from './detailParts.js';
 import { validateKarte } from './karteCells.js';
+import { validateNoteMeasures } from './noteMeasures.js';
 
 // このアプリが読める設定の版。形式を変えたら上げる
 export const CONFIG_VERSION = 6; // 2: dbFormat（台帳の列）/ 3: 一覧表への書き戻し / 4: fieldSheet（野帳）/ 5: 入力画面の選択肢 / 6: initialSurvey（詳しい診断のデータ入力用ブック。省略可）
@@ -123,6 +124,7 @@ export function validateConfig(cfg) {
   validateScreen(cfg, need);
   if (cfg.previous != null) validatePrevious(cfg.previous, need);
   if (cfg.initialSurvey != null) validateInitialSurvey(cfg.initialSurvey, cfg, need);
+  if (cfg.noteMeasures != null) validateNoteMeasures(cfg.noteMeasures, need); // 特記事項に足す寸法の1行（省略可）
 
   return { ok: e.length === 0, errors: e };
 }

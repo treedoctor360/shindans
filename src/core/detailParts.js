@@ -10,14 +10,17 @@
 //   count  … 数 '1'                         → 「1本」（unit 省略時「本」）
 //   height … { a: '0', b: '0.7' }（b は省略可）→ 「地上0～0.7m」（prefix 省略時「地上」、unit 省略時「m」、sep 省略時「～」）
 //   size   … [{ w: '20', h: '40' }, …]       → 「20×40cm、7×7cm（2箇所）」（unit 省略時「cm」。places を付けると2つ以上のとき箇所の数）
+//              depth: true で奥行も（{ w, h, d }）。unitEach: true で数ごとに単位（「20cm×50cm×15cm」）
 //   number … '18'                            → prefix＋値＋unit（例「枝直径18cm」）
 //   choice … '＜1/3'（options から選ぶ）       → prefix＋値（例「周囲長比＜1/3」）
 //   text   … '（種名など）'                    → そのまま
 //   pair   … { a: '35', b: '100' }            → 「35cm/100cm」（unit・sep 省略時「/」）
+//   flag   … true（押してあるか）               → text（例「（芯達）」）。「、」でつながず、前の文のすぐ後ろに付ける
+//              attach: false なら、ほかの部品と同じく「、」でつなぐ（例「長さ1.5m、芯達」）
 
 import { toHalf } from './text.js';
 
-export const PART_TYPES = ['count', 'height', 'size', 'number', 'choice', 'text', 'pair'];
+export const PART_TYPES = ['count', 'height', 'size', 'number', 'choice', 'text', 'pair', 'flag'];
 
 // 部品の値を入れておく項目の名前（例 b4DetailParts）と、手で直したかの印の名前
 export const partsKeyOf = (detailKey) => `${detailKey}Parts`;
@@ -46,10 +49,11 @@ export function partText(part, v) {
       return a && b ? `${pre}${a}${part.sep || '～'}${b}${unit('m')}` : `${pre}${a || b}${unit('m')}`;
     }
     case 'size': {
+      const u = unit('cm');
       const list = (Array.isArray(v) ? v : [])
-        .map((x) => [clean(x?.w), clean(x?.h)].filter(Boolean))
+        .map((x) => [clean(x?.w), clean(x?.h), part.depth ? clean(x?.d) : ''].filter(Boolean))
         .filter((x) => x.length)
-        .map((x) => `${x.join('×')}${unit('cm')}`);
+        .map((x) => (part.unitEach ? x.map((n) => n + u).join('×') : `${x.join('×')}${u}`));
       if (!list.length) return '';
       return list.join('、') + (part.places && list.length > 1 ? `（${list.length}${part.places}）` : '');
     }
@@ -59,6 +63,8 @@ export function partText(part, v) {
       return clean(v) ? `${part.prefix || ''}${clean(v)}` : '';
     case 'text':
       return String(v ?? '').trim();
+    case 'flag':
+      return v ? part.text || '' : '';
     case 'pair': {
       const a = clean(v?.a);
       const b = clean(v?.b);
@@ -70,13 +76,21 @@ export function partText(part, v) {
   }
 }
 
-// 部品の値から、詳細の文を作る（部品の並び順に、つなぎの文字でつなぐ）
+// 部品の値から文を作る（部品の並び順に、つなぎの文字でつなぐ。印（flag）は前の文のすぐ後ろに付ける）
+export function buildText(values, parts, join = '、') {
+  let out = '';
+  for (const p of parts) {
+    const t = partText(p, values?.[p.name]);
+    if (!t) continue;
+    const attach = p.type === 'flag' && p.attach !== false;
+    out += out && !attach ? join + t : t;
+  }
+  return out;
+}
+
+// 部品の値から、詳細の文を作る
 export function buildDetail(values, parts, cfg) {
-  const join = cfg.initialSurvey?.detailJoin ?? '、';
-  return parts
-    .map((p) => partText(p, values?.[p.name]))
-    .filter(Boolean)
-    .join(join);
+  return buildText(values, parts, cfg.initialSurvey?.detailJoin ?? '、');
 }
 
 // 部品を1つ変えた記録を返す。手で直していなければ、詳細の文も作り直す
@@ -100,6 +114,21 @@ export function rebuildDetail(record, item, detailKey, cfg) {
   return next;
 }
 
+// 部品の定義の一覧 { 名前: { type, label, … } } を確かめる（ほかの設定からも使う）。形が正しければ true
+export function validatePartDefs(defs, at0, need) {
+  const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+  if (!need(isObj(defs), `${at0} の形が違います`)) return false;
+  for (const [name, p] of Object.entries(defs)) {
+    const at = `${at0}.${name}`;
+    if (!need(isObj(p) && PART_TYPES.includes(p.type) && typeof p.label === 'string' && p.label, `${at} は { type（${PART_TYPES.join('・')}）, label } の形にしてください`)) continue;
+    if (p.type === 'choice') need(Array.isArray(p.options) && p.options.length > 0 && p.options.every((o) => typeof o === 'string'), `${at}：choice には options が必要です`);
+    if (p.type === 'flag') need(typeof p.text === 'string' && p.text.length > 0, `${at}：flag には text（押したときに付ける文字）が必要です`);
+    for (const k of ['prefix', 'unit', 'sep', 'places', 'text']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
+    for (const k of ['depth', 'unitEach', 'attach']) need(p[k] == null || typeof p[k] === 'boolean', `${at}.${k} は true か false にしてください`);
+  }
+  return true;
+}
+
 // 設定の部品の定義を確かめる（config.js から呼ぶ）。need(条件, 誤りの文)
 export function validateDetailParts(s, need) {
   if (s.detailParts == null) {
@@ -107,14 +136,7 @@ export function validateDetailParts(s, need) {
     need(s.detailPartsDefault == null && !used, 'initialSurvey.detailPartsDefault や項目の parts を使うときは detailParts（部品の定義）が必要です');
     return;
   }
-  const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
-  if (!need(isObj(s.detailParts), 'initialSurvey.detailParts の形が違います')) return;
-  for (const [name, p] of Object.entries(s.detailParts)) {
-    const at = `initialSurvey.detailParts.${name}`;
-    if (!need(isObj(p) && PART_TYPES.includes(p.type) && typeof p.label === 'string' && p.label, `${at} は { type（${PART_TYPES.join('・')}）, label } の形にしてください`)) continue;
-    if (p.type === 'choice') need(Array.isArray(p.options) && p.options.length > 0 && p.options.every((o) => typeof o === 'string'), `${at}：choice には options が必要です`);
-    for (const k of ['prefix', 'unit', 'sep', 'places']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
-  }
+  if (!validatePartDefs(s.detailParts, 'initialSurvey.detailParts', need)) return;
   const names = new Set(Object.keys(s.detailParts));
   const check = (list, at) => need(Array.isArray(list) && list.every((n) => names.has(n)), `${at} に、detailParts にない部品があります`);
   if (s.detailPartsDefault != null) check(s.detailPartsDefault, 'initialSurvey.detailPartsDefault');

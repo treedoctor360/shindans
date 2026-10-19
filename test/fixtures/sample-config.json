@@ -1067,6 +1067,11 @@
       "name": {
         "type": "text",
         "label": "種名など"
+      },
+      "core": {
+        "type": "flag",
+        "label": "芯達",
+        "text": "（芯達）"
       }
     },
     "detailPartsDefault": [
@@ -1196,5 +1201,73 @@
         }
       ]
     }
+  },
+  "noteMeasures": {
+    "places": [
+      "枝",
+      "幹",
+      "根株",
+      "根系"
+    ],
+    "line": "{place}の{kind}：{text}",
+    "parts": {
+      "height": {
+        "type": "height",
+        "label": "高さ（地上）"
+      },
+      "size": {
+        "type": "size",
+        "label": "大きさ（縦×横）",
+        "places": "箇所",
+        "unitEach": true
+      },
+      "size3": {
+        "type": "size",
+        "label": "大きさ（縦×横×奥行）",
+        "depth": true,
+        "unitEach": true
+      },
+      "circ": {
+        "type": "pair",
+        "label": "腐朽部分の周囲長／幹周"
+      },
+      "rod": {
+        "type": "pair",
+        "label": "貫入深（水平）／貫入部幹直径",
+        "unit": "cm"
+      },
+      "core": {
+        "type": "flag",
+        "label": "芯達",
+        "text": "（芯達）"
+      }
+    },
+    "kinds": [
+      {
+        "key": "decay",
+        "label": "腐朽",
+        "parts": [
+          "height",
+          "size",
+          "circ",
+          "core"
+        ]
+      },
+      {
+        "key": "rod",
+        "label": "鋼棒貫入",
+        "parts": [
+          "rod",
+          "core"
+        ]
+      },
+      {
+        "key": "tap",
+        "label": "打診音異常",
+        "parts": [
+          "height"
+        ]
+      }
+    ]
   }
 }

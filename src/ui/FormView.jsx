@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { branchRatioRaw, branchRatioText, girthOf, heightRatioOf } from '../core/calc.js';
 import { groupLabel, treesOfGroup } from '../core/groups.js';
 import { dbNoteOf, freeNoteLines, noteLines, toggleNote } from '../core/notes.js';
+import { appendNoteLine } from '../core/noteMeasures.js';
+import NoteMeasures from './NoteMeasures.jsx';
 import { photoFlag, photoPlan } from '../core/photo.js';
 import { alertsOf, missingFields } from '../core/rules.js';
 import { num, toHalf } from '../core/text.js';
@@ -554,6 +556,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
               </button>
             )}
             <textarea id="f-notes" rows={4} value={t.notes} placeholder="1行に1項目（音声入力も可）" onChange={(e) => setField('notes', e.target.value)} />
+            <NoteMeasures cfg={cfg} onAdd={(line) => change((x) => ({ ...x, notes: appendNoteLine(x.notes, line) }))} />
             <label className="lbl" htmlFor="f-dbnote" style={{ marginTop: 6 }}>
               一覧表用の特記 <small>{t.dbNoteManual ? '手入力' : '定型文から自動で作成'}</small>
             </label>
