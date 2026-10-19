@@ -65,7 +65,7 @@ export function nextTodo(state, cfg) {
 }
 
 // 保存：入力済みにして、調査日・調査者を記録し、次の未入力の木へ移る
-//  after：保存の後の行き先。'next'（次の未入力の木。既定）/ 'list'（一覧へ）/ 'add'（同じ区画にもう1本追加して開く）
+//  after：保存の後の行き先。'next'（次の未入力の木。既定）/ 'list'（一覧へ）/ 'add'（同じ区画にもう1本追加して開く）/ 'stay'（同じ木のまま）
 // 返す形：{ state, missing（未入力の項目）, saved（保存したか） }
 export function saveTree(state, cfg, { force = false, now = new Date().toISOString(), after = 'next' } = {}) {
   const t = currentTree(state);
@@ -81,6 +81,7 @@ export function saveTree(state, cfg, { force = false, now = new Date().toISOStri
     date: state.session.date,
     inspector: state.session.inspector,
   }));
+  if (after === 'stay') return { state: next, missing, saved: true }; // 保存だけ（同じ木のまま続けて直せる）
   if (after === 'list') return { state: { ...next, view: 'list' }, missing, saved: true };
   if (after === 'add') return { state: addTree(next, cfg, { area: t.area || '', now: Date.parse(now) + 1 || Date.now() }), missing, saved: true };
   const n = nextTodo(next, cfg);

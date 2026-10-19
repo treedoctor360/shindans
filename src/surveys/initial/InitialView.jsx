@@ -3,7 +3,7 @@
 //  選択肢は設定かデータ入力用ブックの入力規則から。簡易診断から引き継いだ項目には「簡易から」と出す。
 //  事務の端末では表示だけ（直すのは調査者）。
 //  データ入力用ブックに手で入力済みの木は、ブックの内容を表示だけする（「アプリで入力し直す」でブックの値を下書きにできる）。
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toHalf } from '../../core/text.js';
 import {
   INITIAL_STATUS_LABEL,
@@ -211,11 +211,6 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const [missingAsk, setMissingAsk] = useState(null);
   const [showBook, setShowBook] = useState(false); // アプリの記録があるとき、ブックの内容を見るか
   const [askRemove, setAskRemove] = useState(false); // 取り消し・下書きを消すの確かめ中か
-  // 区切りの見出しを画面の上に残す（いま何の項目を入力しているか分かるように）。上の帯の高さだけ下げる
-  useEffect(() => {
-    const bar = document.querySelector('.top');
-    if (bar) document.documentElement.style.setProperty('--top-h', `${bar.offsetHeight}px`);
-  }, []);
   const tree = state.trees.find((t) => t.id === state.initialTreeId);
   const appRec = tree && cfg ? initialOf(state, tree, cfg) : null;
   const entry = tree && cfg?.initialSurvey ? bookEntry(state, tree, cfg) : null;

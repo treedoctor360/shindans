@@ -26,3 +26,27 @@ test('入力画面：スクロールしても樹木番号と樹種が上に残�
   expect(Math.abs(bar.y - (top.y + top.height))).toBeLessThan(2);
   await expect(page.locator('[data-testid=tree-bar-no]')).toBeInViewport();
 });
+
+test('上の帯の高さが変わっても（文字の折り返し・画面の向き）、樹木番号の帯は上の帯のすぐ下に付いてくる', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 700 });
+  fs.mkdirSync('test-results', { recursive: true });
+  fs.writeFileSync('test-results/tb2-ledger.xlsx', Buffer.from(await makeLedger()));
+  await page.goto('./');
+  await page.setInputFiles('[data-testid=config-file]', 'test/fixtures/sample-config.json');
+  await page.setInputFiles('[data-testid=ledger-file]', 'test-results/tb2-ledger.xlsx');
+  await expect(page.locator('[data-testid=ledger-status] .ok')).toBeVisible();
+  await page.click('.tab:has-text("一覧")');
+  await page.click('[data-tree=AB002]');
+  // 上の帯を高くする（調査情報が長く折り返したときと同じ）
+  await page.locator('.top').evaluate((e) => (e.style.paddingBottom = '60px'));
+  await page.mouse.wheel(0, 3000);
+  await expect
+    .poll(async () => {
+      const top = await page.locator('.top').boundingBox();
+      const bar = await page.locator('[data-testid=tree-bar]').boundingBox();
+      return Math.abs(bar.y - (top.y + top.height));
+    })
+    .toBeLessThan(2);
+  // 前後の木のボタンもスクロールした所から押せる
+  await expect(page.locator('[data-testid=tree-bar] button:has-text("次の木")')).toBeInViewport();
+});
