@@ -4,6 +4,8 @@
 import { toHalf } from './text.js';
 
 export const KARTE_MATCH = ['exact', 'first', 'contains'];
+// 確認用カルテにだけ出す計算した値（store/initial.js の karteExtras が作る）
+export const KARTE_CALC = ['@girthList', '@girthStems', '@heightRatio', '@branchRatio', '@branchInput'];
 
 const isStr = (x) => typeof x === 'string' && x.length > 0;
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
@@ -42,10 +44,18 @@ export function validateKarte(k, keysOf, siteTypes, need) {
       const ct = `${at}.cells[${j}]`;
       if (!need(isObj(c) && isAddr(c.cell), `${ct}.cell はセルの番地（例 K7）にしてください`)) return;
       addrs.push(c.cell);
-      const ks = c.keys != null ? c.keys : [c.key];
-      if (need(Array.isArray(ks) && ks.length > 0 && ks.every(isStr), `${ct}：key か keys（項目の名前）が必要です`))
-        ks.filter((x) => !known.has(x)).forEach((x) => need(false, `${ct}：項目「${x}」は ${sh.form} の入力画面・ブックの列にありません`));
+      const unknown = (x) => !known.has(x) && !KARTE_CALC.includes(x);
+      const unknownMsg = (x) => `${ct}：項目「${x}」は ${sh.form} の入力画面・ブックの列にありません（計算した値は ${KARTE_CALC.join('・')}）`;
+      need(c.keep == null || typeof c.keep === 'boolean', `${ct}.keep は true か false にしてください`);
+      if (c.keep) need(typeof c.fmt === 'string' && c.fmt.length > 0, `${ct}：keep（値を変えない）には fmt（表示形式）が必要です`);
+      else {
+        const ks = c.keys != null ? c.keys : [c.key];
+        if (need(Array.isArray(ks) && ks.length > 0 && ks.every(isStr), `${ct}：key か keys（項目の名前）が必要です`)) ks.filter(unknown).forEach((x) => need(false, unknownMsg(x)));
+      }
+      if (c.fmt != null && need(typeof c.fmt === 'string' && c.fmt.length > 0, `${ct}.fmt は文字（Excel の表示形式）にしてください`))
+        fmtKeys(c.fmt).filter(unknown).forEach((x) => need(false, unknownMsg(x)));
       need(c.join == null || typeof c.join === 'string', `${ct}.join は文字にしてください`);
+      need(c.replaceFormula == null || typeof c.replaceFormula === 'boolean', `${ct}.replaceFormula は true か false にしてください`);
       if (c.boxes != null) {
         need(typeof c.boxes === 'string' && boxOptions(c.boxes).length > 0, `${ct}.boxes は「□無 □有」のような□の付いた文字にしてください`);
         need(c.match == null || KARTE_MATCH.includes(c.match), `${ct}.match は ${KARTE_MATCH.join('・')} のどれかです`);
@@ -70,6 +80,22 @@ export function validateKarte(k, keysOf, siteTypes, need) {
 }
 
 // ---------- 値の作り方 ----------
+
+// 表示形式の {項目} の名前
+export const fmtKeys = (fmt) => [...String(fmt).matchAll(/\{([^{}]+)\}/g)].map((m) => m[1]);
+
+// 表示形式の {項目} を記録の値で埋める。どれかが空なら null（その場合は様式の表示形式のまま）
+//  値の中の「"」は表示形式を壊すので除く
+export function fillFmt(fmt, rec) {
+  if (!fmt) return null;
+  let empty = false;
+  const out = String(fmt).replace(/\{([^{}]+)\}/g, (_, k) => {
+    const v = String(rec[k] ?? '').replace(/"/g, '').trim();
+    if (!v) empty = true;
+    return v;
+  });
+  return empty ? null : out;
+}
 
 // 「□無 □有」から選択肢の言葉と位置を取り出す。返す形：[{ word, at }]（at は□の位置）
 export function boxOptions(boxes) {

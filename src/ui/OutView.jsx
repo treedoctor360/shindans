@@ -6,7 +6,7 @@ import { dbValues, exportDb } from '../excel/dbExport.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
 import { exportInitialBook } from '../excel/initialExport.js';
 import { exportKarte } from '../excel/karteExport.js';
-import { gradeWriteBack, initialsForBook } from '../store/initial.js';
+import { gradeWriteBack, initialsForBook, karteRecords } from '../store/initial.js';
 import { loadInitialBookFile, loadKarteTemplateFile, loadLedgerFile, loadTemplate } from '../store/state.js';
 import { unsentCount } from '../store/sync.js';
 import { treesForDb } from '../store/review.js';
@@ -150,7 +150,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
     run('確認用カルテ', async () => {
       const file = await loadKarteTemplateFile();
       if (!file) throw new Error('カルテの様式がありません。「設定」で読み込んでください');
-      const r = await exportKarte(file.buffer.slice(0), karteRecs, cfg);
+      const r = await exportKarte(file.buffer.slice(0), karteRecords(state, karteRecs, cfg), cfg); // 株立の幹周の並びなど、カルテにだけ出す値を足す
       if (r.errors.length) return setCheck({ title: '確認用カルテの出力検査', errors: r.errors });
       if (!r.stats.sheets.length) return toast('カルテにする記録がありませんでした');
       const n = new Set(r.stats.sheets.map((s) => s.treeNo)).size;

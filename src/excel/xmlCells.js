@@ -6,7 +6,8 @@
 //
 //  - セルの書式（s="…"）はそのまま残す
 //  - 文字は「そのセルに直接書く形」（inlineStr）で入れる。共有の文字の表（sharedStrings.xml）には触らない
-//  - 式の入ったセルには書かない（誤りにする）
+//  - 式の入ったセルには書かない（誤りにする）。replaceFormula: true を付けた書き込みだけ、式を値に置き換える
+//  - style（書式の番号）を付けた書き込みは、その書式にする。keepValue: true なら値（式）は変えず、書式だけ変える
 
 // 列の文字 → 番号（A=1, Z=26, AA=27）
 export function colNumber(col) {
@@ -46,7 +47,7 @@ function cellXml(addr, value, style) {
 
 // 行の中身（<c …>…</c> の並び）に、セルを入れる／置き換える
 //  返す形：書き換えた行の中身
-function setInRow(inner, addr, value) {
+function setInRow(inner, addr, value, replaceFormula = false, styleOverride = null, keepValue = false) {
   const want = colNumber(splitAddress(addr).col);
   // <c r="X1" …/> または <c r="X1" …>…</c>
   const re = /<c\b([^>]*?)(\/>|>([\s\S]*?)<\/c>)/g;
@@ -56,13 +57,18 @@ function setInRow(inner, addr, value) {
     if (!r) throw new Error(`番地のないセルがあるため書き込めません（${addr} の行）`);
     const n = colNumber(r);
     if (n === want) {
-      if (/<f\b/.test(m[3] || '')) throw new Error(`${addr} には式が入っているため書き込みません`);
-      const style = (m[1].match(/\bs="(\d+)"/) || [])[1];
+      const style = styleOverride ?? (m[1].match(/\bs="(\d+)"/) || [])[1];
+      if (keepValue) {
+        // 値・式はそのまま、書式の番号だけ置き換える
+        const attrs = m[1].replace(/\s+s="\d+"/, '') + (style != null ? ` s="${style}"` : '');
+        return inner.slice(0, m.index) + `<c${attrs}${m[2]}` + inner.slice(m.index + m[0].length);
+      }
+      if (/<f\b/.test(m[3] || '') && !replaceFormula) throw new Error(`${addr} には式が入っているため書き込みません`);
       return inner.slice(0, m.index) + cellXml(addr, value, style) + inner.slice(m.index + m[0].length);
     }
-    if (n > want) return inner.slice(0, m.index) + cellXml(addr, value) + inner.slice(m.index); // 列の順に入れる
+    if (n > want) return inner.slice(0, m.index) + cellXml(addr, keepValue ? '' : value, styleOverride) + inner.slice(m.index); // 列の順に入れる
   }
-  return inner + cellXml(addr, value);
+  return inner + cellXml(addr, keepValue ? '' : value, styleOverride);
 }
 
 // シートの XML に、まとめて書き込む
@@ -93,13 +99,13 @@ export function setCells(sheetXml, edits) {
     if (m) {
       const head = m[0].slice(0, m[0].indexOf('>') + 1).replace(/\/>$/, '>');
       let inner = m[1] === '/>' ? '' : m[2];
-      for (const e of list) inner = setInRow(inner, e.addr, e.value);
+      for (const e of list) inner = setInRow(inner, e.addr, e.value, e.replaceFormula, e.style, e.keepValue);
       next = data.slice(0, m.index) + head + inner + '</row>' + data.slice(m.index + m[0].length);
     } else {
       // 行がなければ、行の番号の順になる位置に足す
       let inner = '';
       for (const e of [...list].sort((a, b) => colNumber(splitAddress(a.addr).col) - colNumber(splitAddress(b.addr).col)))
-        inner = setInRow(inner, e.addr, e.value);
+        inner = setInRow(inner, e.addr, e.value, e.replaceFormula, e.style, e.keepValue);
       const rowXml = `<row r="${row}">${inner}</row>`;
       let at = data.length;
       for (const rm of data.matchAll(/<row\b[^>]*?\br="(\d+)"/g)) {

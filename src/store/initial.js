@@ -6,8 +6,9 @@
 //
 // データ入力用ブックに手で入力済みの木は「ブックで入力済み」として、二重入力にならないよう知らせる。
 
-import { branchRatioCell, girthOf, heightRatioOf } from '../core/calc.js';
-import { toHalf } from '../core/text.js';
+import { branchRatioCell, branchRatioRaw, girthOf, heightRatioOf } from '../core/calc.js';
+import { num, toHalf } from '../core/text.js';
+import { isDead } from '../core/tree.js';
 import { bookKey } from '../excel/initialBook.js';
 import { INITIAL, initialKey, simpleKey, updateRecord } from './surveys.js';
 import { touched } from './actions.js';
@@ -60,6 +61,45 @@ function sourceValue(tree, from, cfg) {
   }
   const v = tree[from];
   return Array.isArray(v) ? v.join('・') : v;
+}
+
+// 確認用カルテにだけ出す値（設定 initialSurvey.karte の cells で「@」の名前で使う）
+//  @girthList   … 幹周。株立は幹ごとの値を入力のまま「、」で並べる（例「2.1、0.80、0.90」）。単幹は詳しい診断の幹周
+//  @heightRatio … 樹高/幹径（詳しい診断の樹高・幹周から。株立の幹周は（和）×係数の値）
+//  @branchRatio … 枝長/枝径（上限以上でも表記の文字にせず数値。小数第2位まで。枯死は表記の文字）
+//  @girthStems  … 株立の幹ごとの幹周を「、」で並べた文字（単幹は空）
+//  @branchInput … 枝長/枝径を計算した入力の値（例「500/8」。入力がなければ空）
+//  tree：元の簡易診断の木（分からなければ null）、rec：詳しい診断の記録
+export function karteExtras(tree, rec, cfg) {
+  const stems = (tree?.girths || []).map((g) => toHalf(String(g ?? '')).trim()).filter(Boolean);
+  const girthList = stems.length > 1 ? stems.join('、') : String(rec.girth ?? stems[0] ?? '');
+  const h = num(rec.height);
+  const g = num(rec.girth);
+  const heightRatio = h && g ? Math.round(h / (g / cfg.calc.pi)) : '';
+  let branchRatio = '';
+  if (tree) {
+    const raw = branchRatioRaw(tree);
+    if (isDead(tree, cfg)) branchRatio = branchRatioCell(tree, cfg); // 枯死は表記の文字（例「-」）
+    else if (raw != null) branchRatio = round2(raw);
+    else if (tree.source === 'ledger') branchRatio = tree.ledgerBranchRatio || '';
+  }
+  const bl = toHalf(String(tree?.branchLen ?? '')).trim();
+  const bd = toHalf(String(tree?.branchDia ?? '')).trim();
+  return {
+    '@girthList': girthList,
+    '@girthStems': stems.length > 1 ? stems.join('、') : '',
+    '@heightRatio': heightRatio,
+    '@branchRatio': branchRatio,
+    '@branchInput': bl && bd ? `${bl}/${bd}` : '',
+  };
+}
+
+// 確認用カルテに出す記録：詳しい診断の記録に、元の木から計算した値（karteExtras）を足したもの
+export function karteRecords(state, records, cfg) {
+  return records.map((r) => {
+    const tree = state.trees.find((t) => `initial|${simpleKey(t, cfg)}` === initialKey(r, cfg)) || null;
+    return { ...r, ...karteExtras(tree, r, cfg) };
+  });
 }
 
 // 簡易診断の木から、引き継ぐ値を作る。返す形：{ values: { 項目: 値 }, keys: [引き継いだ項目…] }

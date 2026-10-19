@@ -13,13 +13,18 @@
 //                   match：exact（同じ）／first（値がその言葉で始まる）／contains（値にその言葉を含む）。map で値を読み替え
 //      pattern    … 正規表現。当てはまれば1つ目の（ ）の中だけ。omit にある値は空欄
 //      num: true  … 数の形の文字は数として書く（様式の式で計算できるように）
+//      replaceFormula: true … 様式で式が入っているセルに値を書く（その式は消える。確認用なので、入力どおりの値を見せたいとき）
+//      fmt        … セルの表示形式（Excel の書式記号）。{項目} は記録の値で埋める。どれかが空なら様式の表示形式のまま
+//                   値は数のままなので、様式の式も計算できる（例 '0.00" m（{@girthStems} の和×0.7）"'）
+//      keep: true … 値（式）は変えず、fmt だけ変える（様式の式の結果に、入力した値などを並べて見せる）
+//    項目の名前が「@」で始まるものは、確認用カルテにだけ出す計算した値（store/initial.js の karteExtras）
 //  - 印刷したときの上の余白（ヘッダー）の右に「確認用」の印（設定 mark）を入れる。markCell があれば、そのセルにも書く
 // 保存する前に、書き出したファイルを読み直して照合する。1件でも食い違えば保存しない。
 
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { toHalf } from '../core/text.js';
-import { karteValue } from '../core/karteCells.js';
+import { fillFmt, karteValue } from '../core/karteCells.js';
 import { colNumber, setCells, splitAddress } from './xmlCells.js';
 import { sheetFiles } from './xlsxFix.js';
 
@@ -93,7 +98,7 @@ export async function readKarteTemplate(buffer, cfg) {
       const got = (cells.get(addr)?.text || '').replace(/[\s　]/g, '');
       if (!got.includes(text.replace(/[\s　]/g, ''))) errs.push(`シート「${unescapeXml(hit.name)}」の ${addr} が「${text}」ではありません（${got || '空欄'}）`);
     }
-    for (const c of spec.cells) if (cells.get(c.cell)?.formula) errs.push(`シート「${unescapeXml(hit.name)}」の ${c.cell} には式が入っているため書き込めません`);
+    for (const c of spec.cells) if (cells.get(c.cell)?.formula && !c.replaceFormula && !c.keep) errs.push(`シート「${unescapeXml(hit.name)}」の ${c.cell} には式が入っているため書き込めません`);
     sheets.push({ spec, name: unescapeXml(hit.name), file: hit.file, errors: errs });
     errors.push(...errs);
   }
@@ -101,6 +106,51 @@ export async function readKarteTemplate(buffer, cfg) {
 }
 
 // ---------- 書き出す ----------
+
+// 書式（styles.xml）に、表示形式だけを変えた書式を足していく道具
+//  derive(元の書式の番号, 表示形式) → 新しい書式の番号（同じ組み合わせは使い回す）
+//  xml() → 足した後の styles.xml
+function styleBook(stylesXml) {
+  let xml = stylesXml;
+  const xfsM = xml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/);
+  if (!xfsM) throw new Error('様式のブックの書式（cellXfs）が読めません');
+  const xfs = [...xfsM[1].matchAll(/<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g)].map((m) => m[0]);
+  const added = [];
+  const fmts = [];
+  const ids = [...xml.matchAll(/<numFmt\b[^>]*numFmtId="(\d+)"/g)].map((m) => Number(m[1]));
+  let nextId = Math.max(163, ...ids) + 1;
+  const cache = new Map();
+  return {
+    derive(base, code) {
+      const key = `${base}|${code}`;
+      if (cache.has(key)) return cache.get(key);
+      const id = nextId++;
+      fmts.push(`<numFmt numFmtId="${id}" formatCode="${escapeXml(code)}"/>`);
+      const src = xfs[Number(base) || 0] || '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>';
+      let xf = /\bnumFmtId="\d+"/.test(src) ? src.replace(/\bnumFmtId="\d+"/, `numFmtId="${id}"`) : src.replace(/^<xf\b/, `<xf numFmtId="${id}"`);
+      xf = /\bapplyNumberFormat="/.test(xf) ? xf.replace(/\bapplyNumberFormat="[^"]*"/, 'applyNumberFormat="1"') : xf.replace(/^<xf\b/, '<xf applyNumberFormat="1"');
+      // 足した文字で幅が足りなくなっても「###」にならないよう、縮小して全体を表示する
+      if (/<alignment\b/.test(xf)) xf = /shrinkToFit=/.test(xf) ? xf.replace(/shrinkToFit="[^"]*"/, 'shrinkToFit="1"') : xf.replace(/<alignment\b/, '<alignment shrinkToFit="1"');
+      else xf = xf.endsWith('/>') ? xf.replace(/\/>$/, ' applyAlignment="1"><alignment shrinkToFit="1"/></xf>') : xf.replace(/<\/xf>$/, '<alignment shrinkToFit="1"/></xf>');
+      const idx = xfs.length + added.length;
+      added.push(xf);
+      cache.set(key, idx);
+      return idx;
+    },
+    xml() {
+      if (!added.length) return stylesXml;
+      let out = xml.replace(/(<cellXfs\b[^>]*>)([\s\S]*?)(<\/cellXfs>)/, (_, a, b, c) => a.replace(/count="\d+"/, `count="${xfs.length + added.length}"`) + b + added.join('') + c);
+      if (/<numFmts\b/.test(out)) {
+        out = out.replace(/<numFmts\b[^>]*\/>/, '<numFmts count="0"></numFmts>');
+        out = out.replace(/(<numFmts\b[^>]*>)([\s\S]*?)(<\/numFmts>)/, (_, a, b, c) => {
+          const n = (b.match(/<numFmt\b/g) || []).length + fmts.length;
+          return a.replace(/count="\d+"/, `count="${n}"`) + b + fmts.join('') + c;
+        });
+      } else out = out.replace(/(<styleSheet\b[^>]*>)/, `$1<numFmts count="${fmts.length}">${fmts.join('')}</numFmts>`);
+      return out;
+    },
+  };
+}
 
 const escapeXml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -177,6 +227,9 @@ export async function exportKarte(templateBuffer, records, cfg) {
   }
   errors.push(...tpl.errors);
   if (errors.length) return { buffer: null, errors, stats };
+  const stylesPath = await partPath(src, 'styles');
+  const styles = styleBook(await src.file(stylesPath).async('string'));
+  const baseStyle = (key, addr) => (readCells(base.get(key), []).get(addr)?.xml.match(/\bs="(\d+)"/) || [])[1] ?? '0';
 
   const order = (r) => [String(cfg.dbFormat.sheets.findIndex((x) => x.type === r.siteType)).padStart(3, '0'), codeOf(r, cfg), toHalf(String(r.treeNo ?? '')).trim()].join('|');
   const sorted = [...records].sort((a, b) => order(a).localeCompare(order(b), 'ja'));
@@ -191,7 +244,15 @@ export async function exportKarte(templateBuffer, records, cfg) {
     }
     for (const spec of specs) {
       const key = `${spec.form}|${spec.siteType}`;
-      const edits = spec.cells.map((c) => ({ addr: c.cell, value: karteValue(c, rec) }));
+      const edits = spec.cells.map((c) => {
+        const e = { addr: c.cell, value: c.keep ? undefined : karteValue(c, rec), replaceFormula: !!c.replaceFormula, keepValue: !!c.keep };
+        const code = fillFmt(c.fmt, rec);
+        if (code) {
+          e.style = styles.derive(baseStyle(key, c.cell), code);
+          e.numFmt = code;
+        }
+        return e;
+      });
       if (spec.markCell && mark) edits.push({ addr: spec.markCell, value: mark }); // 画面でも見える確認用の印
       let xml;
       try {
@@ -208,7 +269,7 @@ export async function exportKarte(templateBuffer, records, cfg) {
   if (errors.length) return { buffer: null, errors, stats };
   if (!out.length) return { buffer: null, errors: [], stats };
 
-  const buffer = await buildBook(src, out);
+  const buffer = await buildBook(src, out, styles.xml());
 
   // ---------- 照合 ----------
   errors.push(...(await verifyKarte(buffer, out, base)));
@@ -216,8 +277,17 @@ export async function exportKarte(templateBuffer, records, cfg) {
   return { buffer, errors: [], stats };
 }
 
+// ブックの中の部品（styles など）のファイルの場所
+async function partPath(src, type) {
+  const relXml = await src.file('xl/_rels/workbook.xml.rels').async('string');
+  const m = [...relXml.matchAll(/<Relationship\b[^>]*>/g)].map((x) => x[0]).find((x) => new RegExp(`Type="[^"]*/${type}"`).test(x));
+  const t = m && (m.match(/\bTarget="([^"]+)"/) || [])[1];
+  if (!t) throw new Error(`様式のブックに ${type} がありません`);
+  return t.replace(/^\/?(xl\/)?/, 'xl/');
+}
+
 // 写したシートだけのブックを組み立てる（書式・共有の文字・テーマは様式のブックのものを使う）
-async function buildBook(src, sheets) {
+async function buildBook(src, sheets, stylesXml) {
   const zip = new JSZip();
   const relXml = await src.file('xl/_rels/workbook.xml.rels').async('string');
   const target = (type) => {
@@ -245,7 +315,7 @@ async function buildBook(src, sheets) {
       if (p.type === 'styles') throw new Error('様式のブックに書式（styles.xml）がありません');
       continue;
     }
-    zip.file(p.path, await f.async('uint8array'));
+    zip.file(p.path, p.type === 'styles' && stylesXml ? stylesXml : await f.async('uint8array'));
     rels.push(`<Relationship Id="rId${rid++}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${p.type}" Target="${p.path.replace(/^xl\//, '')}"/>`);
     overrides.push(`<Override PartName="/${p.path}" ContentType="${p.ct}"/>`);
   }
@@ -295,8 +365,12 @@ async function verifyKarte(buffer, sheets, base) {
       continue;
     }
     for (const e of s.edits) {
-      const got = cellOf(ws.getCell(e.addr).value);
-      if (got !== (e.value ?? '')) errors.push(`シート「${s.name}」の ${e.addr}：値が違います（期待：${e.value} ／ ファイル：${got}）`);
+      const cell = ws.getCell(e.addr);
+      if (!e.keepValue) {
+        const got = cellOf(cell.value);
+        if (got !== (e.value ?? '')) errors.push(`シート「${s.name}」の ${e.addr}：値が違います（期待：${e.value} ／ ファイル：${got}）`);
+      }
+      if (e.numFmt && cell.numFmt !== e.numFmt) errors.push(`シート「${s.name}」の ${e.addr}：表示形式が違います（期待：${e.numFmt} ／ ファイル：${cell.numFmt}）`);
     }
     const f = files.find((x) => x.name === escapeXml(s.name) || x.name === s.name)?.file;
     const xml = f && (await zip.file(f)?.async('string'));
@@ -310,8 +384,13 @@ async function verifyKarte(buffer, sheets, base) {
     if (head(xml) !== head(want) || tail(xml) !== tail(want)) errors.push(`シート「${s.name}」：セル以外の部分（結合・入力規則・印刷の設定など）が様式と違います`);
     const a = readCells(want, sst);
     const b = readCells(xml, sst);
-    const edited = new Set(s.edits.map((e) => e.addr));
-    for (const [addr, c] of a) if (!edited.has(addr) && b.get(addr)?.xml !== c.xml) errors.push(`シート「${s.name}」の ${addr}：書き込んでいないセルが様式と違います`);
+    const edited = new Set(s.edits.filter((e) => !e.keepValue).map((e) => e.addr));
+    // 値を変えない（表示形式だけ変えた）セルは、書式の番号のほかは様式と同じ
+    const noStyle = (x) => (x || '').replace(/\s+s="\d+"/, '');
+    for (const e of s.edits.filter((x) => x.keepValue))
+      if (noStyle(b.get(e.addr)?.xml) !== noStyle(a.get(e.addr)?.xml)) errors.push(`シート「${s.name}」の ${e.addr}：式・値が様式と違います`);
+    const keptAddrs = new Set(s.edits.filter((x) => x.keepValue).map((x) => x.addr));
+    for (const [addr, c] of a) if (!edited.has(addr) && !keptAddrs.has(addr) && b.get(addr)?.xml !== c.xml) errors.push(`シート「${s.name}」の ${addr}：書き込んでいないセルが様式と違います`);
     for (const addr of b.keys()) if (!edited.has(addr) && !a.has(addr)) errors.push(`シート「${s.name}」の ${addr}：様式にないセルがあります`);
   }
   return errors;
