@@ -5,7 +5,7 @@
 //  - 書き込むセルの XML だけを書き換え、ほかの部分（書式・入力規則・結合など）は変えない（xmlCells.js）
 //  - 書き込む行は、入力済みの最後の行より下の空き行。通し番号など、先に入っている値の列には書かない
 //  - ブックで入力済みの木は書かない（二重入力の防止）
-//  - 選択肢の項目は、ブックの入力規則（ドロップダウン）にある値だけ書く
+//  - 選択肢の項目は、ブックの入力規則（ドロップダウン）にある値だけ書く（候補を出すだけの入力規則なら、ほかの値も書く）
 // 保存する前に、書き出したファイルを読み直して照合する。1件でも食い違えば保存しない。
 
 import JSZip from 'jszip';
@@ -101,9 +101,9 @@ export async function exportInitialBook(buffer, records, cfg) {
         continue;
       }
       const vals = valuesFor(rec, spec, serialKey);
-      // 選択肢の項目は、入力規則にある値だけ
+      // 選択肢の項目は、入力規則にある値だけ（候補を出すだけの入力規則は除く）
       for (const v of vals) {
-        const opts = sheet.options[v.key];
+        const opts = sheet.strict?.has(v.key) ? sheet.options[v.key] : null;
         if (opts && !opts.includes(String(v.value))) errors.push(`${no}：${sheet.name} の ${v.col}列（${v.key}）の「${v.value}」はブックの選択肢にありません`);
       }
       const row = freeRows.get(sheet.name).shift();

@@ -61,7 +61,9 @@ describe('データ入力用ブックの読み込み', () => {
 
   it('入力規則（ドロップダウン）の選択肢を読む', async () => {
     const r = await readInitialBook(await makeInitialBook(), cfg);
-    expect(r.sheets[0].options).toEqual({ b4: ['無', '有（小）', '有（大）'] });
+    expect(r.sheets[0].options).toEqual({ b4: ['無', '有（小）', '有（大）'], branchRatio: ['40≦'] });
+    // 選択肢にない値を入れられない入力規則か（候補を出すだけのものは入らない）
+    expect([...r.sheets[0].strict]).toEqual(['b4']);
     expect(r.sheets[1].options).toEqual({ stake: ['支柱なし', '無', '有'] });
   });
 

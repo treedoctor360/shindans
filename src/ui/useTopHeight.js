@@ -5,11 +5,20 @@
 import { useEffect } from 'react';
 
 export function useTopHeight(ready) {
+  useHeightVar('.top', '--top-h', ready);
+}
+
+// 入力画面の樹木番号の帯（.tree-bar）の高さを --bar-h に入れる（詳しい診断の区切りの見出しを、帯の下に止めるため）
+export function useBarHeight() {
+  useHeightVar('.tree-bar', '--bar-h', true);
+}
+
+function useHeightVar(selector, name, ready) {
   useEffect(() => {
     if (!ready) return undefined;
-    const bar = document.querySelector('.top');
+    const bar = document.querySelector(selector);
     if (!bar) return undefined;
-    const set = () => document.documentElement.style.setProperty('--top-h', `${bar.offsetHeight}px`);
+    const set = () => document.documentElement.style.setProperty(name, `${bar.offsetHeight}px`);
     set();
     if (typeof ResizeObserver === 'undefined') {
       window.addEventListener('resize', set);
@@ -18,5 +27,5 @@ export function useTopHeight(ready) {
     const ro = new ResizeObserver(set);
     ro.observe(bar, { box: 'border-box' }); // 余白も含めた高さで見る
     return () => ro.disconnect();
-  }, [ready]);
+  }, [ready, selector, name]);
 }

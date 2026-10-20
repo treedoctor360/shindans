@@ -50,3 +50,34 @@ test('上の帯の高さが変わっても（文字の折り返し・画面の�
   // 前後の木のボタンもスクロールした所から押せる
   await expect(page.locator('[data-testid=tree-bar] button:has-text("次の木")')).toBeInViewport();
 });
+
+test('詳しい診断の画面でも、スクロールしても樹木番号と樹種が上に残る（区切りの見出しはその下）', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 600 });
+  fs.mkdirSync('test-results', { recursive: true });
+  fs.writeFileSync('test-results/tb3-ledger.xlsx', Buffer.from(await makeLedger()));
+  await page.goto('./');
+  await page.setInputFiles('[data-testid=config-file]', 'test/fixtures/sample-config.json');
+  await page.setInputFiles('[data-testid=ledger-file]', 'test-results/tb3-ledger.xlsx');
+  await expect(page.locator('[data-testid=ledger-status] .ok')).toBeVisible();
+  await page.click('.tab:has-text("一覧")');
+  await page.click('[data-tree=AB001]');
+  await page.click('[data-testid=open-initial]');
+  await expect(page.locator('[data-testid=tree-bar-no]')).toHaveText('AB001');
+  await expect(page.locator('[data-testid=tree-bar-species]')).toHaveText('テストノキ');
+
+  await page.mouse.wheel(0, 3000);
+  await expect
+    .poll(async () => {
+      const top = await page.locator('.top').boundingBox();
+      const bar = await page.locator('[data-testid=tree-bar]').boundingBox();
+      return Math.abs(bar.y - (top.y + top.height));
+    })
+    .toBeLessThan(2);
+  await expect(page.locator('[data-testid=tree-bar-no]')).toBeInViewport();
+  // 上に残っている区切りの見出しは、樹木番号の帯に隠れない
+  const bar = await page.locator('[data-testid=tree-bar]').boundingBox();
+  const stuck = await page.locator('.initial-form .form-body .sec > h2').evaluateAll((hs) =>
+    hs.map((h) => h.getBoundingClientRect()).filter((r) => r.top < 300 && r.bottom > 0).map((r) => r.top),
+  );
+  for (const y of stuck) expect(y).toBeGreaterThanOrEqual(bar.y + bar.height - 2);
+});

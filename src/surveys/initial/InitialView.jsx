@@ -4,6 +4,7 @@
 //  事務の端末では表示だけ（直すのは調査者）。
 //  データ入力用ブックに手で入力済みの木は、ブックの内容を表示だけする（「アプリで入力し直す」でブックの値を下書きにできる）。
 import { useState } from 'react';
+import { useBarHeight } from '../../ui/useTopHeight.js';
 import { toHalf } from '../../core/text.js';
 import {
   INITIAL_STATUS_LABEL,
@@ -161,6 +162,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const [missingAsk, setMissingAsk] = useState(null);
   const [showBook, setShowBook] = useState(false); // アプリの記録があるとき、ブックの内容を見るか
   const [askRemove, setAskRemove] = useState(false); // 取り消し・下書きを消すの確かめ中か
+  useBarHeight(); // 樹木番号の帯の高さ（区切りの見出しを、その下に止めるため）
   const tree = state.trees.find((t) => t.id === state.initialTreeId);
   const appRec = tree && cfg ? initialOf(state, tree, cfg) : null;
   const entry = tree && cfg?.initialSurvey ? bookEntry(state, tree, cfg) : null;
@@ -260,12 +262,17 @@ export default function InitialView({ state, update, config: cfg, toast, send })
 
   return (
     <section className="view initial-form" data-testid="initial-view">
-      <div className="sub" style={{ justifyContent: 'space-between' }}>
+      {/* 樹木番号・樹種の帯は画面の上に残す（スクロールしても、いまどの木を入力しているか分かるように） */}
+      <div className="sub tree-bar" style={{ justifyContent: 'space-between' }} data-testid="tree-bar">
         <button type="button" className="btn" onClick={() => back('form')} data-testid="back-to-simple">
           ← 簡易診断へ
         </button>
-        <span className="hint">
-          {cfg.initialSurvey.label}：{INITIAL_STATUS_LABEL[status]}
+        <span className="tree-bar-name">
+          <b className="no" data-testid="tree-bar-no">{toHalf(tree.treeNo) || '(番号なし)'}</b>{' '}
+          <span data-testid="tree-bar-species">{tree.species}</span>
+          <small className="hint">
+            {cfg.initialSurvey.label}：{INITIAL_STATUS_LABEL[status]}
+          </small>
         </span>
       </div>
 

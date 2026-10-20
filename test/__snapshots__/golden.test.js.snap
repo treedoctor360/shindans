@@ -1207,6 +1207,7 @@ exports[`答え合わせ：送受信 > 送った結果の当てはめ（成功�
   "conflicts": [
     "F",
   ],
+  "rejected": [],
   "saved": 3,
   "state": {
     "confirms": {

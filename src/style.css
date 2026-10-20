@@ -276,7 +276,7 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 
 /* 詳しい診断の入力画面：項目が多いので詰めて並べる。1項目ずつ区切り線で分け、どのボタンがどの項目か分かるようにする */
 .initial-form .sec{gap:0;padding:12px}
-.initial-form .form-body .sec>h2{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--top-h,64px));z-index:3;background:var(--surface);margin:-12px -12px 0;padding:10px 12px 8px;border-radius:10px 10px 0 0;font-size:14px;color:var(--accent);letter-spacing:.04em;border-bottom:1px solid var(--line)}
+.initial-form .form-body .sec>h2{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--top-h,64px) + var(--bar-h,0px));z-index:3;background:var(--surface);margin:-12px -12px 0;padding:10px 12px 8px;border-radius:10px 10px 0 0;font-size:14px;color:var(--accent);letter-spacing:.04em;border-bottom:1px solid var(--line)}
 .initial-form .sec>.btn{margin:8px 0}
 .initial-form .item{padding:10px 0;border-top:1px solid var(--line)}
 .initial-form .sec>h2+.item,.initial-form .sec>.btn+.item{border-top:0}

@@ -26,6 +26,15 @@ export function headerText(ws, col, headerRows) {
 }
 
 // 入力規則（ドロップダウン）の選択肢。"無,有（小）,有（大）" の形だけ読む（範囲を指す形は読まない）
+// 入力規則が「選択肢にない値は入れられない」ものか（Excel の「エラーメッセージを表示する」がオンで、種類が「停止」）
+//  オフのものは候補を出すだけで、ほかの値も入れられる（例：枝長/枝径の「40≦」、前回調査年の「-」）
+export function isStrictList(cell) {
+  const dv = cell?.dataValidation;
+  if (!dv || dv.type !== 'list') return false;
+  const on = dv.showErrorMessage === true || dv.showErrorMessage === 1 || dv.showErrorMessage === '1';
+  return on && (dv.errorStyle == null || dv.errorStyle === 'stop');
+}
+
 export function listOptions(cell) {
   const dv = cell?.dataValidation;
   if (!dv || dv.type !== 'list' || !dv.formulae?.length) return null;
@@ -36,7 +45,7 @@ export function listOptions(cell) {
 
 // ブックを読む
 // 返す形：{
-//   sheets: [{ spec, name, errors, rows: [{ rowNumber, values: { 項目: 値 }, filled }], options: { 項目: [選択肢] } }],
+//   sheets: [{ spec, name, errors, rows: [{ rowNumber, values: { 項目: 値 }, filled }], options: { 項目: [選択肢] }, strict: Set(選択肢にない値を入れられない項目) }],
 //   missing: [設定にあるがブックに見つからなかったシート（spec）],
 //   errors: [すべてのシートの errors をまとめたもの],
 // }
@@ -72,9 +81,12 @@ function readSheet(ws, spec, doneKey) {
 
   // 選択肢（データの最初の行の入力規則から）
   const options = {};
+  const strict = new Set();
   for (const [key, c] of Object.entries(spec.columns)) {
-    const o = listOptions(ws.getCell(`${c.col}${spec.dataRow}`));
+    const cell = ws.getCell(`${c.col}${spec.dataRow}`);
+    const o = listOptions(cell);
     if (o) options[key] = o;
+    if (o && isStrictList(cell)) strict.add(key);
   }
 
   // データの行（通し番号などが入っていても、doneKey の列が空なら空き行）
@@ -85,7 +97,7 @@ function readSheet(ws, spec, doneKey) {
     for (const [key, c] of Object.entries(spec.columns)) values[key] = cellValue(ws.getCell(`${c.col}${r}`));
     rows.push({ rowNumber: r, values, filled: !!toHalf(String(values[doneKey] ?? '')).trim() });
   }
-  return { spec, name: ws.name, errors, rows, options };
+  return { spec, name: ws.name, errors, rows, options, strict };
 }
 
 // 入力済みの行の一覧（「書式|シートの種類|場所のコード|樹木番号」→ 行の一覧）。同じ鍵が2行あれば両方入る

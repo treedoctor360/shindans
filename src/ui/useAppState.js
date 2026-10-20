@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { initialState, loadAll, saveState } from '../store/state.js';
-import { applyPull, applyPush, pull, push, unsentCount } from '../store/sync.js';
+import { applyPull, applyPush, pull, push, rejectedMessage, unsentCount } from '../store/sync.js';
 
 export function useAppState() {
   const [state, setState] = useState(initialState);
@@ -86,6 +86,7 @@ export function useAppState() {
       await flush(); // 先に端末へ保存
       let saved = 0;
       let conflicts = [];
+      let rejected = [];
       if (unsentCount(latest.current)) {
         const r = await push(latest.current, cfg);
         let applied;
@@ -95,6 +96,7 @@ export function useAppState() {
         }, { now: true });
         saved = applied.saved;
         conflicts = applied.conflicts;
+        rejected = applied.rejected || [];
       }
       const p = await pull(latest.current, cfg);
       let got;
@@ -103,7 +105,8 @@ export function useAppState() {
         return { ...got.state, server: { ...got.state.server, lastFetched: new Date().toISOString() } };
       }, { now: true });
       const last = { saved, conflicts: [...conflicts, ...got.conflicts], changedTrees: got.changedTrees, newStickies: got.newStickies };
-      setSendStatus({ busy: false, error: '', last });
+      // サーバーに断られた記録があれば、どれが・なぜかを知らせる（その記録は未送信のまま残る）
+      setSendStatus({ busy: false, error: rejectedMessage(rejected), last });
       return last;
     } catch (e) {
       setSendStatus((x) => ({ ...x, busy: false, error: e.message || '送信できませんでした' }));

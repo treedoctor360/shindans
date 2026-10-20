@@ -85,6 +85,9 @@ describe('データ入力用ブックへの書き込み', () => {
     const bad = await exportInitialBook(buf, [rec({ treeNo: 'AB003', b4: '有' })], cfg);
     expect(bad.buffer).toBeNull();
     expect(bad.errors.join('\n')).toContain('「有」はブックの選択肢にありません');
+    // 候補を出すだけの入力規則（選択肢にない値も入れられる）は、選択肢にない値でも書く
+    const free = await exportInitialBook(buf, [rec({ treeNo: 'AB003', b4: '無', branchRatio: '25' })], cfg);
+    expect(free.errors).toEqual([]);
 
     const many = ['AB011', 'AB012', 'AB013', 'AB014'].map((n) => rec({ treeNo: n }));
     const full = await exportInitialBook(buf, many, cfg);

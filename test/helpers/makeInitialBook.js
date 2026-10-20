@@ -7,7 +7,8 @@
 //  関係ないシート：読まない
 import ExcelJS from 'exceljs';
 
-const list = (values) => ({ type: 'list', allowBlank: true, formulae: [`"${values.join(',')}"`] });
+// strict：選択肢にない値を入れると誤りを出す入力規則（Excel の「エラーメッセージを表示する」）。false は候補を出すだけ
+const list = (values, strict = true) => ({ type: 'list', allowBlank: true, showErrorMessage: strict, formulae: [`"${values.join(',')}"`] });
 
 //  withAB001：台帳の AB001（K01）も手で入力済みにする（入力画面でブックの内容を見るテスト用）
 export async function makeInitialBook({ envHeader = '気象の影響', withAB001 = false } = {}) {
@@ -31,6 +32,7 @@ export async function makeInitialBook({ envHeader = '気象の影響', withAB001
   for (let r = 5; r <= 9; r++) {
     a.getCell(`A${r}`).value = r - 4; // 通し番号は先に入っている
     a.getCell(`I${r}`).dataValidation = list(['無', '有（小）', '有（大）']);
+    a.getCell(`O${r}`).dataValidation = list(['40≦'], false); // 候補を出すだけ（ほかの値も入れられる）
   }
   [
     ['B5', 2099], ['C5', 4], ['D5', 5], ['E5', '試験 一郎(資格)'], ['F5', 'AB009'], ['G5', 'K01'], ['H5', 'テストノキ'], ['I5', '有（小）'], ['K5', '1本、地上2m'],
