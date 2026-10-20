@@ -2,7 +2,7 @@
 //  種類と部位を選び、数字の欄に入れる → 「特記事項に追加」で1行足す（記号・単位はアプリが付ける）。
 //  何か所でも続けて足せる（足すたびに数字の欄は空に戻る）。書き方は設定 noteMeasures（noteMeasures.js）
 import { useState } from 'react';
-import { measureKinds, measureLine, measureParts } from '../core/noteMeasures.js';
+import { measureKinds, measureLine, measureParts, measurePlaces, measurePrefill } from '../core/noteMeasures.js';
 import PartsInputs from './PartsInputs.jsx';
 
 // 選択肢のボタン（数字の欄の中の選択肢用）
@@ -18,7 +18,7 @@ function Choice({ k, opts, value, onPress }) {
   );
 }
 
-export default function NoteMeasures({ cfg, onAdd }) {
+export default function NoteMeasures({ cfg, tree, onAdd }) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState('');
   const [place, setPlace] = useState('');
@@ -43,7 +43,7 @@ export default function NoteMeasures({ cfg, onAdd }) {
             className={`chip${kind === k.key ? ' on' : ''}`}
             onClick={() => {
               setKind(k.key);
-              setValues({}); // 種類が変わると欄も変わるので、数字は空に戻す
+              setValues(measurePrefill(k.key, tree, cfg)); // 種類が変わると欄も変わるので、数字は空に戻す（木の入力から入れられる値は入れる）
             }}
             data-measure-kind={k.key}
           >
@@ -52,7 +52,7 @@ export default function NoteMeasures({ cfg, onAdd }) {
         ))}
       </div>
       <div className="chips" role="group" aria-label="部位">
-        {cfg.noteMeasures.places.map((p) => (
+        {(kind ? measurePlaces(kind, cfg) : cfg.noteMeasures.places).map((p) => (
           <button key={p} type="button" className={`chip${place === p ? ' on' : ''}`} onClick={() => setPlace(p)} data-measure-place={p}>
             {p}
           </button>
@@ -62,7 +62,7 @@ export default function NoteMeasures({ cfg, onAdd }) {
         <PartsInputs parts={measureParts(kind, cfg)} values={values} onPut={(name, v) => setValues((cur) => ({ ...cur, [name]: v }))} testId="measure" Choice={Choice} />
       )}
       <div className="hint" data-testid="measure-preview">
-        {line || (kind && place ? '数字を入れると、ここに足す1行が出ます' : '種類と部位を選んでください')}
+        {line || (!kind ? '種類を選んでください' : place || !measurePlaces(kind, cfg).length ? '数字を入れると、ここに足す1行が出ます' : '部位を選んでください')}
       </div>
       <div className="sub">
         <button
@@ -71,7 +71,7 @@ export default function NoteMeasures({ cfg, onAdd }) {
           disabled={!line}
           onClick={() => {
             onAdd(line);
-            setValues({}); // 続けて別の所を入れられるように
+            setValues(measurePrefill(kind, tree, cfg)); // 続けて別の所を入れられるように
           }}
           data-testid="measure-add"
         >

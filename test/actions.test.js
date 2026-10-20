@@ -4,7 +4,7 @@ import cfgJson from './fixtures/sample-config.json';
 import { groupKey, groupKeys, groupLabel } from '../src/core/groups.js';
 import { blankTree } from '../src/core/tree.js';
 import { initialState } from '../src/store/state.js';
-import { addTree, normalizeField, nextTodo, pressAlertAction, pressOption, saveTree, toggleTreat } from '../src/store/actions.js';
+import { addTree, fillChecksNone, normalizeField, nextTodo, pressAlertAction, pressOption, saveTree, toggleTreat } from '../src/store/actions.js';
 
 const cfg = structuredClone(cfgJson);
 const P = (id, o = {}) => blankTree({ id, treeNo: id, species: 'テストノキ', siteType: 'park', parkCode: 'K01', parkName: '架空公園', ...o });
@@ -37,6 +37,14 @@ describe('入力の操作', () => {
     const t = P('a', { vigor: '良' }); // 弱点なし → 自動は「無」
     expect(pressOption(t, 'photoOverride', '有', cfg).photoOverride).toBe('有');
     expect(pressOption({ ...t, photoOverride: '有' }, 'photoOverride', '無', cfg).photoOverride).toBe('');
+  });
+
+  it('点検項目：まだ選んでいない項目だけをすべて「無」にする（選んである項目・樹勢は変えない）', () => {
+    const r = fillChecksNone(P('a', { deadBranch: '有', deadBranchCount: '4' }), cfg);
+    expect(r.keys).toEqual(['lean', 'decay', 'fungus']);
+    expect(r.tree).toMatchObject({ lean: '無', deadBranch: '有', deadBranchCount: '4', decay: '無', fungus: '無' });
+    expect(r.tree.vigor).toBeFalsy();
+    expect(fillChecksNone(r.tree, cfg).keys).toEqual([]); // もう選んでいない項目はない
   });
 
   it('処置のボタン・確定時の補正（番号は半角大文字、樹種は置き換え）', () => {
