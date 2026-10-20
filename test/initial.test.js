@@ -318,6 +318,19 @@ describe('詳しい診断の入力の取り消し・下書きを消す', () => {
   });
 });
 
+describe('特記事項の寸法の引き継ぎ', () => {
+  it('記録を作るとき、特記事項に足した寸法の数字を弱点の詳細へ写し「簡易から」の印を付ける', () => {
+    const v = { count: '2', height: { a: '3' }, branchDia: '6', branchLen: '', max: false };
+    const line = '枯れ枝：2本、地上3m、枝直径6cm';
+    const t = need('AB001', { notes: `・枝の偏り\n・${line}`, measures: [{ kind: 'deadBranch', place: '', values: v, line }] });
+    const r = startInitial(S([t]), t, cfg).record;
+    expect(r.b4Detail).toBe('2本、地上3m、枝直径6cm');
+    expect(r.b4DetailParts).toEqual({ count: '2', height: { a: '3' }, branchDia: '6' });
+    expect(r.inherited).toContain('b4Detail');
+    expect(r.b4).toBeUndefined(); // 「有」の程度は写さない（人が選ぶ）
+  });
+});
+
 describe('一覧表の健全度への書き戻し', () => {
   it('入力済み（サーバーを使うなら確定）の総合評価が A〜E の木だけ健全度を付ける。処置の違い・台帳の行・結果待ちを知らせる', () => {
     const trees = [need('AB001'), need('AB002'), need('AB003'), T('AB004', { source: 'ledger', done: true, initialNeeded: '要' }), T('AB005', { source: 'app', done: true, initialNeeded: '否', grade: 'B' })];
@@ -330,7 +343,7 @@ describe('一覧表の健全度への書き戻し', () => {
     };
     set('AB001', { overall: 'D', treatment: '枯れ枝剪定・縮小剪定' });
     set('AB002', { overall: '-' }); // 「-」は書かない
-    set('AB004', { overall: 'C' }); // 台帳の行（手で入力）には書かない
+    set('AB004', { overall: 'C' }); // 台帳の行（紙から手で入力）には健全度だけ書く
     const treatOf = (t) => (t.treeNo === 'AB001' ? '枯れ枝剪定' : '');
     const r = gradeWriteBack(s, cfg, s.trees, { treatOf });
     expect(r.written.map((x) => [x.tree.treeNo, x.grade])).toEqual([['AB001', 'D']]);
@@ -338,6 +351,7 @@ describe('一覧表の健全度への書き戻し', () => {
     expect(r.trees.find((t) => t.treeNo === 'AB005')).toBe(s.trees[4]); // 対象でない木はそのまま
     expect(r.treatDiff).toEqual([{ tree: expect.objectContaining({ treeNo: 'AB001' }), simple: '枯れ枝剪定', initial: '枯れ枝剪定・縮小剪定' }]);
     expect(r.ledger.map((x) => [x.tree.treeNo, x.grade])).toEqual([['AB004', 'C']]);
+    expect(r.trees.find((t) => t.treeNo === 'AB004').initialGrade).toBe('C');
     expect(r.pending.map((t) => t.treeNo)).toEqual(['AB002', 'AB003']);
 
     // サーバーを使うときは確定した記録だけ

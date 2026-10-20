@@ -9,6 +9,8 @@
 import { branchRatioCell, branchRatioRaw, girthOf, heightRatioOf } from '../core/calc.js';
 import { num, toHalf } from '../core/text.js';
 import { isDead } from '../core/tree.js';
+import { detailKeyOfItem, partsKeyOf } from '../core/detailParts.js';
+import { measuresToInitial } from '../core/noteMeasures.js';
 import { bookKey } from '../excel/initialBook.js';
 import { INITIAL, initialKey, simpleKey, updateRecord } from './surveys.js';
 import { touched } from './actions.js';
@@ -151,12 +153,18 @@ export function startInitial(state, tree, cfg, { now = new Date().toISOString(),
     if (tree[k] !== undefined && tree[k] !== '') copy[k] = tree[k];
   const { values, keys } = inheritFrom(tree, cfg);
   const fromBook = bookValues(bookEntry(state, tree, cfg), cfg) || {};
+  // 特記事項に足した寸法から、弱点の詳細（数値と文）を作る。ブックに詳細があればブックを使う
+  const ms = measuresToInitial(tree, cfg);
+  const measureKeys = ms.keys.filter((dk) => !(dk in fromBook));
+  const fromMeasures = {};
+  for (const dk of measureKeys) Object.assign(fromMeasures, { [dk]: ms.values[dk], [partsKeyOf(dk)]: ms.values[partsKeyOf(dk)] });
   const record = {
     id: `ini:${tree.id}`,
     ...copy,
     ...values,
+    ...fromMeasures,
     ...fromBook,
-    inherited: keys.filter((k) => !(k in fromBook)), // 簡易診断から写した項目（画面で「簡易から」と示す）
+    inherited: [...keys.filter((k) => !(k in fromBook)), ...measureKeys], // 簡易診断から写した項目（画面で「簡易から」と示す）
     ...(Object.keys(fromBook).length ? { fromBook: Object.keys(fromBook) } : {}), // ブックから写した項目
     source: 'app',
     done: false,
@@ -180,7 +188,7 @@ export function initialTargets(state, cfg, trees = state.trees) {
 export const formOf = (cfg, form) => cfg.initialSurvey?.forms?.[form] || null;
 
 // 「有」のときの詳細を入れる項目の名前
-export const detailKeyOf = (item) => item.detailKey || `${item.key}Detail`;
+export const detailKeyOf = detailKeyOfItem;
 
 // 項目の選択肢：設定にあればそれ、なければデータ入力用ブックの入力規則（ドロップダウン）
 export function optionsOf(item, state, form, siteType) {
@@ -246,9 +254,9 @@ const treatForm = (s) => toHalf(String(s ?? '')).replace(/[\s　]/g, '').replace
 // 一覧表に書く木に、詳しい診断の結果（設定 initialSurvey.gradeWriteBack.from）を健全度として付ける
 //  書くのは、詳しい診断の記録がブックに出せる状態（入力済み・確定。initialsForBook と同じ）で、値が values のどれかのときだけ。
 //  一覧表の処置は書き換えない。詳しい診断の処置（treatFrom）と違えば知らせるだけ。
-//  台帳で入力済みの木（手で入力した行）には書かない（アプリで入力した木の行だけに書く約束のため）。知らせるだけ。
+//  台帳で入力済みの木（紙から手で入力した行）にも initialGrade を付ける。一覧表に書くときは健全度の欄だけ、空欄のときだけ書く（exportDb）。
 //  返す形：{ trees（initialGrade を付けた木）, written: [{ tree, grade }], treatDiff: [{ tree, simple, initial }],
-//            ledger: [{ tree, grade }]（台帳の行なので書かなかった）, pending: [tree]（詳しい診断の結果がまだない） }
+//            ledger: [{ tree, grade }]（台帳で入力済みの行。健全度だけ書く）, pending: [tree]（詳しい診断の結果がまだない） }
 export function gradeWriteBack(state, cfg, trees, { includeUnconfirmed = false, treatOf = () => '' } = {}) {
   const gw = cfg.initialSurvey?.gradeWriteBack;
   const out = { trees, written: [], treatDiff: [], ledger: [], pending: [] };
@@ -264,7 +272,7 @@ export function gradeWriteBack(state, cfg, trees, { includeUnconfirmed = false, 
     }
     if (t.source !== 'app') {
       out.ledger.push({ tree: t, grade });
-      return t;
+      return { ...t, initialGrade: grade };
     }
     out.written.push({ tree: t, grade });
     const it = gw.treatFrom ? String(r[gw.treatFrom] ?? '').trim() : '';

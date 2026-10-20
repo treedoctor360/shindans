@@ -55,7 +55,9 @@ test('総合評価を一覧表の健全度に書き、処置の違いと台帳�
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid=export-db]')]);
   await expect(page.locator('.toast')).toContainText('検査OK');
   await expect(page.locator('.toast')).toContainText('健全度に書いた木1本');
+  await expect(page.locator('.toast')).toContainText('台帳で入力済みの行に健全度だけ書いた木1本');
   const trees = mergeLedger([], (await readLedger(fs.readFileSync(await dl.path()), cfg)).rows, cfg).trees;
   expect(trees.find((t) => t.treeNo === 'AB002').grade).toBe('D');
+  expect(trees.find((t) => t.treeNo === 'AB001' && t.siteType === 'park' && t.dupIndex === 1).grade).toBe('C'); // 紙から手で入力した行にも健全度だけ書く
   expect(trees.find((t) => t.treeNo === 'AB002').treatSel || []).not.toContain('縮小'); // 処置は書き換えない
 });

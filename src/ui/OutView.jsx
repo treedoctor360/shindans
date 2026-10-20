@@ -57,6 +57,7 @@ function cellText(t, k, v) {
 export default function OutView({ state, update, config: cfg, toast, send, sendStatus }) {
   const [busy, setBusy] = useState('');
   const [check, setCheck] = useState(null); // { title, errors }
+  const [gradeKept, setGradeKept] = useState([]); // 一覧表の出力で、健全度が既に入っていて書き換えなかった木
   const [withUnconfirmed, setWithUnconfirmed] = useState(false); // 未確定の木も一覧表に書き込むか（途中経過の確認用）
   if (!cfg || !state.trees.length) {
     return (
@@ -117,13 +118,15 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
       if (!ledger) throw new Error('台帳がありません。「設定」で読み込んでください');
       const r = await exportDb(ledger.buffer.slice(0), gw.trees, cfg);
       if (r.errors.length) return setCheck({ title: '一覧表の出力検査', errors: r.errors });
+      setGradeKept(r.stats.gradeKept);
       download(`${safeName(ledger.name.replace(/\.xls[xm]$/i, ''))}_入力反映${draftMark}_${yymmdd()}.xlsx`, r.buffer);
       const st = r.stats;
       toast(
         `検査OK。${st.written + st.appended}本を書き込みました（既存の行${st.written}・追加${st.appended}）。他の行は変わっていません` +
           (st.skippedLedgerDone.length ? `。台帳で入力済みの${st.skippedLedgerDone.length}本は書き込んでいません` : '') +
           (db.excluded.length ? `。未確定の${db.excluded.length}本は書き込んでいません` : '') +
-          (gw.written.length ? `。${cfg.initialSurvey.label}の結果を健全度に書いた木${gw.written.length}本` : ''),
+          (gw.written.length ? `。${cfg.initialSurvey.label}の結果を健全度に書いた木${gw.written.length}本` : '') +
+          (st.gradeOnly.length ? `。台帳で入力済みの行に健全度だけ書いた木${st.gradeOnly.length}本` : ''),
       );
     });
 
@@ -232,7 +235,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
             )}
           </>
         )}
-        {cfg.initialSurvey?.gradeWriteBack && (gw.written.length > 0 || gw.treatDiff.length > 0 || gw.ledger.length > 0 || gw.pending.length > 0) && (
+        {cfg.initialSurvey?.gradeWriteBack && (gw.written.length > 0 || gw.treatDiff.length > 0 || gw.ledger.length > 0 || gw.pending.length > 0 || gradeKept.length > 0) && (
           <div className="hint" data-testid="grade-writeback">
             {gw.written.length > 0 && (
               <p>
@@ -260,10 +263,19 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
             )}
             {gw.ledger.length > 0 && (
               <p data-testid="grade-ledger">
-                台帳で入力済みの木（手で入力した行）には健全度を書きません。手で入れてください：
+                台帳で入力済みの木（紙から手で入力した行）：健全度の欄が空欄なら、健全度だけ書きます（他の欄は書き換えません）：
                 {gw.ledger.slice(0, 10).map((x) => `${toHalf(x.tree.treeNo)}＝${x.grade}`).join('・')}
                 {gw.ledger.length > 10 ? 'ほか' : ''}
               </p>
+            )}
+            {gradeKept.length > 0 && (
+              <div className="alert warn" data-testid="grade-kept">
+                <span>
+                  健全度が既に入っていて、{cfg.initialSurvey.label}の結果と違う木があります。書き換えていません。どちらが正しいか確かめて、台帳を手で直してください：
+                  {gradeKept.slice(0, 10).map((x) => `${x.label}（台帳「${x.now}」／${cfg.initialSurvey.label}「${x.grade}」）`).join('・')}
+                  {gradeKept.length > 10 ? 'ほか' : ''}
+                </span>
+              </div>
             )}
           </div>
         )}

@@ -90,9 +90,11 @@ export async function exportDb(ledgerBuffer, trees, cfg) {
   await wb.xlsx.load(ledgerBuffer);
   const errors = [];
   const plan = []; // 照合用：書いた行と、書いた値
-  const stats = { written: 0, appended: 0, skippedLedgerDone: [] };
+  // gradeOnly：台帳で入力済みの行に健全度だけ書いた木、gradeKept：健全度が既に入っていて違う値だったので書かなかった木
+  const stats = { written: 0, appended: 0, skippedLedgerDone: [], gradeOnly: [], gradeKept: [] };
 
-  const mine = trees.filter((t) => t.done && t.source === 'app');
+  // 書く木：アプリで入力した木と、台帳で入力済みの木（紙から手で入力した行）のうち詳しい診断の結果（initialGrade）を付けた木
+  const mine = trees.filter((t) => (t.done && t.source === 'app') || (t.source !== 'app' && t.initialGrade));
   for (const ws of wb.worksheets) {
     const map = columnMap(ws, f);
     const spec = f.sheets.find((s) => map[s.identify] !== undefined);
@@ -118,13 +120,24 @@ export async function exportDb(ledgerBuffer, trees, cfg) {
           errors.push(`${ws.name} ${label}：一覧表の${r}行目の樹種「${sp}」が、読み込んだときの「${t.ledgerSpecies}」と違います`);
           continue;
         }
-        if (half(cellValue(row.getCell(map[f.doneKey])))) {
-          stats.skippedLedgerDone.push(label); // 一覧表で入力済みになっていた → 書かない
+        if (t.source !== 'app' || half(cellValue(row.getCell(map[f.doneKey])))) {
+          // 一覧表で入力済みの行 → 入力内容は書かない（台帳を正とする）
+          if (t.source === 'app') stats.skippedLedgerDone.push(label);
+          // 詳しい診断の結果があれば、健全度が空欄のときだけ健全度を書く
+          if (t.initialGrade && map.grade !== undefined) {
+            const now = half(cellValue(row.getCell(map.grade)));
+            if (!now) {
+              row.getCell(map.grade).value = t.initialGrade;
+              row.commit();
+              stats.gradeOnly.push(label);
+              plan.push({ sheet: ws.name, row: r, label, appended: false, values: { grade: t.initialGrade }, columns: [map.grade], formula: null });
+            } else if (now !== half(t.initialGrade)) stats.gradeKept.push({ label, now, grade: t.initialGrade });
+          }
           continue;
         }
         stats.written++;
       } else {
-        if (t.dupIndex > 1 || t.ledgerRow) {
+        if (t.source !== 'app' || t.dupIndex > 1 || t.ledgerRow) {
           errors.push(`${ws.name} ${label}：読み込んだときにあった行が、一覧表に見つかりません`);
           continue;
         }
