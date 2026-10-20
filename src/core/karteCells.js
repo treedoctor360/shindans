@@ -5,7 +5,7 @@ import { toHalf } from './text.js';
 
 export const KARTE_MATCH = ['exact', 'first', 'contains'];
 // 確認用カルテにだけ出す計算した値（store/initial.js の karteExtras が作る）
-export const KARTE_CALC = ['@girthList', '@girthStems', '@heightRatio', '@branchRatio', '@branchInput'];
+export const KARTE_CALC = ['@girthList', '@girthStems', '@heightRatio', '@heightInput', '@branchRatio', '@branchInput'];
 
 const isStr = (x) => typeof x === 'string' && x.length > 0;
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);

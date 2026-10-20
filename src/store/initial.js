@@ -69,6 +69,7 @@ function sourceValue(tree, from, cfg) {
 //  @branchRatio … 枝長/枝径（上限以上でも表記の文字にせず数値。小数第2位まで。枯死は表記の文字）
 //  @girthStems  … 株立の幹ごとの幹周を「、」で並べた文字（単幹は空）
 //  @branchInput … 枝長/枝径を計算した入力の値（例「500/8」。入力がなければ空）
+//  @heightInput … 樹高/幹径を計算した元の値「樹高/幹径」（m。樹高は小数第1位、幹径＝幹周÷円周率は小数第2位。例「16.0/0.58」）
 //  tree：元の簡易診断の木（分からなければ null）、rec：詳しい診断の記録
 export function karteExtras(tree, rec, cfg) {
   const stems = (tree?.girths || []).map((g) => toHalf(String(g ?? '')).trim()).filter(Boolean);
@@ -91,6 +92,7 @@ export function karteExtras(tree, rec, cfg) {
     '@heightRatio': heightRatio,
     '@branchRatio': branchRatio,
     '@branchInput': bl && bd ? `${bl}/${bd}` : '',
+    '@heightInput': h && g ? `${h.toFixed(1)}/${(g / cfg.calc.pi).toFixed(2)}` : '',
   };
 }
 
