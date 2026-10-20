@@ -132,3 +132,28 @@ describe('詳しい診断への引き継ぎ（initialSurvey.fromMeasures）', ()
     expect(measuresToInitial(tree([m]), c)).toEqual({ values: {}, keys: [] });
   });
 });
+
+describe('決まった値を入れる（fromMeasures の set）', () => {
+  it('根株の空洞を、幹の空洞の欄に「根株、…」として写す', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.detailParts.site = { type: 'choice', label: '部位', options: ['根株'] };
+    c.initialSurvey.detailParts.size3 = { type: 'size', label: '縦×横×奥行', depth: true, unitEach: true };
+    c.initialSurvey.forms.initial.sections[1].items.push({ key: 't1', label: '開口空洞', type: 'weak', parts: ['site', 'height', 'size3'] });
+    c.noteMeasures.kinds.push({ key: 'cavity', label: '開口空洞', parts: ['height', 'size3'] });
+    c.initialSurvey.fromMeasures.push({ kind: 'cavity', place: '根株', item: 't1', set: { site: '根株' }, parts: { size3: 'size3' } });
+    expect(validateConfig(c).errors).toEqual([]);
+    const v = { size3: [{ w: '15', h: '11', d: '5' }] };
+    const line = measureLine(c, 'cavity', '根株', v);
+    const r = measuresToInitial({ notes: `・${line}`, measures: [measureRecord('cavity', '根株', v, line)] }, c);
+    expect(r.values.t1DetailParts).toEqual({ site: '根株', size3: [{ w: '15', h: '11', d: '5' }] });
+    expect(r.values.t1Detail).toBe('根株、15cm×11cm×5cm');
+
+    const bad = (fn) => {
+      const x = structuredClone(c);
+      fn(x.initialSurvey.fromMeasures.at(-1));
+      return validateConfig(x).errors.join('\n');
+    };
+    expect(bad((m) => (m.set = { site: '根元' }))).toContain('選択肢にありません');
+    expect(bad((m) => (m.set = { nothing: 'x' }))).toContain('数値にありません');
+  });
+});

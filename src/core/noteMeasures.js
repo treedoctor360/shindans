@@ -88,8 +88,9 @@ export function validateNoteMeasures(m, need) {
 }
 
 // ---------- 詳しい診断への引き継ぎ ----------
-//  設定 initialSurvey.fromMeasures：[{ kind, place?, item, parts: { 寸法の欄: 詳しい診断の数値の名前 か { to, ratio } } }]
+//  設定 initialSurvey.fromMeasures：[{ kind, place?, item, parts: { 寸法の欄: 詳しい診断の数値の名前 か { to, ratio } }, set? }]
 //    kind・place：どの寸法の1行か（place を省くと部位を問わない）。item：詳しい診断の弱点の項目
+//    set：{ 詳しい診断の数値の名前: 値 } 決まった値を入れる（例 根株の空洞を幹の空洞の欄に書くとき、部位に「根株」）
 //    ratio：{ num, den, lt, ge } 2つの数（a/b）の比が num/den 未満なら lt、以上なら ge の選択肢にする（例 周囲長比）
 
 // 木に残す寸法の記録（特記事項に足した1行と、その元の数字）
@@ -137,6 +138,7 @@ export function measuresToInitial(tree, cfg) {
     const rule = rules.find((x) => x.kind === m.kind && (x.place == null || x.place === m.place));
     if (!rule) continue;
     const vals = byItem.get(rule.item) || {};
+    for (const [to, v] of Object.entries(rule.set || {})) if (vals[to] === undefined) vals[to] = v;
     for (const [from, spec] of Object.entries(rule.parts)) {
       const sp = typeof spec === 'string' ? { to: spec } : spec;
       const v = sp.ratio ? ratioChoice(m.values?.[from], sp.ratio) : m.values?.[from];
@@ -170,12 +172,18 @@ export function validateFromMeasures(list, cfg, need) {
   if (!cfg.noteMeasures) return; // 寸法の1行を使わない設定なら、写すものもない
   list.forEach((r, i) => {
     const at = `initialSurvey.fromMeasures[${i}]`;
-    if (!need(isObj(r) && isStr(r.kind) && isStr(r.item) && isObj(r.parts) && (r.place == null || isStr(r.place)), `${at} は { kind, place?, item, parts: { 寸法の欄: 数値の名前 } } の形にしてください`)) return;
+    if (!need(isObj(r) && isStr(r.kind) && isStr(r.item) && isObj(r.parts) && (r.place == null || isStr(r.place)) && (r.set == null || isObj(r.set)), `${at} は { kind, place?, item, parts: { 寸法の欄: 数値の名前 }, set? } の形にしてください`)) return;
     const kind = (cfg.noteMeasures?.kinds || []).find((k) => k.key === r.kind);
     if (!need(kind, `${at}：kind「${r.kind}」が noteMeasures.kinds にありません`)) return;
     const item = itemOf(cfg, r.item);
     if (!need(item?.type === 'weak', `${at}：item「${r.item}」が initialSurvey.forms の弱点（weak）の項目にありません`)) return;
     const targets = new Map(partsOf(item, cfg).map((p) => [p.name, p]));
+    for (const [to, v] of Object.entries(r.set || {})) {
+      const t = targets.get(to);
+      if (!need(t, `${at}.set：「${to}」が項目「${r.item}」の数値にありません`)) continue;
+      if (t.type === 'choice') need(t.options.includes(v), `${at}.set.${to}：「${v}」は選択肢にありません`);
+      else need(typeof v === 'string' || typeof v === 'number', `${at}.set.${to} は文字か数にしてください`);
+    }
     for (const [from, spec] of Object.entries(r.parts)) {
       const sp = typeof spec === 'string' ? { to: spec } : spec;
       need(kind.parts.includes(from), `${at}.parts：「${from}」は寸法「${r.kind}」の欄にありません`);

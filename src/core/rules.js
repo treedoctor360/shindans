@@ -3,7 +3,8 @@
 // ここにあるのは「規則の種類ごとの動かし方」だけ。最終判断は人が行う（警告・提案のみ）。
 
 import { girthOf, heightRatioOf, branchRatioRaw } from './calc.js';
-import { noteLines, toggleNote } from './notes.js';
+import { chipsIn, noteLines, toggleNote } from './notes.js';
+import { fixWording, wordingIssues } from './wording.js';
 import { photoPlan } from './photo.js';
 import { fill, monthDay, num, toHalf } from './text.js';
 import { composeTreat } from './treat.js';
@@ -126,6 +127,16 @@ export function alertsOf(tree, cfg) {
       acts: [{ type: 'deadOverride', label: '緊急の弱点を入力する' }],
     });
 
+  // 表記の統一（設定 wording）。定型文のボタンの行は対象外（ボタンの文は設定で決まっているため）
+  const wIssues = wordingOfTree(tree, cfg);
+  if (wIssues.length)
+    a.push({
+      id: 'wording',
+      lv: 'warn',
+      msg: `表記の統一：${wIssues.join('・')}`,
+      acts: [{ type: 'fixWording', label: '表記を直す' }],
+    });
+
   // 設定ファイルの規則
   for (const r of cfg.rules) {
     if ((tree.dismissed || []).includes(r.id)) continue;
@@ -133,6 +144,36 @@ export function alertsOf(tree, cfg) {
     if (vars) a.push({ id: r.id, lv: r.level, msg: fill(r.message, vars), acts: r.actions || [] });
   }
   return a;
+}
+
+// 表記の統一を調べる文：特記事項のうち定型文でない行・処置（追記）・伐採理由・手で直した一覧表用の特記
+function wordingTexts(tree, cfg) {
+  const chips = new Set(chipsIn(tree.notes, cfg).map((c) => c.t));
+  return [
+    ...noteLines(tree.notes).filter((l) => !chips.has(l)),
+    tree.treatFree,
+    tree.fellingReason,
+    ...(tree.dbNoteManual ? [tree.dbNote] : []),
+  ];
+}
+export function wordingOfTree(tree, cfg) {
+  if (!cfg.wording?.length || tree.source === 'ledger') return [];
+  return [...new Set(wordingTexts(tree, cfg).flatMap((x) => wordingIssues(x, cfg)))];
+}
+
+// 表記を直した木（定型文の行はそのまま。寸法の1行を直したら、その元の数字の記録の1行も合わせる）
+function fixWordingOfTree(t, cfg) {
+  const chips = new Set(chipsIn(t.notes, cfg).map((c) => c.t));
+  const fixLine = (raw) => {
+    const body = raw.replace(/^[・･\-\s]+/, '').trim();
+    if (!body || chips.has(body)) return raw;
+    return raw.replace(body, fixWording(body, cfg));
+  };
+  const next = { ...t, notes: String(t.notes || '').split('\n').map(fixLine).join('\n') };
+  for (const k of ['treatFree', 'fellingReason']) if (t[k]) next[k] = fixWording(t[k], cfg);
+  if (t.dbNoteManual && t.dbNote) next.dbNote = fixWording(t.dbNote, cfg);
+  if (Array.isArray(t.measures)) next.measures = t.measures.map((m) => (m?.line ? { ...m, line: fixWording(m.line, cfg) } : m));
+  return next;
 }
 
 // ---------- 提案ボタンを押したときの変更 ----------
@@ -149,6 +190,7 @@ export function applyAction(tree, act, ruleId, cfg) {
   }
   if (act.type === 'addNote' && !noteLines(t.notes).includes(act.value)) t.notes = toggleNote(t.notes, act.value);
   if (act.type === 'deadOverride') t.deadOverride = true;
+  if (act.type === 'fixWording') t = fixWordingOfTree(t, cfg);
   if (act.dismiss && ruleId && !t.dismissed.includes(ruleId)) t.dismissed.push(ruleId);
   return t;
 }

@@ -17,6 +17,8 @@ import {
   initialOf,
   initialStatus,
   missingInitial,
+  initialWordingIssues,
+  fixInitialWording,
   optionsOf,
   saveInitial,
   startInitial,
@@ -205,6 +207,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const press = (k, v) => update((s) => updateInitial(s, rec.id, (r) => ({ ...r, [k]: r[k] === v ? '' : v })));
   const status = initialStatus(tree, state, cfg);
   const missing = readOnly ? [] : missingInitial(rec, cfg);
+  const wording = readOnly ? [] : initialWordingIssues(rec, cfg); // 表記の統一（設定 wording）
 
   // 入力の取り消し・下書きを消す
   const label = cfg.initialSurvey.label;
@@ -399,6 +402,24 @@ export default function InitialView({ state, update, config: cfg, toast, send })
                 <span>未入力：{missing.length}項目</span>
               </div>
             )
+          )}
+          {wording.length > 0 && (
+            <div className="alert warn" data-testid="initial-wording">
+              <span>表記の統一：{wording.join('・')}</span>
+              <div className="acts">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    edit((r) => fixInitialWording(r, cfg));
+                    toast('表記を直しました');
+                  }}
+                  data-testid="initial-wording-fix"
+                >
+                  表記を直す
+                </button>
+              </div>
+            </div>
           )}
           <button type="button" className="btn fill big" onClick={() => onSave(false)} data-testid="save-initial">
             保存して一覧へ

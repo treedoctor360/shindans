@@ -9,7 +9,8 @@
 import { branchRatioCell, branchRatioRaw, girthOf, heightRatioOf } from '../core/calc.js';
 import { num, toHalf } from '../core/text.js';
 import { isDead } from '../core/tree.js';
-import { detailKeyOfItem, partsKeyOf } from '../core/detailParts.js';
+import { buildDetail, detailKeyOfItem, manualKeyOf, partsKeyOf, partsOf } from '../core/detailParts.js';
+import { fixWording, wordingIssues } from '../core/wording.js';
 import { measuresToInitial } from '../core/noteMeasures.js';
 import { bookKey } from '../excel/initialBook.js';
 import { INITIAL, initialKey, simpleKey, updateRecord } from './surveys.js';
@@ -281,6 +282,49 @@ export function gradeWriteBack(state, cfg, trees, { includeUnconfirmed = false, 
     return { ...t, initialGrade: grade };
   });
   return out;
+}
+
+// ---------- 表記の統一（設定 wording） ----------
+// 調べる文：文字の項目（text・textarea）と、弱点の詳細
+function wordingFields(cfg) {
+  const out = [];
+  for (const form of Object.values(cfg.initialSurvey?.forms || {}))
+    for (const sec of form.sections || [])
+      for (const it of sec.items || []) {
+        if (['text', 'textarea'].includes(it.type)) out.push({ key: it.key });
+        if (it.type === 'weak') out.push({ key: detailKeyOf(it), item: it });
+      }
+  return out;
+}
+
+// 当てはまる決まり（説明の一覧）
+export function initialWordingIssues(rec, cfg) {
+  if (!cfg.wording?.length || !rec) return [];
+  return [...new Set(wordingFields(cfg).flatMap((f) => wordingIssues(rec[f.key], cfg)))];
+}
+
+// 表記を直した記録。数値から組み立てた詳細は、文字の数値（種名・その他など）を直して組み立て直す（数値との結び付きを保つ）
+export function fixInitialWording(rec, cfg) {
+  const next = { ...rec };
+  for (const f of wordingFields(cfg)) {
+    const v = rec[f.key];
+    if (v == null || v === '' || !wordingIssues(v, cfg).length) continue;
+    const parts = f.item ? partsOf(f.item, cfg) : [];
+    const pk = partsKeyOf(f.key);
+    // 文が数値から組み立てたままのとき（数値と文が合っているとき）だけ、数値を直して組み立て直す。合わなければ文を直す（書き足しを消さない）
+    if (parts.length && rec[pk] && !rec[manualKeyOf(f.key)] && buildDetail(rec[pk], parts, cfg) === v) {
+      const values = { ...rec[pk] };
+      for (const p of parts) if (p.type === 'text' && typeof values[p.name] === 'string') values[p.name] = fixWording(values[p.name], cfg);
+      const rebuilt = buildDetail(values, parts, cfg);
+      if (!wordingIssues(rebuilt, cfg).length) {
+        Object.assign(next, { [pk]: values, [f.key]: rebuilt });
+        continue;
+      }
+    }
+    next[f.key] = fixWording(v, cfg);
+    if (parts.length && rec[pk]) next[manualKeyOf(f.key)] = true; // 文を直接直したので、数値から作り直さない印
+  }
+  return next;
 }
 
 // ---------- 入力の取り消し（調査者の操作） ----------
