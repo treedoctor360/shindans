@@ -96,3 +96,15 @@ test('PC でカルテをまとめて読み込み、スマホで前回の弱点�
   await phone.click('text=それでも表示する');
   await expect(phone.locator('[data-testid=prev-items]')).toBeVisible();
 });
+
+test('PC でカルテの PDF（Excel から作ったもの）も読み込める', async ({ browser }) => {
+  const pc = await (await browser.newContext()).newPage();
+  await pc.goto('./');
+  await pc.setInputFiles('[data-testid=config-file]', 'test/fixtures/sample-config.json');
+  await pc.setInputFiles('[data-testid=prev-files]', 'test/fixtures/karte-sample.pdf');
+  // 初めは PDF を読む仕組みの読み込みがあるので、少し長めに待つ
+  await pc.waitForFunction(() => document.querySelector('.toast')?.textContent.includes('ファイルから'), null, { timeout: 20000 });
+  console.log('TOAST', await pc.locator('.toast').innerText());
+  await expect(pc.locator('.toast')).toContainText('1ファイルから読み込みました（前回の詳しい診断1本・周りの様子1本、写真4枚）', { timeout: 20000 });
+  await expect(pc.locator('[data-testid=prev-status]')).toContainText('1本・1か所');
+});

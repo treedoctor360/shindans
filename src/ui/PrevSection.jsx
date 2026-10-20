@@ -1,8 +1,9 @@
-// 設定画面の「前回の調査」欄：前回のカルテ（Excel）をまとめて読み込む（事務所の PC 用）
+// 設定画面の「前回の調査」欄：前回のカルテ（Excel・PDF）をまとめて読み込む（事務所の PC 用）
 //  何百ファイルでも、まとめて選ぶ（またはフォルダごと選ぶ）だけでよい。
-//  読み込んだ要点と写真は、この端末に置き、「サーバーに置く」でスマホに渡す。元の Excel はサーバーに上げない
+//  読み込んだ要点と写真は、この端末に置き、「サーバーに置く」でスマホに渡す。元の Excel・PDF はサーバーに上げない
 import { useState } from 'react';
 import { karteSpecs, readKarteBook } from '../excel/karte.js';
+import { readKartePdf } from '../excel/kartePdf.js';
 import { buildPrevious, clearPrevious, loadAllPrevious, prevCount, savePrevious } from '../store/previous.js';
 import { compressPhoto } from './compressPhoto.js';
 import { usePrevIndex } from './usePrevious.js';
@@ -15,13 +16,13 @@ function FilesButton({ label, folder, onFiles, disabled, testId }) {
       <input
         type="file"
         multiple
-        accept=".xlsx,.xlsm"
+        accept=".xlsx,.xlsm,.pdf"
         hidden
         disabled={disabled}
         data-testid={testId}
         {...(folder ? { webkitdirectory: '' } : {})}
         onChange={(e) => {
-          const fs = [...(e.target.files || [])].filter((f) => /\.xls[xm]$/i.test(f.name) && !f.name.startsWith('~$'));
+          const fs = [...(e.target.files || [])].filter((f) => /\.(xls[xm]|pdf)$/i.test(f.name) && !f.name.startsWith('~$'));
           e.target.value = '';
           if (fs.length) onFiles(fs);
         }}
@@ -47,7 +48,9 @@ export default function PrevSection({ config: cfg, toast }) {
       for (let i = 0; i < files.length; i++) {
         setProgress(`読み込み中 ${i + 1} / ${files.length}：${files[i].name}`);
         try {
-          const r = await readKarteBook(await files[i].arrayBuffer(), cfg, files[i].name);
+          // Excel も PDF（Excel のカルテを印刷したもの）も、同じ形で読む
+          const read = /\.pdf$/i.test(files[i].name) ? readKartePdf : readKarteBook;
+          const r = await read(await files[i].arrayBuffer(), cfg, files[i].name);
           // 写真は小さくしてから持つ（スマホに入れる量を減らす）
           for (const t of r.trees) t.photos = await Promise.all(t.photos.map((p) => compressPhoto(p)));
           all.push(...r.trees);
@@ -107,7 +110,7 @@ export default function PrevSection({ config: cfg, toast }) {
             </div>
           )}
           <p className="hint">
-            事務所の PC で行います。読み込むと、入力画面にその木の{label}の弱点・評価・写真・図が出ます。読めるカルテ：{specs.map((x) => x.title || x.id).join('・')}。
+            事務所の PC で行います。読み込むと、入力画面にその木の{label}の弱点・評価・写真・図が出ます。読めるカルテ：{specs.map((x) => x.title || x.id).join('・')}（Excel と、Excel から作った PDF）。
             何回かに分けて読み込めます（同じ木・同じ種類のカルテは、新しく読んだ方に入れ替えます）。スマホでは「サーバーから受け取る」で受け取ります。
           </p>
           {index &&

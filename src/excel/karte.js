@@ -44,8 +44,10 @@ function textOf(v) {
   return String(v);
 }
 
-// Excel の日付の通し番号（例 44482）を "2021-10-12" に。日付でなければそのまま
+// Excel の日付の通し番号（例 44482）や「2021年10月12日」を "2021-10-12" に。日付でなければそのまま
 function serialDate(s) {
+  const ymd = String(s ?? '').trim().match(/^(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日$/);
+  if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
   const n = Number(s);
   if (!/^\d{5}$/.test(String(s).trim()) || n < 20000 || n > 80000) return s;
   const d = new Date(Date.UTC(1899, 11, 30) + n * 86400000);
@@ -90,6 +92,31 @@ export function specOf(rows, specs) {
 export function readKarteSheet(ws, wb, specs) {
   const rows = [];
   for (let r = 1; r <= ws.rowCount; r++) rows.push({ r, cells: rowCells(ws, r) });
+  // 写真・図の位置（行・列は1から数える）
+  const images = ws
+    .getImages()
+    .map((im) => {
+      const top = Math.floor(im.range?.tl?.nativeRow ?? im.range?.tl?.row ?? 0) + 1; // 1から数えた行
+      const left = Math.floor(im.range?.tl?.nativeCol ?? im.range?.tl?.col ?? 0) + 1;
+      // 写真の下端の行（1から数える）。下端が行の境目ちょうど（ずれ 0）なら、その行には掛かっていない
+      const br = im.range?.br;
+      const bottom = br ? Math.floor(br.nativeRow ?? br.row) + (br.nativeRowOff > 0 ? 1 : 0) : top;
+      const right = Math.floor(im.range?.br?.nativeCol ?? im.range?.br?.col ?? left - 1) + 1;
+      const media = wb.getImage(Number(im.imageId));
+      if (!media?.buffer) return null;
+      return { top, left, bottom, right, type: `image/${media.extension === 'jpg' ? 'jpeg' : media.extension}`, buffer: media.buffer };
+    })
+    .filter(Boolean);
+  return readKarteRows(rows, images, specs);
+}
+
+// 行と写真の位置から、1本の1種類を読む（Excel・PDF で共通）。カルテでなければ null
+//  rows：[{ r（1から数えた行）, cells: [{ c（左からの位置）, t（文字） }] }]。rows[r-1] が r 行目
+//  images：[{ top, left, bottom, right（行・位置）, type, buffer, belowRows?（写真の下の文字を探す行） }]
+//  opts.partAt(row, spec)：その行の部位を返す（PDF 用。部位の見出しが部位の行の真ん中に書かれているため）。
+//                         なければ、部位の見出しのある行から次の見出しまでをその部位とする
+//  opts.captionInside：写真の名前を、写真の左右の幅の中にある見出しから選ぶ（PDF 用。見出しが写真の真ん中に書かれているため）
+export function readKarteRows(rows, images, specs, opts = {}) {
   const spec = specOf(rows, specs);
   if (!spec) return null;
   const captions = spec.photoCaptions || [];
@@ -121,9 +148,13 @@ export function readKarteSheet(ws, wb, specs) {
   // 弱点（「有」の行だけ）
   const items = [];
   let part = '';
-  for (const { cells } of rows) {
-    const p = cells.find((x) => (spec.parts || []).includes(x.t));
-    if (p) part = p.t;
+  for (const row of rows) {
+    const { cells } = row;
+    if (opts.partAt) part = opts.partAt(row, spec) || '';
+    else {
+      const p = cells.find((x) => (spec.parts || []).includes(x.t));
+      if (p) part = p.t;
+    }
     const mi = cells.findIndex((x) => x.t.includes(spec.yesMark));
     if (mi < 1) continue;
     const rest = cells.slice(mi + 1).map((x) => x.t);
@@ -162,37 +193,32 @@ export function readKarteSheet(ws, wb, specs) {
 
   // 写真・図：上の見出しの名前を付ける（同じ行に見出しが並んでいれば、左右の位置で決める）
   const capCells = rows.flatMap(({ r, cells }) => cells.filter((x) => captions.includes(x.t)).map((x) => ({ r, c: x.c, t: x.t })));
-  const captionOf = (top, left) => {
+  const captionOf = (top, left, right) => {
     const above = capCells.filter((x) => x.r <= top + 1);
     if (!above.length) return '写真';
     const r = Math.max(...above.map((x) => x.r));
     const same = above.filter((x) => x.r === r);
+    if (opts.captionInside) {
+      const inside = same.find((x) => x.c >= left - 1 && x.c <= right);
+      if (inside) return inside.t;
+    }
     const leftOf = same.filter((x) => x.c <= left + 1).sort((a, b) => b.c - a.c)[0];
     return (leftOf || same.sort((a, b) => Math.abs(a.c - left) - Math.abs(b.c - left))[0]).t;
   };
   // 写真のすぐ下の文字（写真の左端〜右端の列にあるもの）
-  const textBelow = (bottom, left, right) => {
-    for (const r of [bottom + 1, bottom + 2]) {
+  //  belowRows：写真の下の文字を探す行（PDF 用。なければ写真の下端のすぐ下の2行）
+  const textBelow = (bottom, left, right, belowRows) => {
+    for (const r of belowRows || [bottom + 1, bottom + 2]) {
       const hit = rows[r - 1]?.cells.find((x) => x.c >= left && x.c <= right && !BRACKETS.has(x.t));
       if (hit) return hit.t;
     }
     return '';
   };
-  const photos = ws
-    .getImages()
-    .map((im) => {
-      const top = Math.floor(im.range?.tl?.nativeRow ?? im.range?.tl?.row ?? 0) + 1; // 1から数えた行
-      const left = Math.floor(im.range?.tl?.nativeCol ?? im.range?.tl?.col ?? 0) + 1;
-      // 写真の下端の行（1から数える）。下端が行の境目ちょうど（ずれ 0）なら、その行には掛かっていない
-      const br = im.range?.br;
-      const bottom = br ? Math.floor(br.nativeRow ?? br.row) + (br.nativeRowOff > 0 ? 1 : 0) : top;
-      const right = Math.floor(im.range?.br?.nativeCol ?? im.range?.br?.col ?? left - 1) + 1;
-      const media = wb.getImage(Number(im.imageId));
-      if (!media?.buffer) return null;
-      const below = spec.captionBelow ? textBelow(bottom, left, right) : '';
-      return { caption: below || captionOf(top, left), top, left, type: `image/${media.extension === 'jpg' ? 'jpeg' : media.extension}`, buffer: media.buffer };
+  const photos = images
+    .map(({ top, left, bottom, right, type, buffer, belowRows }) => {
+      const below = spec.captionBelow ? textBelow(bottom, left, right, belowRows) : '';
+      return { caption: below || captionOf(top, left, right), top, left, type, buffer };
     })
-    .filter(Boolean)
     .sort((a, b) => a.top - b.top || a.left - b.left);
 
   return {
