@@ -6,11 +6,20 @@
 
 import { SURVEYS, recordsOf, surveyOfKind } from './surveys.js';
 
+// つながらなかった失敗（少し待てば通るかもしれない）。retriable の印を付ける
+//  サーバーが理由を付けて断ったもの（合言葉が違うなど）は、待っても変わらないので印を付けない
+const retriable = (message) => Object.assign(new Error(message), { retriable: true });
+
 // サーバーに送る。返す JSON の ok が false なら、その理由で失敗にする
 export async function callServer(server, body, fetchFn = fetch) {
   if (!server?.url) throw new Error('サーバーの URL が設定されていません');
-  const res = await fetchFn(server.url, { method: 'POST', body: JSON.stringify({ ...body, pass: server.pass || '' }) });
-  if (!res.ok) throw new Error(`サーバーにつながりませんでした（${res.status}）`);
+  let res;
+  try {
+    res = await fetchFn(server.url, { method: 'POST', body: JSON.stringify({ ...body, pass: server.pass || '' }) });
+  } catch {
+    throw retriable('サーバーにつながりませんでした（通信できません）');
+  }
+  if (!res.ok) throw retriable(`サーバーにつながりませんでした（${res.status}）`);
   let data;
   try {
     data = await res.json();
