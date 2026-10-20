@@ -11,6 +11,7 @@ import { INITIAL_STATUS_LABEL, initialStatus, isInitialTarget } from '../store/i
 import { usePrevIndex } from './usePrevious.js';
 import { matchTree } from '../core/search.js';
 import InitialPrompt, { openInitialWith } from './InitialPrompt.jsx';
+import RedateBox from './RedateBox.jsx';
 
 const NO_AREA = '本区画';
 
@@ -327,6 +328,10 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
       >
         ＋ 一覧にない木を追加
       </button>
+      {/* 調査日を間違えて保存した木を、この公園・路線でまとめて直す（入力内容を直すのは調査者だけ） */}
+      {role === 'surveyor' && (
+        <RedateBox key={group} state={state} update={update} cfg={cfg} trees={all} groupName={groupLabel(state.trees, group, cfg)} send={send} toast={toast} />
+      )}
     </section>
   );
 }
