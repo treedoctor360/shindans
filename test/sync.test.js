@@ -15,6 +15,7 @@ import {
   pull,
   push,
   putFile,
+  rejectedMessage,
   resolveConflict,
   toBase64,
   unsentCount,
@@ -162,6 +163,35 @@ describe('送信と受信（にせの Google で通しで確認）', () => {
     // 「相手の方を使う」
     const theirs = resolveConflict(b.state, t.id, 'server');
     expect(theirs.trees[0]).toMatchObject({ height: '10', rev: 2, sent: true, conflict: null });
+  });
+
+  it('【再発防止】サーバーに断られた記録は、どれが・なぜ断られたかを返す（未送信のまま残す）', () => {
+    const st = S([P('a1', { done: true, updatedAt: 'x' })]);
+    const { records, tokens } = outbox(st, cfg);
+    const r = applyPush(st, [{ id: records[0].id, error: '記録の形が違います' }], tokens, cfg);
+    expect(r.rejected).toEqual([{ label: 'A1', error: '記録の形が違います' }]);
+    expect(unsentCount(r.state)).toBe(1); // 送れていないので未送信のまま
+    expect(rejectedMessage(r.rejected)).toContain('A1（記録の形が違います）');
+    expect(rejectedMessage(r.rejected)).toContain('新しい版'); // 古いサーバーのときの直し方
+    expect(rejectedMessage([])).toBe('');
+  });
+
+  it('【再発防止】2台で同じ木を削除した：食い違いにせず、削除済みとして片付ける（前に残った食い違いも）', async () => {
+    const g = makeFakeGas();
+    const base = await sync(S([P('n1', { done: true, treeNo: '', species: 'テストノキ', updatedAt: 'x' })]), g);
+    const devA = base.state;
+    const devB = { ...base.state, server: { ...base.state.server, deviceId: 'dev2' } };
+    const del = (st, at) => ({ ...st, trees: st.trees.map((t) => ({ ...t, deleted: true, done: false, sent: false, updatedAt: at })) });
+    await sync(del(devA, 'a'), g);
+    const b = await sync(del(devB, 'b'), g); // 時刻だけ違う
+    expect(b.conflicts).toEqual([]);
+    expect(b.state.trees[0]).toMatchObject({ deleted: true, sent: true, conflict: null, rev: 2 }); // サーバーの版（A の削除）にそろう
+    expect(unsentCount(b.state)).toBe(0);
+    // 前の版のアプリで残ってしまった食い違いも、次のやり取りで片付ける
+    const stuck = { ...b.state, trees: [{ ...b.state.trees[0], sent: false, rev: 2, conflict: { rev: 3, by: '', updatedAt: 'a', data: { ...b.state.trees[0], updatedAt: 'a' } } }] };
+    const c = applyPull(stuck, [], 0, cfg);
+    expect(c.state.trees[0]).toMatchObject({ deleted: true, sent: true, conflict: null, rev: 3 });
+    expect(unsentCount(c.state)).toBe(0);
   });
 
   it('【再発防止】送信はサーバーに届いたが返事が届かなかった：送り直しても自分どうしの食い違いにしない', async () => {

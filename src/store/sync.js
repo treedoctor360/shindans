@@ -96,6 +96,15 @@ const canon = (v) =>
   Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v;
 const sameData = (a, b) => JSON.stringify(canon(a ?? null)) === JSON.stringify(canon(b ?? null));
 
+// どちらの端末でも削除済み：中身を比べるまでもないので、食い違いにせずサーバーの版にそろえる
+const bothDeleted = (server, local) => !!server?.deleted && !!local?.deleted;
+const takeServer = (local, data, rev) => ({ ...data, id: local.id, order: local.order, rev, sent: true, conflict: null });
+
+// 前の版のアプリで残った「どちらも削除済み」の食い違いを片付ける
+function settleDeleted(list) {
+  return list.map((t) => (t.conflict && bothDeleted(t.conflict.data, t) ? takeServer(t, t.conflict.data, t.conflict.rev) : t));
+}
+
 // 付箋の食い違いを、持ち主ごとに合わせる（送り直す前提で dirty のまま、版はサーバーに合わせる）
 function mergeSticky(local, server, rev) {
   if (!server) return { ...local, rev };
@@ -104,17 +113,19 @@ function mergeSticky(local, server, rev) {
 }
 const stickyBody = (s) => ({ field: s.field, question: s.question, proposal: s.proposal, closed: s.closed, deleted: s.deleted });
 
-// 送った結果を当てはめる。返す形：{ state, saved, conflicts: [木の番号…] }
+// 送った結果を当てはめる。返す形：{ state, saved, conflicts: [木の番号…], rejected: [{ label, error }]（サーバーに断られた記録） }
 export function applyPush(state, results, tokens, cfg) {
   const lists = Object.fromEntries(SURVEYS.map((sv) => [sv.list, recordsOf(state, sv)]));
   const stickies = { ...(state.stickies || {}) };
   const confirms = { ...(state.confirms || {}) };
   let saved = 0;
   const conflicts = [];
+  const rejected = [];
   for (const r of results) {
     const tk = tokens.get(r.id);
     if (!tk) continue;
     const kind = r.id.split(':')[0];
+    if (!r.ok && !r.conflict && r.error) rejected.push({ label: rejectedLabel(state, kind, tk.localId, cfg), error: String(r.error) }); // 未送信のまま残る
     const sv = surveyOfKind(kind);
     if (sv) {
       lists[sv.list] = lists[sv.list].map((t) => {
@@ -128,6 +139,10 @@ export function applyPush(state, results, tokens, cfg) {
         if (r.conflict && sameData(r.data, treeData(t))) {
           saved++;
           return { ...t, rev: r.rev, sent: t.updatedAt === tk.token ? true : t.sent, conflict: null };
+        }
+        if (r.conflict && bothDeleted(r.data, t)) {
+          saved++;
+          return takeServer(t, r.data, r.rev);
         }
         if (r.conflict) {
           conflicts.push(t.treeNo);
@@ -151,7 +166,29 @@ export function applyPush(state, results, tokens, cfg) {
       } else if (r.conflict) confirms[tk.localId] = { ...c, rev: r.rev, dirty: true };
     }
   }
-  return { state: { ...state, ...lists, stickies, confirms }, saved, conflicts };
+  return { state: { ...state, ...lists, stickies, confirms }, saved, conflicts, rejected };
+}
+
+// 断られた記録の名前（木の番号。詳しい診断・付箋・確定はそれと分かるように）
+function rejectedLabel(state, kind, localId, cfg) {
+  const sv = surveyOfKind(kind);
+  if (sv) {
+    const t = recordsOf(state, sv).find((x) => x.id === localId);
+    const no = (t?.treeNo && String(t.treeNo)) || '(番号なし)';
+    return sv.kind === 'tree' ? no : `${no}の${cfg?.initialSurvey?.label || '詳しい診断'}`;
+  }
+  return kind === 'sticky' ? '付箋' : kind === 'confirm' ? '確定' : kind;
+}
+
+// 断られた理由を、画面に出す文にする（なければ空）
+//  「記録の形が違います」は、サーバー（GAS）が古い版のままで、その種類の記録を知らないときに出る
+export function rejectedMessage(rejected) {
+  if (!rejected?.length) return '';
+  const list = rejected.slice(0, 5).map((x) => `${x.label}（${x.error}）`).join('・') + (rejected.length > 5 ? ` ほか${rejected.length - 5}件` : '');
+  const hint = rejected.some((x) => x.error.includes('記録の形が違います'))
+    ? '。サーバー（Apps Script）が古い版のままかもしれません。「デプロイを管理」で新しい版にしてください'
+    : '';
+  return `サーバーに断られました：${list}${hint}`;
 }
 
 // 受け取る（前回から変わった記録だけ）
@@ -168,7 +205,7 @@ export function applyPull(state, records, lastSeq, cfg) {
   const indexes = {};
   const reindex = (sv) => (indexes[sv.list] = new Map(lists[sv.list].map((t, i) => [sv.keyOf(t, cfg), i])));
   for (const sv of SURVEYS) {
-    lists[sv.list] = recordsOf(state, sv).map((t) => ({ ...t }));
+    lists[sv.list] = settleDeleted(recordsOf(state, sv).map((t) => ({ ...t })));
     reindex(sv);
   }
   const stickies = { ...(state.stickies || {}) };
@@ -197,7 +234,9 @@ export function applyPull(state, records, lastSeq, cfg) {
       if (rec.rev <= (local.rev || 0)) continue; // 自分が送ったもの・もう知っている版
       if (local.conflict && rec.rev <= local.conflict.rev) continue; // 送ったときに既に食い違いとして受け取った版
       const dirty = local.done && local.source === 'app' && !local.sent;
-      if (dirty && sameData(rec.data, treeData(local))) {
+      if (bothDeleted(rec.data, local)) {
+        trees[i] = takeServer(local, rec.data, rec.rev);
+      } else if (dirty && sameData(rec.data, treeData(local))) {
         // この端末が送った内容（返事を受け取れなかった送信）。送信済みにする
         trees[i] = { ...local, rev: rec.rev, sent: true, conflict: null };
       } else if (dirty) {
