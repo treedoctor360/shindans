@@ -1240,6 +1240,27 @@
         "type": "flag",
         "label": "芯達",
         "text": "（芯達）"
+      },
+      "count": {
+        "type": "count",
+        "label": "本数"
+      },
+      "branchDia": {
+        "type": "number",
+        "label": "枝の直径",
+        "prefix": "枝直径",
+        "unit": "cm"
+      },
+      "branchLen": {
+        "type": "number",
+        "label": "枝の長さ",
+        "prefix": "枝長",
+        "unit": "m"
+      },
+      "max": {
+        "type": "flag",
+        "label": "最大のもの",
+        "text": "（最大）"
       }
     },
     "kinds": [
@@ -1266,6 +1287,22 @@
         "label": "打診音異常",
         "parts": [
           "height"
+        ]
+      },
+      {
+        "key": "deadBranch",
+        "label": "枯れ枝",
+        "places": [],
+        "line": "{kind}：{text}",
+        "prefill": {
+          "count": "deadBranchCount"
+        },
+        "parts": [
+          "count",
+          "height",
+          "branchDia",
+          "branchLen",
+          "max"
         ]
       }
     ]

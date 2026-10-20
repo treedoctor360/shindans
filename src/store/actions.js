@@ -32,6 +32,17 @@ export function pressOption(t, field, v, cfg) {
   return next;
 }
 
+// 点検項目のうち、まだ選んでいない項目をすべて「無」にする（選んである項目・樹勢は変えない）
+//  「無」に当たる値は設定 noneValue（省略時「無」）。選択肢にその値がない項目は飛ばす
+//  返す形：{ tree, keys: [「無」にした項目…] }
+export function fillChecksNone(t, cfg) {
+  const none = cfg.noneValue || '無';
+  const keys = cfg.checks.map((c) => c.key).filter((k) => !t[k] && (cfg.options[k] || []).includes(none));
+  let tree = t;
+  for (const k of keys) tree = pressOption(tree, k, none, cfg);
+  return { tree, keys };
+}
+
 // 定型文・処置のボタン（入っていれば外す、なければ入れる）
 export function toggleTreat(t, item) {
   const sel = t.treatSel || [];

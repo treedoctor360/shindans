@@ -2,13 +2,13 @@
 import { describe, expect, it } from 'vitest';
 import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
-import { appendNoteLine, measureKinds, measureLine, measureParts } from '../src/core/noteMeasures.js';
+import { appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill } from '../src/core/noteMeasures.js';
 
 const cfg = structuredClone(cfgJson);
 
 describe('寸法の1行', () => {
   it('部位・種類と数字から、決まった書き方の1行を作る', () => {
-    expect(measureKinds(cfg).map((k) => k.label)).toEqual(['腐朽', '鋼棒貫入', '打診音異常']);
+    expect(measureKinds(cfg).map((k) => k.label)).toEqual(['腐朽', '鋼棒貫入', '打診音異常', '枯れ枝']);
     expect(measureParts('decay', cfg).map((p) => p.name)).toEqual(['height', 'size', 'circ', 'core']);
     expect(measureLine(cfg, 'decay', '幹', { height: { a: '２' }, size: [{ w: '20', h: '50' }], circ: { a: '110', b: '150' }, core: true })).toBe(
       '幹の腐朽：地上2m、20cm×50cm、110/150（芯達）',
@@ -21,6 +21,14 @@ describe('寸法の1行', () => {
     expect(measureLine(cfg, 'decay', '幹', {})).toBe('');
     expect(measureLine(cfg, 'decay', '', { height: { a: '2' } })).toBe('');
     expect(measureLine(cfg, 'nothing', '幹', { height: { a: '2' } })).toBe('');
+  });
+
+  it('部位を選ばない種類（枯れ枝）：種類ごとの1行の形。本数は木の入力から入れておく', () => {
+    expect(measurePlaces('deadBranch', cfg)).toEqual([]);
+    expect(measurePlaces('decay', cfg)).toEqual(cfg.noteMeasures.places);
+    expect(measurePrefill('deadBranch', { deadBranchCount: '４' }, cfg)).toEqual({ count: '4' });
+    expect(measurePrefill('decay', { deadBranchCount: '4' }, cfg)).toEqual({});
+    expect(measureLine(cfg, 'deadBranch', '', { count: '6', height: { a: '5' }, branchDia: '4', branchLen: '3', max: true })).toBe('枯れ枝：6本、地上5m、枝直径4cm、枝長3m（最大）');
   });
 
   it('特記事項の最後に「・」を付けて1行足す（空なら1行目に）', () => {
@@ -41,6 +49,8 @@ describe('設定の確かめ', () => {
     expect(bad((m) => (m.kinds[0].parts = ['nothing']))).toContain('noteMeasures.kinds[0].parts');
     expect(bad((m) => (m.places = []))).toContain('noteMeasures.places');
     expect(bad((m) => (m.parts.circ.type = 'slider'))).toContain('noteMeasures.parts.circ');
+    expect(bad((m) => (m.kinds[3].prefill = { nothing: 'deadBranchCount' }))).toContain('prefill');
+    expect(bad((m) => (m.kinds[3].places = '枝'))).toContain('places');
     expect(bad((m, c) => delete c.noteMeasures)).toBe('');
   });
 });

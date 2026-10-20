@@ -12,6 +12,7 @@ import { composeTreat } from '../core/treat.js';
 import { isDead, isLocked } from '../core/tree.js';
 import {
   deleteTree,
+  fillChecksNone,
   isAddedTree,
   normalizeField,
   pressAlertAction,
@@ -488,6 +489,19 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
             <Seg field="vigor" opts={cfg.options.vigor} value={t.vigor} onPress={press} />
           </div>
           <fieldset disabled={locked}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                const r = fillChecksNone(t, cfg);
+                if (!r.keys.length) return toast('まだ選んでいない点検項目はありません');
+                change((x) => fillChecksNone(x, cfg).tree); // その時点の最新の木に対して行う
+                toast(`まだ選んでいなかった${r.keys.length}項目を「${cfg.noneValue || '無'}」にしました`);
+              }}
+              data-testid="checks-none"
+            >
+              まだ選んでいない点検項目をすべて「{cfg.noneValue || '無'}」にする
+            </button>
             {cfg.checks.map((c) => {
               const details = cfg.details.filter((d) => d.when.field === c.key);
               return (
@@ -556,7 +570,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
               </button>
             )}
             <textarea id="f-notes" rows={4} value={t.notes} placeholder="1行に1項目（音声入力も可）" onChange={(e) => setField('notes', e.target.value)} />
-            <NoteMeasures cfg={cfg} onAdd={(line) => change((x) => ({ ...x, notes: appendNoteLine(x.notes, line) }))} />
+            <NoteMeasures cfg={cfg} tree={t} onAdd={(line) => change((x) => ({ ...x, notes: appendNoteLine(x.notes, line) }))} />
             <label className="lbl" htmlFor="f-dbnote" style={{ marginTop: 6 }}>
               一覧表用の特記 <small>{t.dbNoteManual ? '手入力' : '定型文から自動で作成'}</small>
             </label>
