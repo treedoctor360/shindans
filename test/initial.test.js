@@ -330,7 +330,7 @@ describe('一覧表の健全度への書き戻し', () => {
     };
     set('AB001', { overall: 'D', treatment: '枯れ枝剪定・縮小剪定' });
     set('AB002', { overall: '-' }); // 「-」は書かない
-    set('AB004', { overall: 'C' }); // 台帳の行（手で入力）には書かない
+    set('AB004', { overall: 'C' }); // 台帳の行（紙から手で入力）には健全度だけ書く
     const treatOf = (t) => (t.treeNo === 'AB001' ? '枯れ枝剪定' : '');
     const r = gradeWriteBack(s, cfg, s.trees, { treatOf });
     expect(r.written.map((x) => [x.tree.treeNo, x.grade])).toEqual([['AB001', 'D']]);
@@ -338,6 +338,7 @@ describe('一覧表の健全度への書き戻し', () => {
     expect(r.trees.find((t) => t.treeNo === 'AB005')).toBe(s.trees[4]); // 対象でない木はそのまま
     expect(r.treatDiff).toEqual([{ tree: expect.objectContaining({ treeNo: 'AB001' }), simple: '枯れ枝剪定', initial: '枯れ枝剪定・縮小剪定' }]);
     expect(r.ledger.map((x) => [x.tree.treeNo, x.grade])).toEqual([['AB004', 'C']]);
+    expect(r.trees.find((t) => t.treeNo === 'AB004').initialGrade).toBe('C');
     expect(r.pending.map((t) => t.treeNo)).toEqual(['AB002', 'AB003']);
 
     // サーバーを使うときは確定した記録だけ

@@ -80,7 +80,7 @@ describe('一覧表への書き戻し', () => {
     const mine = trees.map((t) => (t.treeNo === 'AB002' ? { ...t, ...entry } : t));
     const r = await exportDb(buf, mine, cfg);
     expect(r.errors).toEqual([]);
-    expect(r.stats).toEqual({ written: 1, appended: 0, skippedLedgerDone: [] });
+    expect(r.stats).toEqual({ written: 1, appended: 0, skippedLedgerDone: [], gradeOnly: [], gradeKept: [] });
 
     const wb = await load(r.buffer);
     const ws = wb.getWorksheet('公園');
@@ -140,7 +140,51 @@ describe('一覧表への書き戻し', () => {
     const mine = trees.map((t) => (t.treeNo === 'AB001' && t.siteType === 'park' && t.dupIndex === 1 ? { ...t, ...entry, source: 'app' } : t));
     const r = await exportDb(buf, mine, cfg);
     expect(r.errors).toEqual([]);
-    expect(r.stats).toEqual({ written: 0, appended: 0, skippedLedgerDone: ['AB001'] });
+    expect(r.stats).toEqual({ written: 0, appended: 0, skippedLedgerDone: ['AB001'], gradeOnly: [], gradeKept: [] });
+  });
+
+  it('台帳で入力済みの行（紙から手で入力した行）には、健全度が空欄のときだけ詳しい診断の結果を書く。他のセルは元のまま', async () => {
+    const { buf, trees } = await setup();
+    const ab1 = (t) => t.treeNo === 'AB001' && t.siteType === 'park' && t.dupIndex === 1;
+    expect(trees.find(ab1).source).toBe('ledger');
+    const mine = trees.map((t) => (ab1(t) ? { ...t, initialNeeded: '要', initialGrade: 'C' } : t));
+    const r = await exportDb(buf, mine, cfg);
+    expect(r.errors).toEqual([]);
+    expect(r.stats).toMatchObject({ written: 0, appended: 0, gradeOnly: ['AB001'], gradeKept: [] });
+    const wb = await load(r.buffer);
+    expect(val(wb, '公園', 'S3')).toBe('C');
+    expect(val(wb, '公園', 'L3')).toBe('良'); // 他の列は書かない
+    expect(r.plan.find((p) => p.row === 3).columns).toHaveLength(1);
+
+    // アプリで入力済みにしていても、台帳側で入力済みになっていた行は健全度だけ
+    const app = trees.map((t) => (ab1(t) ? { ...t, ...entry, source: 'app', initialNeeded: '要', initialGrade: 'D' } : t));
+    const r2 = await exportDb(buf, app, cfg);
+    expect(r2.errors).toEqual([]);
+    expect(r2.stats).toMatchObject({ skippedLedgerDone: ['AB001'], gradeOnly: ['AB001'] });
+    expect(val(await load(r2.buffer), '公園', 'L3')).toBe('良');
+  });
+
+  it('台帳の行に健全度が既に入っていれば書き換えない。違う値なら知らせる', async () => {
+    const { buf: b0, trees } = await setup();
+    const wb0 = await load(b0);
+    wb0.getWorksheet('公園').getCell('S3').value = 'B';
+    const buf = await wb0.xlsx.writeBuffer();
+    const ab1 = (t) => t.treeNo === 'AB001' && t.siteType === 'park' && t.dupIndex === 1;
+    const withGrade = (g) => trees.map((t) => (ab1(t) ? { ...t, initialNeeded: '要', initialGrade: g } : t));
+    const r = await exportDb(buf, withGrade('C'), cfg);
+    expect(r.errors).toEqual([]);
+    expect(r.stats).toMatchObject({ gradeOnly: [], gradeKept: [{ label: 'AB001', now: 'B', grade: 'C' }] });
+    expect(val(await load(r.buffer), '公園', 'S3')).toBe('B');
+    // 同じ値なら知らせない
+    expect((await exportDb(buf, withGrade('B'), cfg)).stats).toMatchObject({ gradeOnly: [], gradeKept: [] });
+  });
+
+  it('台帳の行に健全度だけ書くときも、場所の名前が違えば止める', async () => {
+    const { buf, trees } = await setup();
+    const mine = trees.map((t) => (t.treeNo === 'AB001' && t.siteType === 'park' && t.dupIndex === 1 ? { ...t, parkName: '違う公園', initialNeeded: '要', initialGrade: 'C' } : t));
+    const r = await exportDb(buf, mine, cfg);
+    expect(r.buffer).toBeNull();
+    expect(r.errors.join('\n')).toMatch(/AB001.*場所/);
   });
 
   it('番号が重複している木は「何本目か」の行に書く', async () => {

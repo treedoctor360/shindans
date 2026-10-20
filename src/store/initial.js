@@ -246,9 +246,9 @@ const treatForm = (s) => toHalf(String(s ?? '')).replace(/[\s　]/g, '').replace
 // 一覧表に書く木に、詳しい診断の結果（設定 initialSurvey.gradeWriteBack.from）を健全度として付ける
 //  書くのは、詳しい診断の記録がブックに出せる状態（入力済み・確定。initialsForBook と同じ）で、値が values のどれかのときだけ。
 //  一覧表の処置は書き換えない。詳しい診断の処置（treatFrom）と違えば知らせるだけ。
-//  台帳で入力済みの木（手で入力した行）には書かない（アプリで入力した木の行だけに書く約束のため）。知らせるだけ。
+//  台帳で入力済みの木（紙から手で入力した行）にも initialGrade を付ける。一覧表に書くときは健全度の欄だけ、空欄のときだけ書く（exportDb）。
 //  返す形：{ trees（initialGrade を付けた木）, written: [{ tree, grade }], treatDiff: [{ tree, simple, initial }],
-//            ledger: [{ tree, grade }]（台帳の行なので書かなかった）, pending: [tree]（詳しい診断の結果がまだない） }
+//            ledger: [{ tree, grade }]（台帳で入力済みの行。健全度だけ書く）, pending: [tree]（詳しい診断の結果がまだない） }
 export function gradeWriteBack(state, cfg, trees, { includeUnconfirmed = false, treatOf = () => '' } = {}) {
   const gw = cfg.initialSurvey?.gradeWriteBack;
   const out = { trees, written: [], treatDiff: [], ledger: [], pending: [] };
@@ -264,7 +264,7 @@ export function gradeWriteBack(state, cfg, trees, { includeUnconfirmed = false, 
     }
     if (t.source !== 'app') {
       out.ledger.push({ tree: t, grade });
-      return t;
+      return { ...t, initialGrade: grade };
     }
     out.written.push({ tree: t, grade });
     const it = gw.treatFrom ? String(r[gw.treatFrom] ?? '').trim() : '';
