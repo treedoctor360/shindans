@@ -186,6 +186,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
     if (act.type === 'addNote') toast('特記事項に理由を入れました。必要なら書き換えてください');
     if (act.type === 'resurvey') toast('再調査として入力できるようにしました（台帳の値を下書きにしています）');
     if (act.type === 'useApp') toast('アプリの入力に戻しました');
+    if (act.type === 'fixWording') toast('表記を直しました（定型文のボタンの行はそのままです）');
   };
 
   // 詳しい診断の画面を開く（InitialPrompt.jsx の openInitialWith）
