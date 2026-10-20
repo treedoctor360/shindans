@@ -190,6 +190,78 @@ describe('端末とサーバー（にせの Google）', () => {
     await expect(getPreviousPhotos(server, 'p9', g.fetchFn)).rejects.toThrow('写真がありません');
   });
 
+  it('サーバーが途中で一時的に断っても、待って置き直す。2回目からは、変わっていない写真は置かない', async () => {
+    const g = makeFakeGas();
+    await savePrevious(buildPrevious(await read([{ no: 'AB001' }, { no: 'AB009', code: 'K02', place: '別の架空公園' }]), 'now', order));
+    const calls = [];
+    let failOnce = true;
+    const flaky = async (url, init) => {
+      const b = JSON.parse(init.body);
+      calls.push(b.kind);
+      if (b.kind === 'prevPhotos:p2' && failOnce) {
+        failOnce = false;
+        return { ok: false, status: 503, json: async () => ({}) }; // 一時的に断られる
+      }
+      return g.fetchFn(url, init);
+    };
+    const wait = async () => {};
+    expect(await putPrevious(server, () => {}, flaky, { wait })).toBe(2);
+    expect(calls).toEqual(['prevPhotos:p1', 'prevPhotos:p2', 'prevPhotos:p2', 'prevIndex']);
+
+    // 何も変わっていなければ、要点だけ置く
+    calls.length = 0;
+    await putPrevious(server, () => {}, flaky, { wait });
+    expect(calls).toEqual(['prevIndex']);
+    // 別のサーバー（URL が違う）には全部置く
+    calls.length = 0;
+    await putPrevious({ ...server, url: 'https://example.invalid/other' }, () => {}, flaky, { wait });
+    expect(calls).toEqual(['prevPhotos:p1', 'prevPhotos:p2', 'prevIndex']);
+  });
+
+  it('何度待っても断られたら、どこで止まったかを知らせる。もう一度置くと続きから', async () => {
+    const g = makeFakeGas();
+    await savePrevious(buildPrevious(await read([{ no: 'AB001' }, { no: 'AB009', code: 'K02', place: '別の架空公園' }]), 'now', order));
+    const calls = [];
+    let down = true;
+    const fetchFn = async (url, init) => {
+      const b = JSON.parse(init.body);
+      calls.push(b.kind);
+      if (b.kind === 'prevPhotos:p2' && down) return { ok: false, status: 503, json: async () => ({}) };
+      return g.fetchFn(url, init);
+    };
+    const wait = async () => {};
+    await expect(putPrevious(server, () => {}, fetchFn, { wait })).rejects.toThrow(/K02.*503.*続きから/);
+    expect(calls.filter((k) => k === 'prevPhotos:p2')).toHaveLength(3); // 3回まで試す
+    expect(calls).not.toContain('prevIndex'); // 写真がそろうまで要点は置かない
+
+    calls.length = 0;
+    down = false;
+    await putPrevious(server, () => {}, fetchFn, { wait });
+    expect(calls).toEqual(['prevPhotos:p2', 'prevIndex']); // 置けた p1 は置き直さない
+  });
+
+  it('設定の誤りなど、待っても変わらない断りは、置き直さない', async () => {
+    await savePrevious(buildPrevious(await read([{ no: 'AB001' }]), 'now', order));
+    let n = 0;
+    const fetchFn = async () => {
+      n++;
+      return { ok: true, status: 200, json: async () => ({ ok: false, error: '合言葉が違います' }) };
+    };
+    await expect(putPrevious(server, () => {}, fetchFn, { wait: async () => {} })).rejects.toThrow('合言葉が違います');
+    expect(n).toBe(1);
+  });
+
+  it('前回の調査を消すと、置いた記録も消える（次は全部置く）', async () => {
+    const g = makeFakeGas();
+    await savePrevious(buildPrevious(await read([{ no: 'AB001' }]), 'now', order));
+    await putPrevious(server, () => {}, g.fetchFn);
+    await clearPrevious();
+    await savePrevious(buildPrevious(await read([{ no: 'AB001' }]), 'now', order));
+    const calls = [];
+    await putPrevious(server, () => {}, async (url, init) => (calls.push(JSON.parse(init.body).kind), g.fetchFn(url, init)));
+    expect(calls).toEqual(['prevPhotos:p1', 'prevIndex']);
+  });
+
   it('端末の分を全部読み出して足せる。消せる', async () => {
     await savePrevious(buildPrevious(await read([{ no: 'AB001' }]), 'now', order));
     const base = await loadAllPrevious();

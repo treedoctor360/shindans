@@ -132,6 +132,7 @@ export async function clearPrevious() {
   const index = await loadIndex();
   for (const id of Object.keys(index?.packs || {})) await idbDelete(photoKey(id));
   await idbDelete(INDEX_KEY);
+  await idbDelete(UPLOADED_KEY); // 次に置くときは全部置く
   changed();
 }
 
@@ -142,20 +143,72 @@ export async function savePrevious({ index, packs }) {
   changed();
 }
 
+// サーバーに置いた写真の束の記録（どのサーバーに、どの中身を置いたか）。次に置くとき、変わっていない束は送らない
+const UPLOADED_KEY = 'prevUploaded';
+
+// 中身の印（文字から作る短い数。同じ中身なら同じ印）
+function hashOf(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${text.length}:${(h >>> 0).toString(36)}`;
+}
+
+const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+const RETRY_WAITS = [5000, 15000]; // つながらなかったとき、待ってから置き直す（3回まで試す）
+
+// 1つ置く。つながらなかったときだけ、待って置き直す
+async function putWithRetry(server, kind, name, buffer, fetchFn, wait) {
+  for (let i = 0; ; i++) {
+    try {
+      return await putFile(server, kind, name, buffer, fetchFn);
+    } catch (e) {
+      if (!e.retriable || i >= RETRY_WAITS.length) throw e;
+      await wait(RETRY_WAITS[i]);
+    }
+  }
+}
+
 // サーバーに置く（事務所の PC）。onProgress(済んだ数, 全部の数)
-export async function putPrevious(server, onProgress = () => {}, fetchFn = fetch) {
+//  写真の束（場所ごと）を置いてから、最後に要点を置く（写真がそろってから、スマホに知らせる）
+//  前に同じサーバーへ置いた束と中身が同じなら送らない（途中で止まっても、次は続きから置ける）
+//  つながらなかったときは、少し待って置き直す。それでもだめなら、どこで止まったかを知らせる
+export async function putPrevious(server, onProgress = () => {}, fetchFn = fetch, { wait = sleep } = {}) {
   const index = await loadIndex();
   if (!index) return 0;
   const ids = Object.keys(index.packs || {});
   const enc = new TextEncoder();
+  const had = await idbGet(UPLOADED_KEY);
+  const uploaded = had?.url === server.url ? { ...had.packs } : {};
   let done = 0;
   for (const id of ids) {
     const p = await loadPhotos(id);
-    if (p) await putFile(server, photoKey(id), `${photoKey(id)}.json`, enc.encode(JSON.stringify(p)).buffer, fetchFn);
+    if (p) {
+      const text = JSON.stringify(p);
+      const h = hashOf(text);
+      if (uploaded[id] !== h) {
+        try {
+          await putWithRetry(server, photoKey(id), `${photoKey(id)}.json`, enc.encode(text).buffer, fetchFn, wait);
+        } catch (e) {
+          if (!e.retriable) throw e;
+          throw new Error(
+            `「${index.packs[id]?.code || id}」の写真を置けませんでした（${e.message}）。少し待ってから、もう一度「サーバーに置く」を押してください（置けた分は飛ばして、続きから置きます）`,
+          );
+        }
+        uploaded[id] = h;
+        await idbPut(UPLOADED_KEY, { url: server.url, packs: uploaded });
+      }
+    }
     onProgress(++done, ids.length + 1);
   }
-  // 要点は最後に置く（写真がそろってから、スマホに知らせる）
-  await putFile(server, INDEX_KEY, `${INDEX_KEY}.json`, enc.encode(JSON.stringify(index)).buffer, fetchFn);
+  try {
+    await putWithRetry(server, INDEX_KEY, `${INDEX_KEY}.json`, enc.encode(JSON.stringify(index)).buffer, fetchFn, wait);
+  } catch (e) {
+    if (!e.retriable) throw e;
+    throw new Error(`写真は置けましたが、要点を置けませんでした（${e.message}）。少し待ってから、もう一度「サーバーに置く」を押してください（写真は送り直しません）`);
+  }
   onProgress(ids.length + 1, ids.length + 1);
   return prevCount(index);
 }
