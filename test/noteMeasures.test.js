@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
-import { appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill } from '../src/core/noteMeasures.js';
+import { appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord, measuresToInitial } from '../src/core/noteMeasures.js';
 
 const cfg = structuredClone(cfgJson);
 
@@ -52,5 +52,83 @@ describe('設定の確かめ', () => {
     expect(bad((m) => (m.kinds[3].prefill = { nothing: 'deadBranchCount' }))).toContain('prefill');
     expect(bad((m) => (m.kinds[3].places = '枝'))).toContain('places');
     expect(bad((m, c) => delete c.noteMeasures)).toBe('');
+  });
+});
+
+describe('詳しい診断への引き継ぎ（initialSurvey.fromMeasures）', () => {
+  // 見本の設定に、幹の腐朽（周囲長比あり）を足したもの
+  const withTrunk = () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.forms.initial.sections[1].items.push({ key: 't2', label: '腐朽', type: 'weak', parts: ['height', 'size', 'ratio', 'core'] });
+    c.initialSurvey.fromMeasures.push({
+      kind: 'decay',
+      place: '幹',
+      item: 't2',
+      parts: { height: 'height', size: 'size', circ: { to: 'ratio', ratio: { num: 1, den: 3, lt: '＜1/3', ge: '≧1/3' } }, core: 'core' },
+    });
+    return c;
+  };
+  const tree = (measures) => ({ notes: measures.map((m) => `・${m.line}`).join('\n'), measures });
+  const decay = (place, values) => {
+    const c = withTrunk();
+    return measureRecord('decay', place, values, measureLine(c, 'decay', place, values));
+  };
+
+  it('見本の設定は通る。形の誤りを知らせる', () => {
+    expect(validateConfig(withTrunk()).errors).toEqual([]);
+    const bad = (fn) => {
+      const c = withTrunk();
+      fn(c.initialSurvey.fromMeasures);
+      return validateConfig(c).errors.join('\n');
+    };
+    expect(bad((l) => (l[1].kind = 'none'))).toContain('noteMeasures.kinds にありません');
+    expect(bad((l) => (l[1].item = 'height'))).toContain('弱点（weak）の項目にありません');
+    expect(bad((l) => (l[1].parts.size3 = 'size'))).toContain('「size3」は寸法「decay」の欄にありません');
+    expect(bad((l) => (l[1].parts.height = 'branchDia'))).toContain('写し先「branchDia」');
+    expect(bad((l) => (l[1].parts.circ.ratio.ge = '≧1/2'))).toContain('ratio');
+  });
+
+  it('寸法の数字を、弱点の詳細の数値と文に写す。110/150 は周囲長比（1/3 以上か）にする', () => {
+    const c = withTrunk();
+    const r = measuresToInitial(tree([decay('幹', { height: { a: '1.5' }, size: [{ w: '20', h: '50' }], circ: { a: '110', b: '150' }, core: true })]), c);
+    expect(r.keys).toEqual(['t2Detail']);
+    expect(r.values.t2DetailParts).toEqual({ height: { a: '1.5' }, size: [{ w: '20', h: '50' }], ratio: '≧1/3', core: true });
+    expect(r.values.t2Detail).toBe('地上1.5m、20×50cm、周囲長比≧1/3（芯達）');
+    // 1/3 ちょうどは「以上」、それ未満は「未満」
+    expect(measuresToInitial(tree([decay('幹', { circ: { a: '50', b: '150' } })]), c).values.t2DetailParts.ratio).toBe('≧1/3');
+    expect(measuresToInitial(tree([decay('幹', { circ: { a: '49', b: '150' } })]), c).values.t2DetailParts.ratio).toBe('＜1/3');
+    // 設定にない部位（枝の腐朽）は写さない
+    expect(measuresToInitial(tree([decay('枝', { height: { a: '3' } })]), c).keys).toEqual([]);
+  });
+
+  it('同じ項目に2つ来たら、大きさはつなげ、高さは低い所から高い所まで、比は大きい方', () => {
+    const c = withTrunk();
+    const r = measuresToInitial(
+      tree([
+        decay('幹', { height: { a: '2' }, size: [{ w: '10', h: '5' }], circ: { a: '20', b: '150' } }),
+        decay('幹', { height: { a: '0.5', b: '1' }, size: [{ w: '7', h: '7' }], circ: { a: '60', b: '150' } }),
+      ]),
+      c,
+    );
+    expect(r.values.t2DetailParts).toEqual({ height: { a: '0.5', b: '2' }, size: [{ w: '10', h: '5' }, { w: '7', h: '7' }], ratio: '≧1/3' });
+  });
+
+  it('特記事項から消した・書き換えた1行の数字は使わない', () => {
+    const c = withTrunk();
+    const m = decay('幹', { height: { a: '2' } });
+    expect(measuresToInitial({ notes: '・枝の偏り', measures: [m] }, c).keys).toEqual([]);
+    expect(measuresToInitial({ notes: `・${m.line.replace('2m', '3m')}`, measures: [m] }, c).keys).toEqual([]);
+    expect(measuresToInitial({ notes: `・${m.line}`, measures: [m] }, c).keys).toEqual(['t2Detail']);
+  });
+
+  it('枯れ枝（部位なし）は枯れ枝の項目へ。設定がなければ何もしない', () => {
+    const v = { count: '3', height: { a: '4' }, branchDia: '5', branchLen: '1.5', max: true };
+    const m = measureRecord('deadBranch', '', v, measureLine(cfg, 'deadBranch', '', v));
+    const r = measuresToInitial(tree([m]), cfg);
+    expect(r.values.b4DetailParts).toEqual({ count: '3', height: { a: '4' }, branchDia: '5', branchLen: '1.5' }); // 写し先にない「最大」は写さない
+    expect(r.values.b4Detail).toBe('3本、地上4m、枝直径5cm、枝長1.5m');
+    const c = structuredClone(cfgJson);
+    delete c.initialSurvey.fromMeasures;
+    expect(measuresToInitial(tree([m]), c)).toEqual({ values: {}, keys: [] });
   });
 });

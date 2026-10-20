@@ -570,7 +570,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
               </button>
             )}
             <textarea id="f-notes" rows={4} value={t.notes} placeholder="1行に1項目（音声入力も可）" onChange={(e) => setField('notes', e.target.value)} />
-            <NoteMeasures cfg={cfg} tree={t} onAdd={(line) => change((x) => ({ ...x, notes: appendNoteLine(x.notes, line) }))} />
+            <NoteMeasures cfg={cfg} tree={t} onAdd={(line, m) => change((x) => ({ ...x, notes: appendNoteLine(x.notes, line), measures: [...(x.measures || []), m] }))} />
             <label className="lbl" htmlFor="f-dbnote" style={{ marginTop: 6 }}>
               一覧表用の特記 <small>{t.dbNoteManual ? '手入力' : '定型文から自動で作成'}</small>
             </label>

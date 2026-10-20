@@ -82,6 +82,7 @@ describe('設定の確かめ', () => {
       delete s.detailParts;
       delete s.detailPartsDefault;
       delete s.forms.initial.sections[1].items[0].parts;
+      delete s.fromMeasures; // 寸法から写す先の数値もなくなるので、写す設定も外す
     })).toBe('');
   });
 });

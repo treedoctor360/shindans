@@ -5,7 +5,7 @@
 import { RULE_TYPES } from './rules.js';
 import { validateDetailParts } from './detailParts.js';
 import { validateKarte } from './karteCells.js';
-import { validateNoteMeasures } from './noteMeasures.js';
+import { validateFromMeasures, validateNoteMeasures } from './noteMeasures.js';
 
 // このアプリが読める設定の版。形式を変えたら上げる
 export const CONFIG_VERSION = 6; // 2: dbFormat（台帳の列）/ 3: 一覧表への書き戻し / 4: fieldSheet（野帳）/ 5: 入力画面の選択肢 / 6: initialSurvey（詳しい診断のデータ入力用ブック。省略可）
@@ -212,6 +212,7 @@ function validateInitialSurvey(s, cfg, need) {
     );
   if (s.forms != null) validateInitialForms(s.forms, need);
   validateDetailParts(s, need); // 弱点の詳細を組み立てる部品（省略可）
+  if (s.fromMeasures != null) validateFromMeasures(s.fromMeasures, cfg, need); // 特記事項の寸法から弱点の詳細へ写す（省略可）
   // 一覧表の健全度への書き戻し（省略可）：{ from: "詳しい診断の項目", values: [書く値…], treatFrom?: "処置の項目" }
   if (s.gradeWriteBack != null)
     need(

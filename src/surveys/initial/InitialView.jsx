@@ -64,7 +64,7 @@ function Item({ it, rec, cfg, opts, set, press, edit, inGrid = false }) {
   const tags = (
     <>
       {it.desk && <small className="tag">後で</small>}
-      {rec.inherited?.includes(it.key) && <small className="tag prev">簡易から</small>}
+      {(rec.inherited?.includes(it.key) || (it.type === 'weak' && rec.inherited?.includes(detailKeyOf(it)))) && <small className="tag prev">簡易から</small>}
       {rec.fromBook?.includes(it.key) && <small className="tag prev">ブックから</small>}
       {it.hint && <small>{it.hint}</small>}
     </>

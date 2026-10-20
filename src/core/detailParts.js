@@ -25,6 +25,8 @@ export const PART_TYPES = ['count', 'height', 'size', 'number', 'choice', 'text'
 // 部品の値を入れておく項目の名前（例 b4DetailParts）と、手で直したかの印の名前
 export const partsKeyOf = (detailKey) => `${detailKey}Parts`;
 export const manualKeyOf = (detailKey) => `${detailKey}Manual`;
+// 弱点の項目の、詳細を入れる項目の名前（initial.js の detailKeyOf と同じ）
+export const detailKeyOfItem = (item) => item.detailKey || `${item.key}Detail`;
 
 const clean = (v) => toHalf(String(v ?? '')).trim();
 

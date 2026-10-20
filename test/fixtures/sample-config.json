@@ -1200,7 +1200,19 @@
           ]
         }
       ]
-    }
+    },
+    "fromMeasures": [
+      {
+        "kind": "deadBranch",
+        "item": "b4",
+        "parts": {
+          "count": "count",
+          "height": "height",
+          "branchDia": "branchDia",
+          "branchLen": "branchLen"
+        }
+      }
+    ]
   },
   "noteMeasures": {
     "places": [

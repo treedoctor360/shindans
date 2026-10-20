@@ -2,7 +2,7 @@
 //  種類と部位を選び、数字の欄に入れる → 「特記事項に追加」で1行足す（記号・単位はアプリが付ける）。
 //  何か所でも続けて足せる（足すたびに数字の欄は空に戻る）。書き方は設定 noteMeasures（noteMeasures.js）
 import { useState } from 'react';
-import { measureKinds, measureLine, measureParts, measurePlaces, measurePrefill } from '../core/noteMeasures.js';
+import { measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord } from '../core/noteMeasures.js';
 import PartsInputs from './PartsInputs.jsx';
 
 // 選択肢のボタン（数字の欄の中の選択肢用）
@@ -70,7 +70,8 @@ export default function NoteMeasures({ cfg, tree, onAdd }) {
           className="btn fill"
           disabled={!line}
           onClick={() => {
-            onAdd(line);
+            // 1行と一緒に元の数字も渡す（詳しい診断の記録を作るときに、弱点の詳細へ写すため）
+            onAdd(line, measureRecord(kind, measurePlaces(kind, cfg).length ? place : '', values, line));
             setValues(measurePrefill(kind, tree, cfg)); // 続けて別の所を入れられるように
           }}
           data-testid="measure-add"
