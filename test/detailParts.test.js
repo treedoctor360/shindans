@@ -123,3 +123,36 @@ describe('自動で決まる値（周囲長から直径・芯達）', () => {
     expect(validateConfig(bad).errors.join('\n')).toContain('coreFrom');
   });
 });
+
+describe('比から決まる選択肢（pair の ratio）と、文に出さない欄（noText）', () => {
+  it('周囲長／幹周を入れると周囲長比の選択肢が決まる。周囲長・幹周の数は詳細の文に出さない', async () => {
+    const { ratioChoice, setPart } = await import('../src/core/detailParts.js');
+    const r = { num: 1, den: 3, lt: '＜1/3', ge: '≧1/3' };
+    expect(ratioChoice({ a: '50', b: '150' }, r)).toBe('≧1/3'); // ちょうど1/3は「以上」
+    expect(ratioChoice({ a: '49', b: '150' }, r)).toBe('＜1/3');
+    expect(ratioChoice({ a: '50' }, r)).toBe('');
+
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.detailParts.circ = { type: 'pair', label: '腐朽部分の周囲長／腐朽部位の幹周', unit: 'cm', noText: true, ratio: { ...r, to: 'ratio' } };
+    const item = { key: 't2', label: '腐朽', type: 'weak', parts: ['height', 'circ', 'ratio', 'core'] };
+    c.initialSurvey.forms.initial.sections[1].items.push(item);
+    expect(validateConfig(c).errors).toEqual([]);
+    let rec = setPart({}, item, 't2Detail', 'height', { a: '2' }, c);
+    rec = setPart(rec, item, 't2Detail', 'circ', { a: '110', b: '150' }, c);
+    expect(rec.t2DetailParts.ratio).toBe('≧1/3');
+    expect(rec.t2Detail).toBe('地上2m、周囲長比≧1/3');
+    // 選択肢を手で変えてもよい（周囲長を変えるまでは決め直さない）
+    rec = setPart(rec, item, 't2Detail', 'ratio', '＜1/3', c);
+    expect(rec.t2DetailParts.ratio).toBe('＜1/3');
+
+    const bad = (fn) => {
+      const x = structuredClone(c);
+      fn(x.initialSurvey.detailParts.circ);
+      return validateConfig(x).errors.join('\n');
+    };
+    expect(bad((p) => (p.ratio.to = 'height'))).toContain('ratio.to');
+    expect(bad((p) => (p.ratio.ge = '≧1/2'))).toContain('ratio.to');
+    expect(bad((p) => (p.ratio = { num: 1 }))).toContain('ratio');
+    expect(bad((p) => (p.noText = 'yes'))).toContain('noText');
+  });
+});
