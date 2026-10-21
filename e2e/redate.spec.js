@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import { makeLedger } from '../test/helpers/makeLedger.js';
 
-test('間違えた日付の木だけ、調査日を直す（調査者は変えない）', async ({ page }) => {
+test('「調査日＋調査者」の組を選んで、調査日・調査者を直す', async ({ page }) => {
   fs.mkdirSync('test-results', { recursive: true });
   fs.writeFileSync('test-results/rd-ledger.xlsx', Buffer.from(await makeLedger()));
   await page.goto('./');
@@ -20,14 +20,20 @@ test('間違えた日付の木だけ、調査日を直す（調査者は変え�
   if (await ask.isVisible()) await ask.click();
   await expect(page.locator('.toast')).toContainText('AB002 を保存しました');
 
+  // 保存ボタンの近くに、記録される調査日・調査者が出る（今日でなければ知らせる）
+  await expect(page.locator('[data-testid=session-stamp]')).toContainText('調査日 2099/05/06・調査者 試験 二郎(資格)');
+  await expect(page.locator('[data-testid=session-today]')).toBeVisible();
+
   await page.click('.tab:has-text("一覧")');
   await page.click('[data-testid=redate-open]');
-  await page.selectOption('[data-testid=redate-from]', '2099-05-06');
-  await expect(page.locator('[data-testid=redate-preview]')).toContainText('直す木：1本（AB002）');
-  await expect(page.locator('[data-testid=redate-run]')).toBeDisabled();
+  await page.selectOption('[data-testid=redate-from]', { label: '2099/05/06・試験 二郎(資格)（1本）' });
+  await expect(page.locator('[data-testid=redate-trees] [data-tree-chip=AB002]')).toHaveClass(/on/);
+  await expect(page.locator('[data-testid=redate-run]')).toBeDisabled(); // まだ何も変えていない
   await page.fill('[data-testid=redate-to]', '2099-05-05');
+  await page.fill('[data-testid=redate-insp]', '試験 三子');
+  await expect(page.locator('[data-testid=redate-preview]')).toContainText('直す木：1本');
   await page.click('[data-testid=redate-run]');
-  await expect(page.locator('.toast')).toContainText('調査日を 2099/05/06 → 2099/05/05 に直しました（1本）');
+  await expect(page.locator('.toast')).toContainText('調査日 2099/05/06 → 2099/05/05、調査者 試験 二郎(資格) → 試験 三子 に直しました（1本）');
 
   const saved = await page.evaluate(
     () =>
@@ -49,10 +55,9 @@ test('間違えた日付の木だけ、調査日を直す（調査者は変え�
         };
       }),
   );
-  // 端末に保存された AB002 の記録：調査日だけが変わり、調査者はそのまま
-  expect(saved).toMatch(/"treeNo":"AB002"[^{}]*"date":"2099-05-05","inspector":"試験 二郎\(資格\)"/);
-  // 直した後は、直す木がなくなる
+  // 端末に保存された AB002 の記録：調査日・調査者が変わっている
+  expect(saved).toMatch(/"treeNo":"AB002"[^{}]*"date":"2099-05-05","inspector":"試験 三子"/);
+  // 直した後は、新しい組になる
   await page.click('[data-testid=redate-open]');
-  await page.selectOption('[data-testid=redate-from]', '2099-05-05');
-  await expect(page.locator('[data-testid=redate-preview]')).toContainText('直す木：1本（AB002）');
+  await expect(page.locator('[data-testid=redate-from] option')).toContainText(['2099/05/05・試験 三子（1本）']);
 });
