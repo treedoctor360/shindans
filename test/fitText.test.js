@@ -1,6 +1,6 @@
 // 文が枠に収まるかの見積もりのテスト
 import { describe, expect, it } from 'vitest';
-import { fitSize, linesNeeded, sheetGeometry } from '../src/excel/fitText.js';
+import { fitSize, isProportional, linesNeeded, sheetGeometry } from '../src/excel/fitText.js';
 
 describe('文の大きさの見積もり', () => {
   it('列の幅・行の高さ・結合から枠の大きさを出す', () => {
@@ -25,5 +25,20 @@ describe('文の大きさの見積もり', () => {
     expect(r.fits).toBe(true);
     expect(r.size).toBeLessThan(11);
     expect(fitSize('あ'.repeat(200), { width: 100, height: 15 }, 11)).toEqual({ size: 7, wrap: true, fits: false });
+  });
+});
+
+describe('フォントによる見積もりの違い', () => {
+  it('ＭＳ Ｐゴシックなど文字ごとに幅が変わるフォントは、半角を小さめに見積もる（等幅・知らないフォントは大きめのまま）', () => {
+    expect(isProportional('ＭＳ Ｐゴシック')).toBe(true);
+    expect(isProportional('ＭＳ ゴシック')).toBe(false);
+    expect(isProportional('知らないフォント')).toBe(false);
+    expect(isProportional('')).toBe(false);
+    const text = '30/80 地上0～0.5m、30cm×50cm 1234567890';
+    expect([linesNeeded(text, 8, 175, true), linesNeeded(text, 8, 175, false)]).toEqual([1, 2]);
+    // 等幅の見積もりでは小さくするが、Ｐゴシックなら元の大きさのまま収まる
+    const box = { width: 175, height: 20 };
+    expect(fitSize(text, box, 8, 7, false)).toEqual({ size: 7.5, wrap: true, fits: true });
+    expect(fitSize(text, box, 8, 7, true)).toEqual({ size: 8, wrap: false, fits: true });
   });
 });

@@ -22,7 +22,7 @@
 // 保存する前に、書き出したファイルを読み直して照合する。1件でも食い違えば保存しない。
 
 import ExcelJS from 'exceljs';
-import { fitSize, sheetGeometry } from './fitText.js';
+import { fitSize, isProportional, sheetGeometry } from './fitText.js';
 import JSZip from 'jszip';
 import { toHalf } from '../core/text.js';
 import { fillFmt, karteValue } from '../core/karteCells.js';
@@ -128,6 +128,11 @@ function styleBook(stylesXml) {
   const xfOf = (base) => xfs[Number(base) || 0] || '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>';
   const fontIdOf = (base) => Number(xfOf(base).match(/\bfontId="(\d+)"/)?.[1] ?? 0);
   return {
+    // 書式のフォントの名前
+    fontName(base) {
+      const f = fonts[fontIdOf(base)] || '';
+      return f.match(/<name\b[^>]*\bval="([^"]+)"/)?.[1] ?? '';
+    },
     // 書式の文字の大きさ（pt）
     fontSize(base) {
       const f = fonts[fontIdOf(base)] || '';
@@ -299,7 +304,7 @@ export async function exportKarte(templateBuffer, records, cfg) {
           // 文が枠に収まらなければ、文字を小さくして折り返す（最小 minFont まで）
           //  様式に元から入っている文（「□無 □有」など）より長いときだけ。同じ長さなら様式の書式のまま
           const b = baseStyle(key, c.cell);
-          const r = fitSize(e.value, geos.get(key)(c.cell), styles.fontSize(b), minFont);
+          const r = fitSize(e.value, geos.get(key)(c.cell), styles.fontSize(b), minFont, isProportional(styles.fontName(b)));
           if (r.wrap) {
             e.style = styles.fit(b, r.size);
             e.fit = r.size;
