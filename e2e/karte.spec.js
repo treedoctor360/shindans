@@ -53,7 +53,8 @@ test('カルテの様式を読み込み、入力済みの詳しい診断を確�
   await expect(page.locator('[data-testid=export-karte]')).toContainText('1本');
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid=export-karte]')]);
   await expect(page.locator('.toast')).toContainText('検査OK。1本・2枚');
-  expect(dl.suggestedFilename()).toMatch(/^確認用カルテ_.+_1本_提出不可_\d{6}\.xlsx$/);
+  // 公園ごと：「コード_名前(書式の名前)番号_確認用_提出不可_日付」
+  expect(dl.suggestedFilename()).toMatch(/^K01_架空公園\(詳しい診断\)AB001_確認用_提出不可_\d{6}\.xlsx$/);
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(fs.readFileSync(await dl.path()));
   expect(wb.worksheets.map((w) => w.name)).toEqual(['AB001', 'AB001_環境']);
@@ -66,4 +67,10 @@ test('カルテの様式を読み込み、入力済みの詳しい診断を確�
   expect(a.getCell('E7').value).toBe('1本、地上4m');
   expect(a.getCell('A10').value).toBe('確認用（提出不可）');
   expect(wb.getWorksheet('AB001_環境').getCell('E4').value).toBe('支柱なし');
+
+  // すべての公園・路線をまとめて出すこともできる
+  await page.click('[data-testid=karte-all]');
+  await expect(page.locator('[data-testid=export-karte]')).toContainText('すべての公園・路線（入力済みの1本）');
+  const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid=export-karte]')]);
+  expect(dl2.suggestedFilename()).toMatch(/^確認用カルテ_.+_1本_確認用_提出不可_\d{6}\.xlsx$/);
 });

@@ -235,3 +235,12 @@ describe('定型文の文を変えたとき（was：前の文）', () => {
     expect(validateConfig(bad).errors.join('\n')).toContain('重複');
   });
 });
+
+describe('番号の並びをまとめる（ファイル名用）', () => {
+  it('英字の記号ごとに「最初-最後」。1本ならその番号', async () => {
+    const { numberRanges } = await import('../src/core/text.js');
+    expect(numberRanges(['PD0259', 'PD0037', 'PI0083', 'ＰＤ０１００'])).toBe('PD0037-PD0259,PI0083');
+    expect(numberRanges(['AB001'])).toBe('AB001');
+    expect(numberRanges([])).toBe('');
+  });
+});

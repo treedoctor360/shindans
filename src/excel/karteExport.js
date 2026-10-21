@@ -22,6 +22,7 @@
 // 保存する前に、書き出したファイルを読み直して照合する。1件でも食い違えば保存しない。
 
 import ExcelJS from 'exceljs';
+import { fitSize, sheetGeometry } from './fitText.js';
 import JSZip from 'jszip';
 import { toHalf } from '../core/text.js';
 import { fillFmt, karteValue } from '../core/karteCells.js';
@@ -120,7 +121,42 @@ function styleBook(stylesXml) {
   const ids = [...xml.matchAll(/<numFmt\b[^>]*numFmtId="(\d+)"/g)].map((m) => Number(m[1]));
   let nextId = Math.max(163, ...ids) + 1;
   const cache = new Map();
+  // 文字の書式（fonts）。文字の大きさを変えた書式を足すのに使う
+  const fontsM = xml.match(/<fonts\b[^>]*>([\s\S]*?)<\/fonts>/);
+  const fonts = fontsM ? [...fontsM[1].matchAll(/<font\b[^>]*\/>|<font\b[^>]*>[\s\S]*?<\/font>/g)].map((m) => m[0]) : [];
+  const addedFonts = [];
+  const xfOf = (base) => xfs[Number(base) || 0] || '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>';
+  const fontIdOf = (base) => Number(xfOf(base).match(/\bfontId="(\d+)"/)?.[1] ?? 0);
   return {
+    // 書式の文字の大きさ（pt）
+    fontSize(base) {
+      const f = fonts[fontIdOf(base)] || '';
+      return Number(f.match(/<sz\b[^>]*\bval="([\d.]+)"/)?.[1] ?? 11);
+    },
+    // 文字の大きさを size にし、折り返して表示する書式を足す（同じ組み合わせは使い回す）
+    fit(base, size) {
+      const key = `${base}|fit|${size}`;
+      if (cache.has(key)) return cache.get(key);
+      const f = fonts[fontIdOf(base)] || '<font><sz val="11"/></font>';
+      const font = /<sz\b/.test(f) ? f.replace(/<sz\b[^>]*\/>/, `<sz val="${size}"/>`) : f.replace(/^<font\b([^>]*)\/>$/, '<font$1></font>').replace(/^(<font\b[^>]*>)/, `$1<sz val="${size}"/>`);
+      const fontId = fonts.length + addedFonts.length;
+      addedFonts.push(font);
+      let xf = xfOf(base).replace(/\bfontId="\d+"/, `fontId="${fontId}"`);
+      if (!/\bfontId="/.test(xf)) xf = xf.replace(/^<xf\b/, `<xf fontId="${fontId}"`);
+      xf = /\bapplyFont="/.test(xf) ? xf.replace(/\bapplyFont="[^"]*"/, 'applyFont="1"') : xf.replace(/^<xf\b/, '<xf applyFont="1"');
+      xf = /\bapplyAlignment="/.test(xf) ? xf.replace(/\bapplyAlignment="[^"]*"/, 'applyAlignment="1"') : xf.replace(/^<xf\b/, '<xf applyAlignment="1"');
+      // 折り返す（縮小して全体を表示、は外す。小さくなりすぎるため）
+      if (/<alignment\b/.test(xf)) {
+        xf = xf.replace(/<alignment\b[^>]*?\/?>/, (a) => {
+          let t = a.replace(/\s+shrinkToFit="[^"]*"/, '').replace(/\s+wrapText="[^"]*"/, '');
+          return t.replace(/<alignment\b/, '<alignment wrapText="1"');
+        });
+      } else xf = xf.endsWith('/>') ? xf.replace(/\/>$/, '><alignment wrapText="1" vertical="center"/></xf>') : xf.replace(/<\/xf>$/, '<alignment wrapText="1" vertical="center"/></xf>');
+      const idx = xfs.length + added.length;
+      added.push(xf);
+      cache.set(key, idx);
+      return idx;
+    },
     derive(base, code) {
       const key = `${base}|${code}`;
       if (cache.has(key)) return cache.get(key);
@@ -140,6 +176,8 @@ function styleBook(stylesXml) {
     xml() {
       if (!added.length) return stylesXml;
       let out = xml.replace(/(<cellXfs\b[^>]*>)([\s\S]*?)(<\/cellXfs>)/, (_, a, b, c) => a.replace(/count="\d+"/, `count="${xfs.length + added.length}"`) + b + added.join('') + c);
+      if (addedFonts.length)
+        out = out.replace(/(<fonts\b[^>]*>)([\s\S]*?)(<\/fonts>)/, (_, a, b, c) => a.replace(/count="\d+"/, `count="${fonts.length + addedFonts.length}"`) + b + addedFonts.join('') + c);
       if (/<numFmts\b/.test(out)) {
         out = out.replace(/<numFmts\b[^>]*\/>/, '<numFmts count="0"></numFmts>');
         out = out.replace(/(<numFmts\b[^>]*>)([\s\S]*?)(<\/numFmts>)/, (_, a, b, c) => {
@@ -214,7 +252,7 @@ export async function exportKarte(templateBuffer, records, cfg) {
   const mark = k.mark ?? DEFAULT_MARK;
   const tpl = await readKarteTemplate(templateBuffer.slice(0), cfg);
   const errors = [];
-  const stats = { sheets: [], skippedNoTemplate: [] };
+  const stats = { sheets: [], skippedNoTemplate: [], tooLong: [] }; // tooLong：最小の大きさでも枠に収まらない欄 [{ sheet, cell }]
   const src = await JSZip.loadAsync(templateBuffer);
   const base = new Map(); // 様式の form|siteType → 整えた XML
   for (const s of tpl.sheets) {
@@ -230,6 +268,13 @@ export async function exportKarte(templateBuffer, records, cfg) {
   const stylesPath = await partPath(src, 'styles');
   const styles = styleBook(await src.file(stylesPath).async('string'));
   const baseStyle = (key, addr) => (readCells(base.get(key), []).get(addr)?.xml.match(/\bs="(\d+)"/) || [])[1] ?? '0';
+  const geos = new Map([...base].map(([key, xml]) => [key, sheetGeometry(xml)])); // 様式ごとのセルの枠の大きさ
+  // 様式のセルに元から入っている文（共有の文字の表から読む）
+  const sstPath = await partPath(src, 'sharedStrings').catch(() => null);
+  const sst0 = readSharedStrings(sstPath ? await src.file(sstPath)?.async('string') : '');
+  const templateCells = new Map([...base].map(([key, xml]) => [key, readCells(xml, sst0)]));
+  const templateText = (key, addr) => templateCells.get(key)?.get(addr)?.text ?? '';
+  const minFont = k.minFontSize ?? 7;
 
   const order = (r) => [String(cfg.dbFormat.sheets.findIndex((x) => x.type === r.siteType)).padStart(3, '0'), codeOf(r, cfg), toHalf(String(r.treeNo ?? '')).trim()].join('|');
   const sorted = [...records].sort((a, b) => order(a).localeCompare(order(b), 'ja'));
@@ -250,6 +295,16 @@ export async function exportKarte(templateBuffer, records, cfg) {
         if (code) {
           e.style = styles.derive(baseStyle(key, c.cell), code);
           e.numFmt = code;
+        } else if (typeof e.value === 'string' && e.value && e.value.length > templateText(key, c.cell).length) {
+          // 文が枠に収まらなければ、文字を小さくして折り返す（最小 minFont まで）
+          //  様式に元から入っている文（「□無 □有」など）より長いときだけ。同じ長さなら様式の書式のまま
+          const b = baseStyle(key, c.cell);
+          const r = fitSize(e.value, geos.get(key)(c.cell), styles.fontSize(b), minFont);
+          if (r.wrap) {
+            e.style = styles.fit(b, r.size);
+            e.fit = r.size;
+          }
+          if (!r.fits) e.tooLong = true;
         }
         return e;
       });
@@ -263,6 +318,7 @@ export async function exportKarte(templateBuffer, records, cfg) {
       }
       const name = sheetName(`${no || '番号なし'}${spec.suffix || ''}`, used);
       out.push({ name, xml, edits, key, treeNo: no, form: spec.form });
+      for (const e of edits) if (e.tooLong) stats.tooLong.push({ sheet: name, cell: e.addr });
       stats.sheets.push({ name, treeNo: no, form: spec.form });
     }
   }
@@ -371,6 +427,8 @@ async function verifyKarte(buffer, sheets, base) {
         if (got !== (e.value ?? '')) errors.push(`シート「${s.name}」の ${e.addr}：値が違います（期待：${e.value} ／ ファイル：${got}）`);
       }
       if (e.numFmt && cell.numFmt !== e.numFmt) errors.push(`シート「${s.name}」の ${e.addr}：表示形式が違います（期待：${e.numFmt} ／ ファイル：${cell.numFmt}）`);
+      // ExcelJS は 0.5pt 刻みの大きさを整数に丸めて読むので、1pt 未満の違いは同じとみなす
+      if (e.fit && (!(Math.abs((cell.font?.size ?? 0) - e.fit) < 1) || !cell.alignment?.wrapText)) errors.push(`シート「${s.name}」の ${e.addr}：文字の大きさ・折り返しが違います（期待：${e.fit}pt）`);
     }
     const f = files.find((x) => x.name === escapeXml(s.name) || x.name === s.name)?.file;
     const xml = f && (await zip.file(f)?.async('string'));
