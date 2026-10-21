@@ -16,6 +16,8 @@ const isAddr = (x) => typeof x === 'string' && /^[A-Z]{1,3}[1-9]\d*$/.test(x);
 export function validateKarte(k, keysOf, siteTypes, need) {
   if (!need(isObj(k), 'initialSurvey.karte の形が違います')) return;
   need(k.mark == null || typeof k.mark === 'string', 'initialSurvey.karte.mark は文字にしてください');
+  need(k.fileLabel == null || typeof k.fileLabel === 'string', 'initialSurvey.karte.fileLabel（ファイル名に入れる書式の名前）は文字にしてください');
+  need(k.minFontSize == null || (typeof k.minFontSize === 'number' && k.minFontSize >= 5 && k.minFontSize <= 11), 'initialSurvey.karte.minFontSize（長い文を小さくするときの最小の文字の大きさ）は 5〜11 の数にしてください');
   if (!need(Array.isArray(k.sheets) && k.sheets.length > 0, 'initialSurvey.karte.sheets（カルテの様式の一覧）がありません')) return;
   const seen = new Set();
   k.sheets.forEach((sh, i) => {

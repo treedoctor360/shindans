@@ -21,3 +21,22 @@ export const monthDay = (ymd) => {
   const [, m, d] = String(ymd || '').split('-');
   return m ? `${+m}/${+d}` : '';
 };
+
+// 樹木番号の並びを「最初-最後」の形にまとめる（英字の記号ごと。例 PD0037,PD0259,PI0083 → 「PD0037-PD0259,PI0083」）
+//  ファイル名に入れる用。記号のない番号はそのまま並べる
+export function numberRanges(nos) {
+  const groups = new Map();
+  for (const raw of nos) {
+    const no = toHalf(String(raw ?? '')).trim();
+    if (!no) continue;
+    const key = (no.match(/^[A-Za-z]+/) || [''])[0];
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(no);
+  }
+  return [...groups.values()]
+    .map((list) => {
+      const s = [...new Set(list)].sort((a, b) => a.localeCompare(b, 'ja', { numeric: true }));
+      return s.length > 1 ? `${s[0]}-${s[s.length - 1]}` : s[0];
+    })
+    .join(',');
+}

@@ -28,6 +28,12 @@ export async function makeKarteTemplate({ withFormulaTarget = false, title = '�
   a.getCell('A9').value = 'メモ欄';
   a.getCell('C9').value = '様式のまま残る文字';
   a.getCell('C2').font = { bold: true };
+  // 欄の幅・高さ（長い文を枠に収めるテスト用）。詳細の欄 E7 は結合して2行分の高さ
+  a.getColumn(3).width = 18;
+  a.getColumn(5).width = 30;
+  a.getColumn(6).width = 16;
+  a.mergeCells('E7:H7');
+  a.getRow(7).height = 30;
   if (withFormulaTarget) a.getCell('C8').value = { formula: '1+1', result: 2 };
 
   const e = wb.addWorksheet('公園_環境カルテ');

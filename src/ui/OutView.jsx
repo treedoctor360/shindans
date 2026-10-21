@@ -1,7 +1,7 @@
 // 出力画面：野帳・一覧表の Excel 出力（照合つき）と、一覧表形式での確認
 import { useState } from 'react';
 import { groupLabel, treesOfGroup } from '../core/groups.js';
-import { toHalf } from '../core/text.js';
+import { numberRanges, toHalf } from '../core/text.js';
 import { dbValues, exportDb } from '../excel/dbExport.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
 import { exportInitialBook } from '../excel/initialExport.js';
@@ -9,6 +9,7 @@ import { exportKarte } from '../excel/karteExport.js';
 import { gradeWriteBack, initialsForBook, karteRecords } from '../store/initial.js';
 import { loadInitialBookFile, loadKarteTemplateFile, loadLedgerFile, loadTemplate } from '../store/state.js';
 import { unsentCount } from '../store/sync.js';
+import { initialKey, simpleKey } from '../store/surveys.js';
 import { treesForDb } from '../store/review.js';
 import { fieldSheetMarks, loadIndex } from '../store/previous.js';
 import { karteSpecs } from '../excel/karte.js';
@@ -58,6 +59,8 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   const [busy, setBusy] = useState('');
   const [check, setCheck] = useState(null); // { title, errors }
   const [gradeKept, setGradeKept] = useState([]); // 一覧表の出力で、健全度が既に入っていて書き換えなかった木
+  const [karteAll, setKarteAll] = useState(false); // 確認用カルテを、すべての公園・路線をまとめて出すか（既定は選んでいる公園・路線だけ）
+  const [karteLong, setKarteLong] = useState([]); // 確認用カルテで、文字を小さくしても枠に収まらなかった欄
   const [withUnconfirmed, setWithUnconfirmed] = useState(false); // 未確定の木も一覧表に書き込むか（途中経過の確認用）
   if (!cfg || !state.trees.length) {
     return (
@@ -148,7 +151,20 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
     });
 
   // 確認用のカルテ（1本1シート）を作る。入力済みなら未確定の記録も入れる（途中の確認用）
-  const karteRecs = cfg.initialSurvey?.karte ? initialsForBook(state, cfg, { includeUnconfirmed: true }).records : [];
+  //  既定は、選んでいる公園・路線の分だけ。「すべてまとめて」を選んだときは全部
+  const allKarteRecs = cfg.initialSurvey?.karte ? initialsForBook(state, cfg, { includeUnconfirmed: true }).records : [];
+  const groupKeys = new Set(groupTrees.map((t) => `initial|${simpleKey(t, cfg)}`));
+  const karteRecs = karteAll ? allKarteRecs : allKarteRecs.filter((r) => groupKeys.has(initialKey(r, cfg)));
+  // ファイル名：公園・路線のときは「コード_名前(書式の名前)番号-番号_確認用_提出不可_日付」
+  const karteFileName = (n) => {
+    const stamp = `確認用_提出不可_${yymmdd()}.xlsx`;
+    if (karteAll) return `確認用カルテ_${safeName(cfg.initialSurvey.label)}_${n}本_${stamp}`;
+    const sheet = cfg.dbFormat.sheets.find((s) => s.type === groupTrees[0]?.siteType);
+    const code = toHalf(String(groupTrees[0]?.[sheet?.code] ?? '')).trim();
+    const name = String(groupTrees[0]?.[sheet?.identify] ?? '').trim();
+    const nos = numberRanges(karteRecs.map((r) => r.treeNo));
+    return `${safeName([code, `${name}(${cfg.initialSurvey.karte.fileLabel ?? cfg.initialSurvey.label})${nos}`].filter(Boolean).join('_'))}_${stamp}`;
+  };
   const onKarte = () =>
     run('確認用カルテ', async () => {
       const file = await loadKarteTemplateFile();
@@ -157,8 +173,12 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
       if (r.errors.length) return setCheck({ title: '確認用カルテの出力検査', errors: r.errors });
       if (!r.stats.sheets.length) return toast('カルテにする記録がありませんでした');
       const n = new Set(r.stats.sheets.map((s) => s.treeNo)).size;
-      download(`確認用カルテ_${safeName(cfg.initialSurvey.label)}_${n}本_提出不可_${yymmdd()}.xlsx`, r.buffer);
-      toast(`検査OK。${n}本・${r.stats.sheets.length}枚のカルテを作りました（確認用。提出はマクロで作ったカルテで）`);
+      download(karteFileName(n), r.buffer);
+      setKarteLong(r.stats.tooLong || []);
+      toast(
+        `検査OK。${n}本・${r.stats.sheets.length}枚のカルテを作りました（確認用。提出はマクロで作ったカルテで）` +
+          (r.stats.tooLong?.length ? `。文字を小さくしても枠に収まらない欄が${r.stats.tooLong.length}か所あります（画面の下に一覧）` : ''),
+      );
     });
 
   const unsent = unsentCount(state);
@@ -324,8 +344,21 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
             onClick={onKarte}
             data-testid="export-karte"
           >
-            {busy === '確認用カルテ' ? '作成中…' : `確認用カルテを出力（入力済みの${karteRecs.length}本）`}
+            {busy === '確認用カルテ' ? '作成中…' : `確認用カルテを出力：${karteAll ? 'すべての公園・路線' : gname}（入力済みの${karteRecs.length}本）`}
           </button>
+          <label className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={karteAll} onChange={(e) => setKarteAll(e.target.checked)} data-testid="karte-all" />
+            すべての公園・路線をまとめて出す（入力済みの{allKarteRecs.length}本）
+          </label>
+          {karteLong.length > 0 && (
+            <div className="alert warn" data-testid="karte-long">
+              <span>
+                文字を小さくしても枠に収まらない欄があります。カルテを開いて確かめてください：
+                {karteLong.slice(0, 15).map((x) => `${x.sheet} ${x.cell}`).join('・')}
+                {karteLong.length > 15 ? 'ほか' : ''}
+              </span>
+            </div>
+          )}
           <p className="hint">
             {state.karteTemplateInfo
               ? '入力済みの記録を、カルテの様式に1本1シートで書き込みます（未確定の記録も入れます。写真は入りません）。中身を確かめるためのもので、提出用ではありません。提出用のカルテは、データ入力用ブックからマクロで作ってください。'

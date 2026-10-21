@@ -202,3 +202,44 @@ describe('確認用のカルテの出力', () => {
     expect(normalizeSheet('<worksheet><sheetData/><headerFooter><oddHeader>&amp;L左&amp;R右</oddHeader></headerFooter></worksheet>', '印')).toContain('<oddHeader>&amp;L左&amp;R印</oddHeader>');
   });
 });
+
+describe('長い文を枠に収める', () => {
+  const load = async (buf) => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    return wb.worksheets[0];
+  };
+  it('枠に収まらない文は、文字を小さくして折り返す（7pt まで）。収まる文・様式に元からある文（□無 □有）はそのまま', async () => {
+    const long = '地上0～0.5m、30cm×50cm、コフキタケ、周囲長比≧1/3（芯達）、根元の北側に小さな腐朽あり、樹皮の枯死が広い【13cm/80cm】';
+    const r = await exportKarte(await makeKarteTemplate(), [{ ...AB001, b4Detail: long }], structuredClone(cfgJson));
+    expect(r.errors).toEqual([]);
+    const ws = await load(r.buffer);
+    const e7 = ws.getCell('E7');
+    expect(e7.value).toBe(long);
+    expect(e7.alignment?.wrapText).toBe(true);
+    expect(e7.font.size).toBeLessThan(11);
+    expect(e7.font.size).toBeGreaterThanOrEqual(7);
+    expect(ws.getCell('C6').alignment?.wrapText).toBeFalsy(); // □無 ■有 は様式の書式のまま
+    expect(r.stats.tooLong).toEqual([]);
+
+    // 短い文は何も変えない
+    const r2 = await exportKarte(await makeKarteTemplate(), [{ ...AB001, b4Detail: '2本' }], structuredClone(cfgJson));
+    expect((await load(r2.buffer)).getCell('E7').alignment?.wrapText).toBeFalsy();
+  });
+
+  it('7pt でも収まらない文は、どのシートのどの欄かを知らせる（ファイルは作る）', async () => {
+    const huge = '長い文。'.repeat(80);
+    const r = await exportKarte(await makeKarteTemplate(), [{ ...AB001, b4Detail: huge }], structuredClone(cfgJson));
+    expect(r.errors).toEqual([]);
+    expect(r.stats.tooLong).toEqual([{ sheet: 'AB001', cell: 'E7' }]);
+    const e7 = (await load(r.buffer)).getCell('E7');
+    expect(e7.value).toBe(huge); // 文は切らない
+    expect(e7.font.size).toBe(7);
+  });
+
+  it('最小の大きさは設定で変えられる（5〜11）', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.karte.minFontSize = 4;
+    expect(validateConfig(c).errors.join('\n')).toContain('minFontSize');
+  });
+});
