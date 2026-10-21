@@ -12,7 +12,7 @@
 // 足した1行の元の数字は木の measures に残し、詳しい診断の記録を作るときに弱点の詳細へ写す
 // （設定 initialSurvey.fromMeasures。measuresToInitial）。
 
-import { buildDetail, detailKeyOfItem, partsKeyOf, partsOf, buildText, validatePartDefs } from './detailParts.js';
+import { buildDetail, detailKeyOfItem, partsKeyOf, partsOf, buildText, ratioChoice, validatePartDefs } from './detailParts.js';
 import { toHalf } from './text.js';
 
 export const measureKinds = (cfg) => cfg.noteMeasures?.kinds || [];
@@ -98,14 +98,6 @@ export const measureRecord = (kind, place, values, line) => ({ kind, place: plac
 
 const blankPart = (v) =>
   v == null || v === '' || v === false || (Array.isArray(v) && v.length === 0) || (typeof v === 'object' && !Array.isArray(v) && !String(v.a ?? '').trim() && !String(v.b ?? '').trim());
-
-// 2つの数の比を選択肢にする（数が足りなければ空）
-function ratioChoice(v, r) {
-  const a = Number(toHalf(String(v?.a ?? '')).trim());
-  const b = Number(toHalf(String(v?.b ?? '')).trim());
-  if (!(a > 0 && b > 0)) return '';
-  return a * r.den >= b * r.num ? r.ge : r.lt;
-}
 
 // 同じ項目に2つ以上の寸法が来たときのまとめ方
 //  大きさ（並び）はつなげる、高さは一番低い所から高い所まで、印はどれかにあれば付ける、比の選択肢は大きい方、ほかは先のもの

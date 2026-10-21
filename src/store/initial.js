@@ -9,7 +9,7 @@
 import { branchRatioCell, branchRatioRaw, girthOf, heightRatioOf } from '../core/calc.js';
 import { num, toHalf } from '../core/text.js';
 import { isDead } from '../core/tree.js';
-import { buildDetail, detailKeyOfItem, manualKeyOf, partsKeyOf, partsOf } from '../core/detailParts.js';
+import { buildDetail, checkNumbers, detailKeyOfItem, manualKeyOf, partsKeyOf, partsOf } from '../core/detailParts.js';
 import { fixWording, wordingIssues } from '../core/wording.js';
 import { measuresToInitial } from '../core/noteMeasures.js';
 import { bookKey } from '../excel/initialBook.js';
@@ -100,10 +100,18 @@ export function karteExtras(tree, rec, cfg) {
 }
 
 // 確認用カルテに出す記録：詳しい診断の記録に、元の木から計算した値（karteExtras）を足したもの
+//  弱点の詳細には、文に出さない入力の数（周囲長／幹周など）を【】で足す（確認用だけ。データ入力用ブックには足さない）
 export function karteRecords(state, records, cfg) {
+  const weak = Object.values(cfg.initialSurvey?.forms || {}).flatMap((f) => (f.sections || []).flatMap((s) => (s.items || []).filter((it) => it.type === 'weak')));
   return records.map((r) => {
     const tree = state.trees.find((t) => `initial|${simpleKey(t, cfg)}` === initialKey(r, cfg)) || null;
-    return { ...r, ...karteExtras(tree, r, cfg) };
+    const out = { ...r, ...karteExtras(tree, r, cfg) };
+    for (const it of weak) {
+      const dk = detailKeyOf(it);
+      const nums = checkNumbers(r[partsKeyOf(dk)], partsOf(it, cfg));
+      if (nums.length) out[dk] = `${r[dk] || ''}【${nums.join('、')}】`;
+    }
+    return out;
   });
 }
 

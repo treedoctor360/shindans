@@ -123,3 +123,60 @@ describe('自動で決まる値（周囲長から直径・芯達）', () => {
     expect(validateConfig(bad).errors.join('\n')).toContain('coreFrom');
   });
 });
+
+describe('比から決まる選択肢（pair の ratio）と、文に出さない欄（noText）', () => {
+  it('周囲長／幹周を入れると周囲長比の選択肢が決まる。周囲長・幹周の数は詳細の文に出さない', async () => {
+    const { ratioChoice, setPart } = await import('../src/core/detailParts.js');
+    const r = { num: 1, den: 3, lt: '＜1/3', ge: '≧1/3' };
+    expect(ratioChoice({ a: '50', b: '150' }, r)).toBe('≧1/3'); // ちょうど1/3は「以上」
+    expect(ratioChoice({ a: '49', b: '150' }, r)).toBe('＜1/3');
+    expect(ratioChoice({ a: '50' }, r)).toBe('');
+
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.detailParts.circ = { type: 'pair', label: '腐朽部分の周囲長／腐朽部位の幹周', unit: 'cm', noText: true, ratio: { ...r, to: 'ratio' } };
+    const item = { key: 't2', label: '腐朽', type: 'weak', parts: ['height', 'circ', 'ratio', 'core'] };
+    c.initialSurvey.forms.initial.sections[1].items.push(item);
+    expect(validateConfig(c).errors).toEqual([]);
+    let rec = setPart({}, item, 't2Detail', 'height', { a: '2' }, c);
+    rec = setPart(rec, item, 't2Detail', 'circ', { a: '110', b: '150' }, c);
+    expect(rec.t2DetailParts.ratio).toBe('≧1/3');
+    expect(rec.t2Detail).toBe('地上2m、周囲長比≧1/3');
+    // 選択肢を手で変えてもよい（周囲長を変えるまでは決め直さない）
+    rec = setPart(rec, item, 't2Detail', 'ratio', '＜1/3', c);
+    expect(rec.t2DetailParts.ratio).toBe('＜1/3');
+
+    const bad = (fn) => {
+      const x = structuredClone(c);
+      fn(x.initialSurvey.detailParts.circ);
+      return validateConfig(x).errors.join('\n');
+    };
+    expect(bad((p) => (p.ratio.to = 'height'))).toContain('ratio.to');
+    expect(bad((p) => (p.ratio.ge = '≧1/2'))).toContain('ratio.to');
+    expect(bad((p) => (p.ratio = { num: 1 }))).toContain('ratio');
+    expect(bad((p) => (p.noText = 'yes'))).toContain('noText');
+  });
+});
+
+describe('確認用の数（文に出さない欄・周囲長）', () => {
+  it('確認用カルテ用に、文に出さない数と、直径を出すのに入れた周囲長を出す', async () => {
+    const { checkNumbers, partText } = await import('../src/core/detailParts.js');
+    const circ = { name: 'circ', type: 'pair', unit: 'cm', noText: true, ratio: { num: 1, den: 3, lt: '＜1/3', ge: '≧1/3' } };
+    expect(partText(circ, { a: '110', b: '210' })).toBe(''); // 文には出さない
+    const rod = { name: 'rod', type: 'pair', unit: 'cm', circ: '貫入部の周囲長' };
+    expect(checkNumbers({ circ: { a: '110', b: '210' }, rod: { a: '15', b: '45', c: '141' } }, [circ, rod])).toEqual(['110cm/210cm', '貫入部の周囲長141cm']);
+    expect(checkNumbers({}, [circ, rod])).toEqual([]);
+  });
+});
+
+describe('数値の欄ができる前に書いた詳細の文', () => {
+  it('数値を入れても、前に書いた文は消さない（手で直した扱いにする）', () => {
+    const c = structuredClone(cfgJson);
+    const item = c.initialSurvey.forms.initial.sections[1].items[0];
+    const rec = setPart({ b4Detail: '前に書いた文' }, item, 'b4Detail', 'count', '2', c);
+    expect(rec.b4Detail).toBe('前に書いた文');
+    expect(rec.b4DetailManual).toBe(true);
+    expect(rec.b4DetailParts).toEqual({ count: '2' });
+    // 文が空なら今までどおり数値から作る
+    expect(setPart({}, item, 'b4Detail', 'count', '2', c).b4Detail).toBe('2本');
+  });
+});
