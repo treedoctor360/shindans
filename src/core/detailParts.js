@@ -72,7 +72,9 @@ export function partText(part, v) {
       const a = clean(v?.a);
       const b = clean(v?.b);
       if (!a && !b) return '';
-      return `${a}${unit('')}${part.sep || '/'}${b}${unit('')}`;
+      // units：左右で単位が違うとき（例 周囲長 cm／幹周 m）
+      const [ua, ub] = Array.isArray(part.units) ? part.units : [unit(''), unit('')];
+      return `${a}${a ? ua : ''}${part.sep || '/'}${b}${b ? ub : ''}`;
     }
     default:
       return '';
@@ -123,12 +125,14 @@ export function coreReached(pair) {
 }
 
 // 2つの数（a/b）の比を選択肢にする。比が num/den 以上なら ge、未満なら lt。数がそろっていなければ ''
+//  bScale があれば b に掛けてから比べる（単位が違うとき）
 //  例 周囲長比：腐朽部分の周囲長 / 腐朽部位の幹周 が 1/3 以上か
 export function ratioChoice(pair, r) {
   const a = numOf(pair?.a);
   const b = numOf(pair?.b);
   if (a == null || b == null || !(a > 0 && b > 0)) return '';
-  return a * r.den >= b * r.num ? r.ge : r.lt;
+  const bb = b * (r.bScale ?? 1); // bScale：b を a と同じ単位にそろえる倍率（例 幹周 m → cm は 100）
+  return a * r.den >= bb * r.num ? r.ge : r.lt;
 }
 
 // 部品を1つ変えたあとの値（自動で決まる印・選択肢を決め直す）
@@ -148,12 +152,32 @@ export function withAuto(values, parts, changed) {
   return next;
 }
 
+// 確認用に出す、入力した数（文に出さない欄の数と、直径を出すのに入れた周囲長）。返す形：[文…]
+//  例 ["110cm/2.1m", "貫入部の周囲長141cm"]。提出用の文には入れない（確認用カルテにだけ足す）
+export function checkNumbers(values, parts) {
+  const out = [];
+  for (const p of parts) {
+    const v = values?.[p.name];
+    if (p.type !== 'pair' || !v) continue;
+    if (p.noText) {
+      const t = partText({ ...p, noText: false }, v);
+      if (t) out.push(t);
+    }
+    const c = clean(v.c);
+    if (p.circ && c) out.push(`${p.circ}${c}${p.unit ?? ''}`);
+  }
+  return out;
+}
+
 // 部品を1つ変えた記録を返す。手で直していなければ、詳細の文も作り直す
 export function setPart(record, item, detailKey, name, value, cfg) {
   const pk = partsKeyOf(detailKey);
   const values = withAuto({ ...(record[pk] || {}), [name]: value }, partsOf(item, cfg), name);
   const next = { ...record, [pk]: values };
-  if (!record[manualKeyOf(detailKey)]) next[detailKey] = buildDetail(values, partsOf(item, cfg), cfg);
+  // 数値をまだ使っていないのに詳細の文がある（数値の欄ができる前に手で書いた・ブックから写した）なら、その文を消さない
+  const handWritten = !record[pk] && String(record[detailKey] ?? '').trim() !== '';
+  if (handWritten) next[manualKeyOf(detailKey)] = true;
+  else if (!record[manualKeyOf(detailKey)]) next[detailKey] = buildDetail(values, partsOf(item, cfg), cfg);
   return next;
 }
 
@@ -183,6 +207,8 @@ export function validatePartDefs(defs, at0, need) {
     if (p.digits != null) need(Number.isInteger(p.digits) && p.digits >= 0 && p.digits <= 3, `${at}.digits は 0〜3 の整数にしてください`);
     if (p.coreFrom != null) need(p.type === 'flag' && defs[p.coreFrom]?.type === 'pair', `${at}.coreFrom は flag に付け、pair の名前にしてください`);
     if (p.noText != null) need(typeof p.noText === 'boolean', `${at}.noText は true か false にしてください`);
+    if (p.units != null) need(p.type === 'pair' && Array.isArray(p.units) && p.units.length === 2 && p.units.every((u) => typeof u === 'string'), `${at}.units は pair に付け、["左の単位", "右の単位"] の形にしてください`);
+    if (p.ratio?.bScale != null) need(typeof p.ratio.bScale === 'number' && p.ratio.bScale > 0, `${at}.ratio.bScale は正の数にしてください`);
     if (p.ratio != null) {
       const q = p.ratio;
       const okShape = p.type === 'pair' && q && typeof q === 'object' && q.num > 0 && q.den > 0 && typeof q.lt === 'string' && typeof q.ge === 'string';

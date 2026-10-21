@@ -156,3 +156,30 @@ describe('比から決まる選択肢（pair の ratio）と、文に出さな�
     expect(bad((p) => (p.noText = 'yes'))).toContain('noText');
   });
 });
+
+describe('左右で単位が違う数（周囲長 cm／幹周 m）と、確認用の数', () => {
+  it('単位をそろえて比べる。確認用カルテ用に、文に出さない数と周囲長を出す', async () => {
+    const { checkNumbers, partText, ratioChoice } = await import('../src/core/detailParts.js');
+    const circ = { name: 'circ', type: 'pair', units: ['cm', 'm'], noText: true, ratio: { num: 1, den: 3, lt: '＜1/3', ge: '≧1/3', bScale: 100 } };
+    expect(ratioChoice({ a: '70', b: '2.1' }, circ.ratio)).toBe('≧1/3'); // 70cm / 210cm
+    expect(ratioChoice({ a: '69', b: '2.1' }, circ.ratio)).toBe('＜1/3');
+    expect(partText(circ, { a: '70', b: '2.1' })).toBe(''); // 文には出さない
+    expect(partText({ ...circ, noText: false }, { a: '70', b: '2.1' })).toBe('70cm/2.1m');
+    const rod = { name: 'rod', type: 'pair', unit: 'cm', circ: '貫入部の周囲長' };
+    expect(checkNumbers({ circ: { a: '70', b: '2.1' }, rod: { a: '15', b: '45', c: '141' } }, [circ, rod])).toEqual(['70cm/2.1m', '貫入部の周囲長141cm']);
+    expect(checkNumbers({}, [circ, rod])).toEqual([]);
+  });
+});
+
+describe('数値の欄ができる前に書いた詳細の文', () => {
+  it('数値を入れても、前に書いた文は消さない（手で直した扱いにする）', () => {
+    const c = structuredClone(cfgJson);
+    const item = c.initialSurvey.forms.initial.sections[1].items[0];
+    const rec = setPart({ b4Detail: '前に書いた文' }, item, 'b4Detail', 'count', '2', c);
+    expect(rec.b4Detail).toBe('前に書いた文');
+    expect(rec.b4DetailManual).toBe(true);
+    expect(rec.b4DetailParts).toEqual({ count: '2' });
+    // 文が空なら今までどおり数値から作る
+    expect(setPart({}, item, 'b4Detail', 'count', '2', c).b4Detail).toBe('2本');
+  });
+});

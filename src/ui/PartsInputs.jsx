@@ -20,10 +20,11 @@ export default function PartsInputs({ parts, values, onPut, testId, Choice, pi =
           input = (
             <span className="pair">
               {num(`${p.name}.a`, x.a, (a) => put(p.name, { ...x, a }), p.type === 'height' ? '例 2' : '')}
+              {p.units && <span>{p.units[0]}</span>}
               <span>{p.type === 'height' ? p.sep || '～' : p.sep || '/'}</span>
               {/* 直径を手で入れたら、周囲長からの計算はやめる */}
               {num(`${p.name}.b`, x.b, (b) => put(p.name, { ...x, b, c: '' }), p.type === 'height' ? '上端' : '')}
-              <span>{p.unit ?? (p.type === 'height' ? 'm' : '')}</span>
+              <span>{p.units ? p.units[1] : p.unit ?? (p.type === 'height' ? 'm' : '')}</span>
             </span>
           );
           // 2つの数の比から決まる選択肢（例 周囲長比≧1/3）を示す。ratio.to があれば、その選択肢にも自動で入る

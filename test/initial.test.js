@@ -122,6 +122,19 @@ describe('確認用カルテに出す値（株立の幹周・樹高/幹径・枝
     expect(r['@girthList']).toBe('1.2、0.9');
     expect(r.treeNo).toBe('AB001');
   });
+  it('弱点の詳細に、文に出さない入力の数（周囲長／幹周など）を【】で足す（確認用カルテだけ）', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.detailParts.circ = { type: 'pair', label: '周囲長／幹周', units: ['cm', 'm'], noText: true };
+    c.initialSurvey.forms.initial.sections[1].items[0].parts.push('circ');
+    const tree = need('AB001');
+    let s = S([tree]);
+    s = startInitial(s, tree, c).state;
+    s = { ...s, initials: s.initials.map((r) => ({ ...r, b4: '有（小）', b4DetailParts: { count: '2', circ: { a: '70', b: '2.1' } }, b4Detail: '2本' })) };
+    expect(karteRecords(s, s.initials, c)[0].b4Detail).toBe('2本【70cm/2.1m】');
+    expect(s.initials[0].b4Detail).toBe('2本'); // 記録（ブックに書く文）は変えない
+    // 入力の数がなければ足さない
+    expect(karteRecords(s, s.initials, cfg)[0].b4Detail).toBe('2本');
+  });
   it('枯死の木の枝長/枝径は表記の文字', () => {
     const tree = need('AB001', { vigor: cfg.deadVigor, branchLen: '7', branchDia: '0.3' });
     expect(karteExtras(tree, { height: 10, girth: 1 }, cfg)['@branchRatio']).toBe(cfg.calc.deadLabel);
