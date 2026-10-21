@@ -4,7 +4,7 @@
 //  確認依頼 … 事務が付箋（質問・修正案）を付け、調査者の返事を待っている
 //  回答済み … 調査者が返事をした。事務が読んで「確認済み」にするのを待っている
 //  確定   … 事務が確定した。確定した後で入力内容が変わったら、確定は外れる
-//           ただし調査日だけをまとめて直したとき（redate.js）は外さない（dateFix の印と中身の写しで確かめる）
+//           ただし調査日・調査者だけをまとめて直したとき（redate.js）は外さない（dateFix の印と中身の写しで確かめる）
 //
 // 入力内容を直すのは調査者だけ。事務の修正案は、調査者が「採用」したときに入力内容へ反映する。
 // 付箋の持ち主：質問・修正案は書いた人（事務）、返事は調査者。両方が同時に書いても消し合わないよう、
@@ -90,26 +90,30 @@ export function reviewState(tree, state, cfg, survey = SIMPLE) {
   return 'submitted';
 }
 
-// ---------- 調査日だけを直した記録 ----------
-// 調査日をまとめて直すと版が変わるが、確定は外さない。そのため直したときに
-//  dateFix = { fromRev（確定したときの版）, sig（調査日以外の中身の写し） } を記録に付けておき、
-//  確定の版が fromRev で、調査日以外の中身が sig と同じなら、確定のままとする（ほかを直せば sig が変わり、確定は外れる）
+// ---------- 調査日・調査者だけを直した記録 ----------
+// 調査日・調査者をまとめて直すと版が変わるが、確定は外さない。そのため直したときに
+//  dateFix = { fromRev（確定したときの版）, sig（調査日・調査者以外の中身の写し）, v: 2 } を記録に付けておき、
+//  確定の版が fromRev で、調査日・調査者以外の中身が sig と同じなら、確定のままとする（ほかを直せば sig が変わり、確定は外れる）
+//  v のない dateFix は前の版（調査日だけを除いた写し）。前の版で直した記録も、確定のままに見えるように読み分ける
 
 // 調査日の項目（簡易診断は date、詳しい診断は設定 initialSurvey.stamp.date の年・月・日）
 export const dateKeysOf = (cfg, survey = SIMPLE) => (survey.id === INITIAL.id ? cfg.initialSurvey?.stamp?.date || [] : ['date']);
+// 調査者の項目（簡易診断は inspector、詳しい診断は設定 initialSurvey.stamp.inspector）
+export const inspectorKeyOf = (cfg, survey = SIMPLE) => (survey.id === INITIAL.id ? cfg.initialSurvey?.stamp?.inspector || null : 'inspector');
 
-// 中身の写し（項目の並び順は問わない）。端末だけの項目・送った時刻・調査日・印そのものは除く
+// 中身の写し（項目の並び順は問わない）。端末だけの項目・送った時刻・調査日（v2 は調査者も）・印そのものは除く
 const SIG_SKIP = ['id', 'sent', 'rev', 'conflict', 'order', 'updatedAt', 'dateFix'];
 const canon = (v) =>
   Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v;
-export function dateFixSig(record, cfg, survey = SIMPLE) {
+export function dateFixSig(record, cfg, survey = SIMPLE, v = 2) {
   const d = { ...record };
-  for (const k of [...SIG_SKIP, ...dateKeysOf(cfg, survey)]) delete d[k];
+  const ik = inspectorKeyOf(cfg, survey);
+  for (const k of [...SIG_SKIP, ...dateKeysOf(cfg, survey), ...(v >= 2 && ik ? [ik] : [])]) delete d[k];
   return JSON.stringify(canon(d));
 }
 function onlyDateFixed(record, c, cfg, survey) {
   const f = record.dateFix;
-  return !!f && c.treeRev === f.fromRev && f.sig === dateFixSig(record, cfg, survey);
+  return !!f && c.treeRev === f.fromRev && f.sig === dateFixSig(record, cfg, survey, f.v || 1);
 }
 
 export const REVIEW_LABEL = { deleted: '削除', draft: '未入力', ledger: '台帳で入力済み', submitted: '提出済み', asked: '確認依頼', answered: '回答済み', confirmed: '確定' };

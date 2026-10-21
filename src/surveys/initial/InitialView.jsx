@@ -28,6 +28,7 @@ import {
 import { checkNumbers, manualKeyOf, partsKeyOf, partsOf, rebuildDetail, setDetailText, setPart } from '../../core/detailParts.js';
 import PartsInputs from '../../ui/PartsInputs.jsx';
 import PrevPanel from '../../ui/PrevPanel.jsx';
+import SessionStamp from '../../ui/SessionStamp.jsx';
 import ReviewPanel from '../../ui/ReviewPanel.jsx';
 import { INITIAL } from '../../store/surveys.js';
 
@@ -428,6 +429,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
               </div>
             </div>
           )}
+          <SessionStamp state={state} update={update} />
           <button type="button" className="btn fill big" onClick={() => onSave(false)} data-testid="save-initial">
             保存して一覧へ
           </button>

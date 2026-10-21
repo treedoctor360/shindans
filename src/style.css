@@ -299,3 +299,7 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .initial-form .row.stack .seg.wrap{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px}
 .initial-form .seg-b{min-height:42px;padding:4px 4px;font-size:14px;line-height:1.2}
 .initial-form input[type=text],.initial-form textarea{min-height:42px;padding:8px 10px}
+
+/* 保存ボタンの近くの「保存すると記録される調査日・調査者」。調査日が今日でなければ目立たせる */
+.stamp{font-size:13px;color:var(--muted);text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center}
+.stamp.not-today{color:var(--ink);background:var(--warn-soft);border-radius:8px;padding:8px}

@@ -5,6 +5,7 @@ import { groupLabel, treesOfGroup } from '../core/groups.js';
 import { dbNoteOf, freeNoteLines, isChipLine, noteLines, toggleChip } from '../core/notes.js';
 import { appendNoteLine } from '../core/noteMeasures.js';
 import NoteMeasures from './NoteMeasures.jsx';
+import SessionStamp from './SessionStamp.jsx';
 import { photoFlag, photoPlan } from '../core/photo.js';
 import { alertsOf, missingFields } from '../core/rules.js';
 import { num, toHalf } from '../core/text.js';
@@ -703,6 +704,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
             </div>
           )
         )}
+        {!readOnly && <SessionStamp state={state} update={update} />}
         {/* 追加した木は台帳の並びの外にあるので、「次の木」に進まない（台帳の別の木を開いてしまわないように） */}
         {!readOnly && !isAddedTree(t) && (
           <button type="button" className="btn fill big" onClick={() => onSave(false)}>
