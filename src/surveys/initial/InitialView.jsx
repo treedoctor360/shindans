@@ -25,7 +25,7 @@ import {
   updateInitial,
   withdrawInitial,
 } from '../../store/initial.js';
-import { manualKeyOf, partsKeyOf, partsOf, rebuildDetail, setDetailText, setPart } from '../../core/detailParts.js';
+import { checkNumbers, manualKeyOf, partsKeyOf, partsOf, rebuildDetail, setDetailText, setPart } from '../../core/detailParts.js';
 import PartsInputs from '../../ui/PartsInputs.jsx';
 import PrevPanel from '../../ui/PrevPanel.jsx';
 import ReviewPanel from '../../ui/ReviewPanel.jsx';
@@ -94,6 +94,12 @@ function Item({ it, rec, cfg, opts, set, press, edit, inGrid = false }) {
             // 部品のある項目で文を手で直したら、部品を変えても文を上書きしない
             onChange={(e) => (partsOf(it, cfg).length && edit ? edit((r) => setDetailText(r, dk, e.target.value)) : set(dk, e.target.value))}
           />
+        )}
+        {/* 文に出さない入力の数（周囲長／幹周など）。確認用カルテにだけ出し、ブックに書く詳細の文には入れない */}
+        {checkNumbers(rec[partsKeyOf(dk)], partsOf(it, cfg)).length > 0 && (
+          <div className="hint" data-check={dk}>
+            入力した数：【{checkNumbers(rec[partsKeyOf(dk)], partsOf(it, cfg)).join('、')}】（確認用カルテにだけ出します。ブックには書きません）
+          </div>
         )}
         {rec[manualKeyOf(dk)] && edit && partsOf(it, cfg).length > 0 && (
           <div className="hint">
