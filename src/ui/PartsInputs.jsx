@@ -2,7 +2,7 @@
 //  parts：欄の定義（detailParts.js の PART_TYPES）、values：入れた値、onPut(名前, 値)：値が変わったとき
 //  Choice：選択肢のボタンの部品（呼ぶ側の見た目に合わせる）
 //  pi：周囲長から直径を出すときの円周率（設定の calc.pi）
-import { coreReached, diameterOf } from '../core/detailParts.js';
+import { coreReached, diameterOf, ratioChoice } from '../core/detailParts.js';
 
 export default function PartsInputs({ parts, values, onPut, testId, Choice, pi = Math.PI }) {
   const put = onPut;
@@ -26,6 +26,17 @@ export default function PartsInputs({ parts, values, onPut, testId, Choice, pi =
               <span>{p.unit ?? (p.type === 'height' ? 'm' : '')}</span>
             </span>
           );
+          // 2つの数の比から決まる選択肢（例 周囲長比≧1/3）を示す。ratio.to があれば、その選択肢にも自動で入る
+          const rc = p.ratio ? ratioChoice(x, p.ratio) : '';
+          if (rc)
+            input = (
+              <>
+                {input}
+                <small className="auto" data-auto={p.name}>
+                  計算では{rc}
+                </small>
+              </>
+            );
           // 周囲長を入れると直径を計算して入れる（設定の circ があるとき）
           if (p.circ)
             input = (

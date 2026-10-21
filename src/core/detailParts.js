@@ -37,8 +37,9 @@ export function partsOf(item, cfg) {
   return names.filter((n) => defs[n]).map((n) => ({ name: n, ...defs[n] }));
 }
 
-// 部品1つの文（値がなければ空）
+// 部品1つの文（値がなければ空）。noText の部品は計算だけに使い、文には出さない
 export function partText(part, v) {
+  if (part.noText) return '';
   const unit = (d) => (part.unit != null ? part.unit : d);
   switch (part.type) {
     case 'count':
@@ -121,9 +122,24 @@ export function coreReached(pair) {
   return a * 2 >= b;
 }
 
-// 部品を1つ変えたあとの値（自動で決まる印を決め直す）
+// 2つの数（a/b）の比を選択肢にする。比が num/den 以上なら ge、未満なら lt。数がそろっていなければ ''
+//  例 周囲長比：腐朽部分の周囲長 / 腐朽部位の幹周 が 1/3 以上か
+export function ratioChoice(pair, r) {
+  const a = numOf(pair?.a);
+  const b = numOf(pair?.b);
+  if (a == null || b == null || !(a > 0 && b > 0)) return '';
+  return a * r.den >= b * r.num ? r.ge : r.lt;
+}
+
+// 部品を1つ変えたあとの値（自動で決まる印・選択肢を決め直す）
+//  flag の coreFrom：芯達の印。pair の ratio.to：比から選んだ選択肢を、その choice の部品に入れる
 export function withAuto(values, parts, changed) {
   const next = { ...values };
+  const ch = parts.find((p) => p.name === changed);
+  if (ch?.type === 'pair' && ch.ratio?.to) {
+    const r = ratioChoice(next[changed], ch.ratio);
+    if (r) next[ch.ratio.to] = r;
+  }
   for (const p of parts) {
     if (p.type !== 'flag' || !p.coreFrom || p.coreFrom !== changed) continue;
     const r = coreReached(next[p.coreFrom]);
@@ -132,12 +148,32 @@ export function withAuto(values, parts, changed) {
   return next;
 }
 
+// 確認用に出す、入力した数（文に出さない欄の数と、直径を出すのに入れた周囲長）。返す形：[文…]
+//  例 ["110cm/2.1m", "貫入部の周囲長141cm"]。提出用の文には入れない（確認用カルテにだけ足す）
+export function checkNumbers(values, parts) {
+  const out = [];
+  for (const p of parts) {
+    const v = values?.[p.name];
+    if (p.type !== 'pair' || !v) continue;
+    if (p.noText) {
+      const t = partText({ ...p, noText: false }, v);
+      if (t) out.push(t);
+    }
+    const c = clean(v.c);
+    if (p.circ && c) out.push(`${p.circ}${c}${p.unit ?? ''}`);
+  }
+  return out;
+}
+
 // 部品を1つ変えた記録を返す。手で直していなければ、詳細の文も作り直す
 export function setPart(record, item, detailKey, name, value, cfg) {
   const pk = partsKeyOf(detailKey);
   const values = withAuto({ ...(record[pk] || {}), [name]: value }, partsOf(item, cfg), name);
   const next = { ...record, [pk]: values };
-  if (!record[manualKeyOf(detailKey)]) next[detailKey] = buildDetail(values, partsOf(item, cfg), cfg);
+  // 数値をまだ使っていないのに詳細の文がある（数値の欄ができる前に手で書いた・ブックから写した）なら、その文を消さない
+  const handWritten = !record[pk] && String(record[detailKey] ?? '').trim() !== '';
+  if (handWritten) next[manualKeyOf(detailKey)] = true;
+  else if (!record[manualKeyOf(detailKey)]) next[detailKey] = buildDetail(values, partsOf(item, cfg), cfg);
   return next;
 }
 
@@ -166,6 +202,14 @@ export function validatePartDefs(defs, at0, need) {
     if (p.circ != null) need(p.type === 'pair', `${at}.circ（周囲長の欄）は pair だけに付けられます`);
     if (p.digits != null) need(Number.isInteger(p.digits) && p.digits >= 0 && p.digits <= 3, `${at}.digits は 0〜3 の整数にしてください`);
     if (p.coreFrom != null) need(p.type === 'flag' && defs[p.coreFrom]?.type === 'pair', `${at}.coreFrom は flag に付け、pair の名前にしてください`);
+    if (p.noText != null) need(typeof p.noText === 'boolean', `${at}.noText は true か false にしてください`);
+    if (p.ratio != null) {
+      const q = p.ratio;
+      const okShape = p.type === 'pair' && q && typeof q === 'object' && q.num > 0 && q.den > 0 && typeof q.lt === 'string' && typeof q.ge === 'string';
+      need(okShape, `${at}.ratio は pair に付け、{ num, den, lt, ge, to? } の形にしてください`);
+      if (okShape && q.to != null)
+        need(defs[q.to]?.type === 'choice' && defs[q.to].options.includes(q.lt) && defs[q.to].options.includes(q.ge), `${at}.ratio.to は choice の名前にし、lt・ge をその選択肢にしてください`);
+    }
     for (const k of ['depth', 'unitEach', 'attach']) need(p[k] == null || typeof p[k] === 'boolean', `${at}.${k} は true か false にしてください`);
   }
   return true;

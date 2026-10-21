@@ -27,6 +27,7 @@ test('寸法を入れる：部位・種類を選んで数字を入れ、特記�
   await box.locator('[data-part="size.0.h"]').fill('50');
   await box.locator('[data-part="circ.a"]').fill('110');
   await box.locator('[data-part="circ.b"]').fill('150');
+  await expect(box.locator('[data-auto=circ]')).toHaveText('計算では≧1/3'); // 周囲長比の目安
   await box.locator('[data-part=core]').click();
   await expect(box.locator('[data-testid=measure-preview]')).toHaveText('幹の腐朽：地上2m、20cm×50cm、110/150（芯達）');
   await box.locator('[data-testid=measure-add]').click();
