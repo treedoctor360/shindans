@@ -95,10 +95,47 @@ export function buildDetail(values, parts, cfg) {
   return buildText(values, parts, cfg.initialSurvey?.detailJoin ?? '、');
 }
 
+// ---------- 自動で決まる値 ----------
+//  pair の circ：「周囲長」の欄を出し、入れると b（直径）を 周囲長÷円周率 で入れる（b を手で入れてもよい。digits：小数点以下の桁、既定は整数）
+//  flag の coreFrom：pair の名前。その a（例 貫入深）が b（例 直径）の半分（半径）以上なら印を付け、未満なら外す
+//                     pair を変えたときに決め直す。その後で印を手で付け外ししてもよい
+
+const numOf = (v) => {
+  const s = clean(v);
+  return s !== '' && !Number.isNaN(Number(s)) ? Number(s) : null;
+};
+
+// 周囲長から直径（digits：小数点以下の桁。既定は整数）
+export function diameterOf(circ, pi = Math.PI, digits = 0) {
+  const c = numOf(circ);
+  if (c == null || c <= 0) return '';
+  const k = 10 ** digits;
+  return String(Math.round((c / pi) * k) / k);
+}
+
+// 芯達か（a が b の半分以上）。数がそろっていなければ null
+export function coreReached(pair) {
+  const a = numOf(pair?.a);
+  const b = numOf(pair?.b);
+  if (a == null || b == null || b <= 0) return null;
+  return a * 2 >= b;
+}
+
+// 部品を1つ変えたあとの値（自動で決まる印を決め直す）
+export function withAuto(values, parts, changed) {
+  const next = { ...values };
+  for (const p of parts) {
+    if (p.type !== 'flag' || !p.coreFrom || p.coreFrom !== changed) continue;
+    const r = coreReached(next[p.coreFrom]);
+    if (r != null) next[p.name] = r;
+  }
+  return next;
+}
+
 // 部品を1つ変えた記録を返す。手で直していなければ、詳細の文も作り直す
 export function setPart(record, item, detailKey, name, value, cfg) {
   const pk = partsKeyOf(detailKey);
-  const values = { ...(record[pk] || {}), [name]: value };
+  const values = withAuto({ ...(record[pk] || {}), [name]: value }, partsOf(item, cfg), name);
   const next = { ...record, [pk]: values };
   if (!record[manualKeyOf(detailKey)]) next[detailKey] = buildDetail(values, partsOf(item, cfg), cfg);
   return next;
@@ -125,7 +162,10 @@ export function validatePartDefs(defs, at0, need) {
     if (!need(isObj(p) && PART_TYPES.includes(p.type) && typeof p.label === 'string' && p.label, `${at} は { type（${PART_TYPES.join('・')}）, label } の形にしてください`)) continue;
     if (p.type === 'choice') need(Array.isArray(p.options) && p.options.length > 0 && p.options.every((o) => typeof o === 'string'), `${at}：choice には options が必要です`);
     if (p.type === 'flag') need(typeof p.text === 'string' && p.text.length > 0, `${at}：flag には text（押したときに付ける文字）が必要です`);
-    for (const k of ['prefix', 'unit', 'sep', 'places', 'text']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
+    for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
+    if (p.circ != null) need(p.type === 'pair', `${at}.circ（周囲長の欄）は pair だけに付けられます`);
+    if (p.digits != null) need(Number.isInteger(p.digits) && p.digits >= 0 && p.digits <= 3, `${at}.digits は 0〜3 の整数にしてください`);
+    if (p.coreFrom != null) need(p.type === 'flag' && defs[p.coreFrom]?.type === 'pair', `${at}.coreFrom は flag に付け、pair の名前にしてください`);
     for (const k of ['depth', 'unitEach', 'attach']) need(p[k] == null || typeof p[k] === 'boolean', `${at}.${k} は true か false にしてください`);
   }
   return true;

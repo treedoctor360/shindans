@@ -86,3 +86,40 @@ describe('設定の確かめ', () => {
     })).toBe('');
   });
 });
+
+describe('自動で決まる値（周囲長から直径・芯達）', () => {
+  it('周囲長から直径（既定は整数）。a が b の半分以上なら芯達', async () => {
+    const { coreReached, diameterOf, withAuto } = await import('../src/core/detailParts.js');
+    expect(diameterOf('157', 3.14)).toBe('50');
+    expect(diameterOf('100', 3.14)).toBe('32'); // 既定は整数
+    expect(diameterOf('100', 3.14, 1)).toBe('31.8');
+    expect(diameterOf('', 3.14)).toBe('');
+    expect(coreReached({ a: '25', b: '50' })).toBe(true); // ちょうど半径は芯達
+    expect(coreReached({ a: '24.9', b: '50' })).toBe(false);
+    expect(coreReached({ a: '25' })).toBeNull();
+    const parts = [
+      { name: 'rod', type: 'pair' },
+      { name: 'core', type: 'flag', text: '（芯達）', coreFrom: 'rod' },
+    ];
+    expect(withAuto({ rod: { a: '29', b: '50' } }, parts, 'rod')).toEqual({ rod: { a: '29', b: '50' }, core: true });
+    expect(withAuto({ rod: { a: '10', b: '50' }, core: true }, parts, 'rod').core).toBe(false);
+    // 印を手で変えたときは決め直さない
+    expect(withAuto({ rod: { a: '10', b: '50' }, core: true }, parts, 'core').core).toBe(true);
+  });
+
+  it('詳しい診断の数値を入れると、芯達の印と詳細の文が決まる。設定の形を確かめる', async () => {
+    const { setPart } = await import('../src/core/detailParts.js');
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.detailParts.rod = { type: 'pair', label: '貫入深／直径', unit: 'cm', circ: '周囲長' };
+    c.initialSurvey.detailParts.core.coreFrom = 'rod';
+    const item = { key: 'r2', label: '鋼棒', type: 'weak', parts: ['rod', 'core'] };
+    c.initialSurvey.forms.initial.sections[1].items.push(item);
+    expect(validateConfig(c).errors).toEqual([]);
+    const r = setPart({}, item, 'r2Detail', 'rod', { a: '29', b: '50', c: '157' }, c);
+    expect(r.r2DetailParts.core).toBe(true);
+    expect(r.r2Detail).toBe('29cm/50cm（芯達）');
+    const bad = structuredClone(c);
+    bad.initialSurvey.detailParts.core.coreFrom = 'height';
+    expect(validateConfig(bad).errors.join('\n')).toContain('coreFrom');
+  });
+});

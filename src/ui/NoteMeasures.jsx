@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord } from '../core/noteMeasures.js';
 import PartsInputs from './PartsInputs.jsx';
+import { withAuto } from '../core/detailParts.js';
 
 // 選択肢のボタン（数字の欄の中の選択肢用）
 function Choice({ k, opts, value, onPress }) {
@@ -59,7 +60,14 @@ export default function NoteMeasures({ cfg, tree, onAdd }) {
         ))}
       </div>
       {kind && (
-        <PartsInputs parts={measureParts(kind, cfg)} values={values} onPut={(name, v) => setValues((cur) => ({ ...cur, [name]: v }))} testId="measure" Choice={Choice} />
+        <PartsInputs
+          parts={measureParts(kind, cfg)}
+          values={values}
+          onPut={(name, v) => setValues((cur) => withAuto({ ...cur, [name]: v }, measureParts(kind, cfg), name))} // 芯達などの自動の印を決め直す
+          testId="measure"
+          Choice={Choice}
+          pi={cfg.calc?.pi}
+        />
       )}
       <div className="hint" data-testid="measure-preview">
         {line || (!kind ? '種類を選んでください' : place || !measurePlaces(kind, cfg).length ? '数字を入れると、ここに足す1行が出ます' : '部位を選んでください')}

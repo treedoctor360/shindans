@@ -65,14 +65,19 @@ export function validateConfig(cfg) {
   }
 
   if (need(isArr(cfg.details), 'details がありません'))
-    cfg.details.forEach((d, i) => need(isCond(d?.when) && isStr(d?.field) && isStr(d?.label), `details[${i}] の形が違います`));
+    cfg.details.forEach((d, i) => {
+      need(isCond(d?.when) && isStr(d?.field) && isStr(d?.label), `details[${i}] の形が違います`);
+      need(d?.numeric == null || typeof d.numeric === 'boolean', `details[${i}].numeric（数字のキーボード）は true か false にしてください`);
+    });
 
   need(isObj(cfg.initial) && isStr(cfg.initial.label) && isStr(cfg.initial.yes) && isStr(cfg.initial.no), 'initial（初期診断の必要性）の形が違います');
 
   if (need(isArr(cfg.noteChips), 'noteChips（定型文）がありません')) {
     cfg.noteChips.forEach((x, i) => need(isStr(x?.t) && ['n', 's'].includes(x?.kind), `noteChips[${i}] に t と kind（n か s）が必要です`));
-    const ts = cfg.noteChips.map((x) => x?.t);
-    need(new Set(ts).size === ts.length, 'noteChips の t が重複しています');
+    cfg.noteChips.forEach((x, i) => need(x?.was == null || (isArr(x.was) && x.was.every(isStr)), `noteChips[${i}].was（前の文）は文字の並びにしてください`));
+    // 今の文と前の文（was）を合わせて、ほかの定型文と重ならないこと
+    const ts = cfg.noteChips.flatMap((x) => [x?.t, ...(isArr(x?.was) ? x.was : [])]);
+    need(new Set(ts).size === ts.length, 'noteChips の t（前の文 was を含む）が重複しています');
   }
   need(isObj(cfg.dbNote) && typeof cfg.dbNote.nounJoin === 'string' && typeof cfg.dbNote.nounSuffix === 'string', 'dbNote の形が違います');
 

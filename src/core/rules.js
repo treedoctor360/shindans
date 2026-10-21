@@ -3,7 +3,7 @@
 // ここにあるのは「規則の種類ごとの動かし方」だけ。最終判断は人が行う（警告・提案のみ）。
 
 import { girthOf, heightRatioOf, branchRatioRaw } from './calc.js';
-import { chipsIn, noteLines, toggleNote } from './notes.js';
+import { chipOfLine, noteLines, toggleNote } from './notes.js';
 import { fixWording, wordingIssues } from './wording.js';
 import { photoPlan } from './photo.js';
 import { fill, monthDay, num, toHalf } from './text.js';
@@ -73,8 +73,8 @@ const CHECKERS = {
   },
 
   // 特記にある行があるのに、対応する処置が入っていない
-  noteSuggestsTreat: (t, r) =>
-    noteLines(t.notes).includes(r.note) && !(t.treatSel || []).includes(r.treat) ? {} : null,
+  noteSuggestsTreat: (t, r, cfg) =>
+    noteLines(t.notes).some((l) => l === r.note || chipOfLine(l, cfg)?.t === r.note) && !(t.treatSel || []).includes(r.treat) ? {} : null,
 
   // 処置に書かない語
   treatForbidden: (t, r, cfg) => (new RegExp(r.pattern).test(composeTreat(t, cfg)) ? {} : null),
@@ -148,9 +148,8 @@ export function alertsOf(tree, cfg) {
 
 // 表記の統一を調べる文：特記事項のうち定型文でない行・処置（追記）・伐採理由・手で直した一覧表用の特記
 function wordingTexts(tree, cfg) {
-  const chips = new Set(chipsIn(tree.notes, cfg).map((c) => c.t));
   return [
-    ...noteLines(tree.notes).filter((l) => !chips.has(l)),
+    ...noteLines(tree.notes).filter((l) => !chipOfLine(l, cfg)),
     tree.treatFree,
     tree.fellingReason,
     ...(tree.dbNoteManual ? [tree.dbNote] : []),
@@ -163,10 +162,9 @@ export function wordingOfTree(tree, cfg) {
 
 // 表記を直した木（定型文の行はそのまま。寸法の1行を直したら、その元の数字の記録の1行も合わせる）
 function fixWordingOfTree(t, cfg) {
-  const chips = new Set(chipsIn(t.notes, cfg).map((c) => c.t));
   const fixLine = (raw) => {
     const body = raw.replace(/^[・･\-\s]+/, '').trim();
-    if (!body || chips.has(body)) return raw;
+    if (!body || chipOfLine(body, cfg)) return raw;
     return raw.replace(body, fixWording(body, cfg));
   };
   const next = { ...t, notes: String(t.notes || '').split('\n').map(fixLine).join('\n') };

@@ -273,6 +273,10 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .parts .pair{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
 .parts .pair input{width:4.5em;min-height:40px}
 .parts .sizes{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+/* 周囲長から直径を計算する欄と、自動で決めた芯達の結果 */
+.parts .pair.circ{margin-top:4px}
+.parts .pair.circ input{width:9em}
+.parts .auto{color:var(--muted);font-size:12px}
 
 /* 詳しい診断の入力画面：項目が多いので詰めて並べる。1項目ずつ区切り線で分け、どのボタンがどの項目か分かるようにする */
 .initial-form .sec{gap:0;padding:12px}

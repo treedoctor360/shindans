@@ -214,3 +214,24 @@ describe('設定の検証', () => {
     expect(chooseConfig(cfg, prev)).toEqual({ config: cfg, errors: [] });
   });
 });
+
+describe('定型文の文を変えたとき（was：前の文）', () => {
+  it('前の文で入れた行も、同じ定型文として扱う（一覧表用の特記・ボタンの付け外し・自由記述の見分け）', async () => {
+    const { autoDbNote, chipsIn, freeNoteLines, toggleChip } = await import('../src/core/notes.js');
+    const c = structuredClone(cfgJson);
+    const chip = c.noteChips.find((x) => x.t === '枝の偏り');
+    expect(chip.was).toEqual(['枝のかたより']);
+    const notes = '・枝のかたより\n・幹に腐朽';
+    expect(chipsIn(notes, c).map((x) => x.t)).toEqual(['枝の偏り']);
+    expect(freeNoteLines(notes, c)).toEqual(['幹に腐朽']);
+    expect(autoDbNote(notes, c)).toBe(autoDbNote('・枝の偏り\n・幹に腐朽', c));
+    // ボタンを押すと前の文の行を消す（二重にしない）。もう一度押すと今の文で足す
+    const off = toggleChip(notes, chip);
+    expect(off).toBe('・幹に腐朽');
+    expect(toggleChip(off, chip)).toBe('・幹に腐朽\n・枝の偏り');
+    // 前の文がほかの定型文と重なれば設定の誤り
+    const bad = structuredClone(cfgJson);
+    bad.noteChips.find((x) => x.t === '枝の偏り').was = [bad.noteChips[0].t];
+    expect(validateConfig(bad).errors.join('\n')).toContain('重複');
+  });
+});

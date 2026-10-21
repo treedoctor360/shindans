@@ -75,7 +75,8 @@
       },
       "field": "deadBranchCount",
       "label": "枯れ枝の本数",
-      "required": true
+      "required": true,
+      "numeric": true
     },
     {
       "when": {
@@ -107,7 +108,10 @@
     },
     {
       "t": "枝の偏り",
-      "kind": "n"
+      "kind": "n",
+      "was": [
+        "枝のかたより"
+      ]
     },
     {
       "t": "根元の割れ",
@@ -1246,12 +1250,14 @@
       "rod": {
         "type": "pair",
         "label": "貫入深（水平）／貫入部幹直径",
-        "unit": "cm"
+        "unit": "cm",
+        "circ": "貫入部の周囲長"
       },
       "core": {
         "type": "flag",
         "label": "芯達",
-        "text": "（芯達）"
+        "text": "（芯達）",
+        "coreFrom": "rod"
       },
       "count": {
         "type": "count",
