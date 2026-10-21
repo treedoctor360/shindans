@@ -23,15 +23,27 @@ export function toggleNote(str, item) {
   return lines.join('\n');
 }
 
+// 行がその定型文のものか（今の文 t か、前の文 was のどれか。定型文の文を変えても、前に入れた行を同じ定型文として扱う）
+export const isChipLine = (chip, line) => chip.t === line || (chip.was || []).includes(line);
+// 行の定型文（なければ undefined）
+export const chipOfLine = (line, cfg) => cfg.noteChips.find((c) => isChipLine(c, line));
+
 // 押されている定型文（設定の noteChips のうち、特記に行があるもの）
 export const chipsIn = (notes, cfg) => {
   const lines = noteLines(notes);
-  return cfg.noteChips.filter((c) => lines.includes(c.t));
+  return cfg.noteChips.filter((c) => lines.some((l) => isChipLine(c, l)));
 };
 
+// 定型文のボタンを押したとき：その定型文の行（前の文の行も）があれば消し、なければ今の文を足す
+export function toggleChip(str, chip) {
+  const lines = String(str || '').split('\n').filter((x) => x.trim());
+  const kept = lines.filter((x) => !isChipLine(chip, x.replace(BULLET, '').trim()));
+  if (kept.length < lines.length) return kept.join('\n');
+  return [...lines, '・' + chip.t].join('\n');
+}
+
 // 定型文にない行（寸法などの自由記述）
-export const freeNoteLines = (notes, cfg) =>
-  noteLines(notes).filter((l) => !cfg.noteChips.some((c) => c.t === l));
+export const freeNoteLines = (notes, cfg) => noteLines(notes).filter((l) => !chipOfLine(l, cfg));
 
 // 一覧表用の特記事項を、押した定型文から作る
 export function autoDbNote(notes, cfg) {
@@ -40,7 +52,7 @@ export function autoDbNote(notes, cfg) {
   const nouns = [];
   // 行の順（入力した順）を保つため、定型文の並びではなく特記の行の並びで回す
   for (const line of noteLines(notes)) {
-    const c = cfg.noteChips.find((x) => x.t === line);
+    const c = chipOfLine(line, cfg);
     if (!c) continue;
     const text = c.db || c.t;
     const list = c.kind === 's' ? sentences : nouns;

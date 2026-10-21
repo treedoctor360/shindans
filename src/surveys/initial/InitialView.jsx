@@ -55,6 +55,7 @@ function DetailParts({ it, dk, rec, cfg, edit }) {
       onPut={(name, v) => edit((r) => setPart(r, it, dk, name, v, cfg))}
       testId={dk}
       Choice={Choice}
+      pi={cfg.calc?.pi}
     />
   );
 }

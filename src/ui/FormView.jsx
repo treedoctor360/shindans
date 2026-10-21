@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { branchRatioRaw, branchRatioText, girthOf, heightRatioOf } from '../core/calc.js';
 import { groupLabel, treesOfGroup } from '../core/groups.js';
-import { dbNoteOf, freeNoteLines, noteLines, toggleNote } from '../core/notes.js';
+import { dbNoteOf, freeNoteLines, isChipLine, noteLines, toggleChip } from '../core/notes.js';
 import { appendNoteLine } from '../core/noteMeasures.js';
 import NoteMeasures from './NoteMeasures.jsx';
 import { photoFlag, photoPlan } from '../core/photo.js';
@@ -534,6 +534,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                         )}
                         <input
                           type="text"
+                          inputMode={d.numeric ? 'numeric' : undefined} // 数の欄（例：枯れ枝の本数）は数字のキーボードを出す
                           id={`f-${d.field}`}
                           className="num"
                           value={t[d.field] || ''}
@@ -557,8 +558,8 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                   <button
                     key={c.t}
                     type="button"
-                    className={`chip${lines.includes(c.t) ? ' on' : ''}`}
-                    onClick={() => change((x) => ({ ...x, notes: toggleNote(x.notes, c.t) }))}
+                    className={`chip${lines.some((l) => isChipLine(c, l)) ? ' on' : ''}`}
+                    onClick={() => change((x) => ({ ...x, notes: toggleChip(x.notes, c) }))}
                   >
                     {c.t}
                   </button>
