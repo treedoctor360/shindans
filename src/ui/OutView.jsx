@@ -35,19 +35,35 @@ const yymmdd = () => todayYmd().replace(/-/g, '').slice(2);
 // ファイル名に使えない文字を除く
 const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '').trim();
 
-// 一覧表形式の列（列のキー → 見出し）
-function columns(cfg) {
+// 一覧表形式の列（[列のキー, 見出し]…）。一覧表と同じ並び（貼り付けたり見比べたりしやすいように）
+//  台帳を読み込んだときの見出しの並び（ledgerInfo.columns）があれば、その並びと見出しの文字を使う。
+//  なければ設定の列の並び（dbFormat.columns）で、ほかのシートの種類の場所の項目と、どの木も空の場所の項目は出さない
+function columns(cfg, siteType, ledgerColumns, trees) {
+  const f = cfg.dbFormat;
   const label = {
+    [f.serialKey]: '通しNo.', treeNo: '樹木番号', parkCode: 'コード', parkName: '公園緑地名', routeNo: '路線番号', routeName: '路線名', drawingNo: '図面番号',
+    place: '場所', region: '地域',
     date: '調査日', inspector: '調査者', species: '樹種', height: '樹高', girth: '幹周', heightRatio: '樹高/幹径', branchRatio: '枝長/枝径',
     vigor: cfg.vigorLabel, note: '特記事項', initialNeeded: cfg.initial.label, grade: cfg.gradeLabel, treat: '処置', photo: '写真の有無',
   };
   cfg.checks.forEach((c) => (label[c.key] = c.label));
   cfg.rules.filter((r) => r.type === 'treatRequires').forEach((r) => (label[r.field] = r.label));
-  return cfg.dbFormat.writeKeys.map((k) => [k, label[k] || k]);
+  const shows = (k) => k === f.serialKey || k === 'treeNo' || f.writeKeys.includes(k) || f.infoKeys.includes(k);
+  if (ledgerColumns?.length) return ledgerColumns.filter((c) => shows(c.key)).map((c) => [c.key, c.header || label[c.key] || c.key]);
+  const others = f.sheets.filter((sh) => sh.type !== siteType).flatMap((sh) => [sh.identify, sh.code]);
+  return Object.keys(f.columns)
+    .filter(shows)
+    .filter((k) => !others.includes(k))
+    .filter((k) => !f.infoKeys.includes(k) || trees.some((t) => t[k]))
+    .map((k) => [k, label[k] || k]);
 }
 
 // 表のセルに出す文字
-function cellText(t, k, v) {
+function cellText(t, k, v, cfg) {
+  const f = cfg.dbFormat;
+  if (k === f.serialKey) return t.ledgerRow ? t.ledgerSerial || '' : (f.serialFor?.[t.status] ?? f.newSerial ?? '');
+  if (k === 'treeNo') return toHalf(t.treeNo);
+  if (f.infoKeys.includes(k)) return t[k] || '';
   if (k === 'date') return (t.source === 'ledger' ? t.ledgerDate : t.date || '').replace(/-/g, '/');
   if (k === 'inspector') return t.source === 'ledger' ? t.ledgerInspector : t.inspector;
   if (k === 'branchRatio' && v == null) return t.ledgerBranchRatio || '';
@@ -74,7 +90,8 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   const groupTrees = treesOfGroup(state.trees, group, cfg).filter((t) => !t.deleted); // 削除した木は野帳に出さない
   const mine = state.trees.filter((t) => t.done && t.source === 'app' && !t.deleted);
   const shown = groupTrees.filter((t) => t.done);
-  const cols = columns(cfg);
+  const siteType = groupTrees[0]?.siteType || '';
+  const cols = columns(cfg, siteType, state.ledgerInfo?.columns?.[siteType], shown);
   const useReview = !!state.server?.url;
   const db = treesForDb(state, cfg, { includeUnconfirmed: withUnconfirmed });
   const dbCount = mine.length - db.excluded.length;
@@ -205,10 +222,10 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   };
 
   const onCopy = async () => {
-    const head = ['入力元', '樹木番号', ...cols.map((c) => c[1])];
+    const head = cols.map((c) => c[1]);
     const rows = shown.map((t) => {
       const v = dbValues(t, cfg);
-      return [t.source === 'ledger' ? '台帳' : 'アプリ', toHalf(t.treeNo), ...cols.map(([k]) => cellText(t, k, v[k]))];
+      return cols.map(([k]) => cellText(t, k, v[k], cfg));
     });
     const tsv = [head, ...rows].map((r) => r.map((x) => String(x ?? '').replace(/\t|\n/g, ' ')).join('\t')).join('\n');
     try {
@@ -420,14 +437,12 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
       <div className="sec">
         <h2>一覧表形式：{gname}</h2>
         <div className="hint">
-          入力済み {shown.length}本（アプリ {shown.filter((t) => t.source === 'app').length}本・台帳 {shown.filter((t) => t.source === 'ledger').length}本）。色付きの行がアプリで入力した木です。
+          入力済み {shown.length}本（アプリ {shown.filter((t) => t.source === 'app').length}本・台帳 {shown.filter((t) => t.source === 'ledger').length}本）。色付きの行がアプリで入力した木です。列の並びは一覧表と同じです。
         </div>
         <div className="tbl">
           <table data-testid="out-table">
             <thead>
               <tr>
-                <th>入力元</th>
-                <th>樹木番号</th>
                 {cols.map(([k, l]) => (
                   <th key={k}>{l}</th>
                 ))}
@@ -438,11 +453,9 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
                 const v = dbValues(t, cfg);
                 return (
                   <tr key={t.id} style={t.source === 'app' ? { background: 'var(--accent-soft)' } : undefined}>
-                    <td>{t.source === 'ledger' ? '台帳' : 'アプリ'}</td>
-                    <td>{toHalf(t.treeNo)}</td>
                     {cols.map(([k]) => (
                       <td key={k} style={{ whiteSpace: 'pre-line' }}>
-                        {cellText(t, k, v[k])}
+                        {cellText(t, k, v[k], cfg)}
                       </td>
                     ))}
                   </tr>
@@ -450,7 +463,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
               })}
               {!shown.length && (
                 <tr>
-                  <td colSpan={cols.length + 2}>入力済みの木はまだありません</td>
+                  <td colSpan={cols.length}>入力済みの木はまだありません</td>
                 </tr>
               )}
             </tbody>

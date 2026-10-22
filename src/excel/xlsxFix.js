@@ -16,6 +16,32 @@ export async function finishXlsx(buffer) {
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
 }
 
+// 名前付き範囲（オートフィルターの範囲・印刷範囲・名前を付けた範囲など）を、元のファイルのとおりに戻す
+//  ExcelJS は読み書きの途中で名前付き範囲を崩す（シートの指定が消える・式や外部の参照が壊れる・一部が消える）。
+//  Excel で開くと「修復」になるので、シートの並びが元と同じファイルに限り、workbook.xml の definedNames を元の文字のまま入れ直す
+export async function restoreDefinedNames(outBuffer, origBuffer) {
+  const [zo, zn] = await Promise.all([JSZip.loadAsync(origBuffer), JSZip.loadAsync(outBuffer)]);
+  const wbO = await zo.file('xl/workbook.xml').async('string');
+  const wbN = await zn.file('xl/workbook.xml').async('string');
+  const sheetsOf = (xml) => [...xml.matchAll(/<sheet\b[^>]*\bname="([^"]*)"/g)].map((m) => m[1]).join('\n');
+  if (sheetsOf(wbO) !== sheetsOf(wbN)) throw new Error('シートの並びが元のファイルと違うため、名前付き範囲を戻せません');
+  const block = (xml) => (xml.match(/<definedNames>[\s\S]*?<\/definedNames>|<definedNames\/>/) || [''])[0];
+  const orig = block(wbO);
+  let fixed = wbN.replace(/<definedNames>[\s\S]*?<\/definedNames>|<definedNames\/>/, '');
+  // 元にあれば、元と同じ場所（シートの一覧の後ろ）に入れる
+  //  （置き換えは関数で行う。名前の中の「$1」などを置き換えの記号として読ませないため）
+  if (orig) fixed = fixed.replace('</sheets>', () => `</sheets>${orig}`);
+  zn.file('xl/workbook.xml', fixed);
+  return zn.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+}
+
+// workbook.xml の名前付き範囲の部分（照合用。なければ空の文字）
+export async function definedNamesXml(buffer) {
+  const z = await JSZip.loadAsync(buffer);
+  const xml = await z.file('xl/workbook.xml').async('string');
+  return (xml.match(/<definedNames>[\s\S]*?<\/definedNames>/) || [''])[0];
+}
+
 // シートの並び順どおりに、中のファイル名（xl/worksheets/sheetN.xml）を返す
 //  並び順と N は一致しないことがあるので、workbook.xml とその関連付け（rels）から対応を取る
 export async function sheetFiles(zip) {

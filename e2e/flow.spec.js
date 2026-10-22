@@ -48,6 +48,11 @@ test('台帳を読み込み、2本入力して、野帳と一覧表を出力で�
   // 出力：野帳
   await page.click('.tab:has-text("出力")');
   await expect(page.locator('[data-testid=out-table] tbody tr')).toHaveCount(3);
+  // 一覧表形式の列は、読み込んだ台帳と同じ並び・同じ見出し（台帳にない列は出さない）
+  const heads = await page.locator('[data-testid=out-table] thead th').allTextContents();
+  expect(heads.slice(0, 6)).toEqual(['連番', '公園コード', '公園名', '木の番号', '樹種', '調査日']);
+  expect(heads).not.toContain('メモ');
+  expect(await page.locator('[data-testid=out-table] tbody tr').first().locator('td').nth(3).textContent()).toBe('AB001');
   const [fieldDl] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid=export-field]')]);
   await expect(page.locator('.toast')).toContainText('検査OK');
   await expect(page.locator('[data-testid=check-errors]')).toHaveCount(0);

@@ -64,7 +64,9 @@ describe('台帳の読み込み', () => {
     const r = await importLedger(initialState(), '架空の台帳.xlsx', buf, cfg, '2099-04-10');
     expect(r.stats.all).toBe(5);
     expect(r.state.trees.length).toBe(5);
-    expect(r.state.ledgerInfo).toEqual({ name: '架空の台帳.xlsx', date: '2099-04-10' });
+    expect(r.state.ledgerInfo).toMatchObject({ name: '架空の台帳.xlsx', date: '2099-04-10' });
+    // 一覧表形式の表示用に、シートの種類ごとの見出しの並びを残す
+    expect(r.state.ledgerInfo.columns.park.slice(0, 4).map((c) => c.header)).toEqual(['連番', '公園コード', '公園名', '木の番号']);
     const saved = await idbGet('ledger');
     expect(saved.name).toBe('架空の台帳.xlsx');
     expect(saved.buffer.byteLength).toBe(buf.byteLength);
@@ -106,6 +108,6 @@ describe('台帳を読んでいる間に届いた変更を消さない', () => {
     const r = applyLedger(latest, parsed, cfg);
     const ab002 = r.state.trees.find((t) => t.treeNo === 'ＡＢ００２' || t.treeNo === 'AB002');
     expect(ab002).toMatchObject({ source: 'app', done: true, vigor: '並', rev: 3 });
-    expect(r.state.ledgerInfo).toEqual({ name: '架空の台帳.xlsx', date: '2099-04-11' });
+    expect(r.state.ledgerInfo).toMatchObject({ name: '架空の台帳.xlsx', date: '2099-04-11' });
   });
 });

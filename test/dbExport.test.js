@@ -305,3 +305,39 @@ describe('追加した木の番号が、台帳の別の場所の木と同じと�
     }
   });
 });
+
+describe('【再発防止】名前付き範囲（オートフィルター・印刷範囲など）を崩さない', () => {
+  // ExcelJS は読み書きで名前付き範囲を崩し、Excel で開くと「修復」になっていた
+  const NAMES = [
+    '<definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">公園!$A$2:$V$8</definedName>',
+    '<definedName name="_xlnm.Print_Area" localSheetId="0">公園!$A$1:$V$8</definedName>',
+    '<definedName name="_xlnm.Print_Titles" localSheetId="0">公園!$1:$2</definedName>',
+    '<definedName name="壊れた名前">#REF!</definedName>',
+    '<definedName name="列の名前">公園!$A:$A</definedName>',
+    '<definedName name="式の名前">OFFSET(公園!$A$1,0,0,COUNTA(公園!$A:$A),1)</definedName>',
+  ].join('');
+  async function withNames() {
+    const zip = await JSZip.loadAsync(await makeLedger());
+    const xml = await zip.file('xl/workbook.xml').async('string');
+    zip.file('xl/workbook.xml', xml.replace('</sheets>', `</sheets><definedNames>${NAMES}</definedNames>`));
+    return zip.generateAsync({ type: 'uint8array' });
+  }
+  const namesOf = async (buf) => (await (await JSZip.loadAsync(buf)).file('xl/workbook.xml').async('string')).match(/<definedNames>[\s\S]*?<\/definedNames>/)[0];
+
+  it('書き戻したファイルの名前付き範囲は、元のファイルと1文字も違わない', async () => {
+    const buf = await withNames();
+    const { rows } = await readLedger(buf, cfg);
+    const { trees } = mergeLedger([], rows, cfg);
+    const mine = trees.map((t) => (t.treeNo === 'AB002' ? { ...t, ...entry } : t));
+    const r = await exportDb(buf, mine, cfg);
+    expect(r.errors).toEqual([]);
+    expect(await namesOf(r.buffer)).toBe(`<definedNames>${NAMES}</definedNames>`);
+  });
+
+  it('照合：名前付き範囲が崩れていれば知らせる', async () => {
+    const buf = await withNames();
+    const wb = await load(buf);
+    const broken = await wb.xlsx.writeBuffer(); // ExcelJS でそのまま書き出すと崩れる
+    expect((await verifyDb(broken, buf, [], cfg)).join('\n')).toMatch(/名前付き範囲/);
+  });
+});
