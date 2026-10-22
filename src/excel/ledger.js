@@ -68,7 +68,29 @@ export const treeKey = (sheetType, treeNo, dupIndex = 1) => `${sheetType}|${toHa
 export function mergeLedger(trees, rows, cfg) {
   const f = cfg.dbFormat;
   const out = trees.map((t) => ({ ...t }));
-  const byKey = new Map(out.map((t) => [treeKey(t.siteType, t.treeNo, t.dupIndex), t]));
+  // 台帳の行と結び付いている木は「番号＋何本目か」で探す
+  const byKey = new Map(out.filter((t) => t.ledgerRow).map((t) => [treeKey(t.siteType, t.treeNo, t.dupIndex), t]));
+  // 追加した木（台帳の行と結び付いていない木）は、番号に加えて場所の名前も合うときだけ台帳の行と結び付ける
+  //  （現地の番号札が台帳では別の場所の木の番号だったとき、その木と取り違えないため）
+  const addedByKey = new Map();
+  for (const t of out) {
+    if (t.ledgerRow) continue;
+    const k = treeKey(t.siteType, t.treeNo, t.dupIndex);
+    if (!addedByKey.has(k)) addedByKey.set(k, []);
+    addedByKey.get(k).push(t);
+  }
+  const identifyOf = (type) => f.sheets.find((s) => s.type === type)?.identify;
+  //  場所の名前がまだない木（台帳を読み込む前に入力した木など）は、番号だけで結び付ける（今までどおり）
+  const samePlace = (t, row) => {
+    const k = identifyOf(row.sheetType);
+    const mine = toHalf(String((k && t[k]) ?? '')).trim();
+    return !mine || mine === toHalf(String(row.values[k] ?? '')).trim();
+  };
+  const takeAdded = (key, row) => {
+    const list = addedByKey.get(key) || [];
+    const i = list.findIndex((t) => samePlace(t, row));
+    return i < 0 ? null : list.splice(i, 1)[0];
+  };
   const usedIds = new Set(out.map((t) => t.id));
   const seen = new Set();
   const countByNo = new Map(); // 番号ごとに、これまでに何行出てきたか
@@ -88,7 +110,7 @@ export function mergeLedger(trees, rows, cfg) {
     seen.add(key);
     stats.all++;
 
-    let t = byKey.get(key);
+    let t = byKey.get(key) || takeAdded(key, row);
     if (!t) {
       // 印（id）は、ほかの木と重ならないようにする（台帳の木の番号が書き換えられて、同じ印の木が残っていることがある）
       let id = `ledger:${key}`;
