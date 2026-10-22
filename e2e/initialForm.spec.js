@@ -51,6 +51,11 @@ test('簡易診断で「必要」にして保存すると続けて入力でき�
   await page.click('[data-testid=none-0]');
   await expect(page.locator('[data-group=weather] [data-v="有"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('[data-group=stake] [data-v="無"]')).toHaveAttribute('aria-pressed', 'true');
+  // 任意記入（設定 free）の項目：選択肢にない値を書ける。選択肢を押すと書いた値は消える
+  await page.fill('[data-free=stake]', '自由に書いた値');
+  await expect(page.locator('[data-group=stake] [aria-pressed=true]')).toHaveCount(0);
+  await page.click('[data-group=stake] [data-v="無"]');
+  await expect(page.locator('[data-free=stake]')).toHaveValue('');
 
   await page.click('[data-testid=save-initial]');
   await expect(page.locator('.toast')).toContainText('保存しました');

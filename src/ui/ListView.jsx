@@ -25,7 +25,7 @@ export function treeState(t, cfg) {
 // 「姓 名(資格)・姓 名(資格)」→「姓・姓」
 const surnames = (s) =>
   String(s || '')
-    .split(/[・、,]/)
+    .split(/[・･·、,]/)
     .map((x) => x.replace(/\(.*?\)|（.*?）/g, '').trim().split(/\s+/)[0])
     .filter(Boolean)
     .join('・');
@@ -272,6 +272,12 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
                 {t.source === 'ledger' && (
                   <span className="tag">
                     台帳 {monthDay(t.ledgerDate)} {surnames(t.ledgerInspector)}
+                  </span>
+                )}
+                {/* アプリで入力した木は、調査日と調査者（姓） */}
+                {t.source !== 'ledger' && t.done && (t.date || t.inspector) && (
+                  <span className="tag" data-testid="card-stamp">
+                    {monthDay(t.date)} {surnames(t.inspector)}
                   </span>
                 )}
                 {t.appBackup && <span className="tag w">アプリ入力の控えあり</span>}

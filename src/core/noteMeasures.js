@@ -7,6 +7,7 @@
 //   kinds  … 寸法の種類 [{ key, label, parts: [欄の名前…], places?, line?, prefill? }]
 //              places：その種類の部位の選択肢（[] なら部位を選ばない）。line：その種類の1行の形
 //              prefill：{ 欄の名前: 木の項目 } 開いたときに木の入力から入れておく（例 本数 ← 枯れ枝の本数）
+//              photo：その1行があるときに撮る弱点写真の名前（{place} で部位を入れられる）。fullOnly：true なら全景だけ要る
 //   line   … 1行の形（省略時「{place}の{kind}：{text}」）
 // 作った1行は特記事項（野帳）に足すだけで、ほかの項目は変えない。足した後は手で直せる。
 // 足した1行の元の数字は木の measures に残し、詳しい診断の記録を作るときに弱点の詳細へ写す
@@ -55,6 +56,24 @@ export function measureLine(cfg, kindKey, place, values) {
   return (kind.line || m.line || '{place}の{kind}：{text}').replace('{place}', needPlace ? place : '').replace('{kind}', kind.label).replace('{text}', text);
 }
 
+// 特記事項に残っている寸法の1行から、撮る写真を決める（設定の kinds の photo / fullOnly。写真の判定 photo.js から呼ぶ）
+//  返す形：{ weak: [弱点写真の名前…], fullOnly: 全景だけ要る1行があるか }
+export function measurePhotos(tree, cfg) {
+  const out = { weak: [], fullOnly: false };
+  const notes = String(tree?.notes || '');
+  for (const m of tree?.measures || []) {
+    if (!m?.line || !notes.includes(m.line)) continue; // 手で消した・書き換えた行は使わない
+    const kind = kindOf(m.kind, cfg);
+    if (!kind) continue;
+    if (kind.photo) {
+      const name = kind.photo.replace('{place}', m.place || '');
+      if (!out.weak.includes(name)) out.weak.push(name);
+    }
+    if (kind.fullOnly) out.fullOnly = true;
+  }
+  return out;
+}
+
 // 特記事項の最後に1行足す（定型文の行と同じく頭に「・」。最後の空行は詰める）
 export function appendNoteLine(notes, line) {
   const base = String(notes || '').replace(/\s+$/, '');
@@ -80,6 +99,8 @@ export function validateNoteMeasures(m, need) {
     if (okDefs) need(k.parts.every((n) => m.parts[n]), `${at}.parts に、noteMeasures.parts にない欄があります`);
     need(k.places == null || (Array.isArray(k.places) && k.places.every(isStr)), `${at}.places は部位の文字の並び（部位を選ばないなら []）にしてください`);
     need(k.line == null || (isStr(k.line) && k.line.includes('{text}')), `${at}.line は {text} を含む文字にしてください`);
+    need(k.photo == null || isStr(k.photo), `${at}.photo は写真の名前（文字）にしてください`);
+    need(k.fullOnly == null || typeof k.fullOnly === 'boolean', `${at}.fullOnly は true か false にしてください`);
     need(
       k.prefill == null || (isObj(k.prefill) && Object.entries(k.prefill).every(([p, f]) => k.parts.includes(p) && isStr(f))),
       `${at}.prefill は { その種類の欄の名前: 木の項目 } の形にしてください`,

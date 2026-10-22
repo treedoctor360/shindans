@@ -45,6 +45,10 @@ test('台帳を読み込み、2本入力して、野帳と一覧表を出力で�
   await page.click('text=保存して次の木へ');
   await page.click('text=未入力のまま保存する');
 
+  // 一覧：アプリで入力した木に、調査日と調査者を出す
+  await page.click('.tab:has-text("一覧")');
+  await expect(page.locator('[data-tree=AB002] [data-testid=card-stamp]')).toHaveText(/^\d{1,2}\/\d{1,2}/);
+
   // 出力：野帳
   await page.click('.tab:has-text("出力")');
   await expect(page.locator('[data-testid=out-table] tbody tr')).toHaveCount(3);

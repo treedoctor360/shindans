@@ -102,3 +102,16 @@ describe('データ入力用ブックへの書き込み', () => {
     expect(dup.errors.join('\n')).toContain('同じ木の記録が2件');
   });
 });
+
+describe('任意記入（設定 free）の項目', () => {
+  it('ブックの選択肢（入力規則）にない値でも書く。free でない項目は今までどおり止める', async () => {
+    const c = structuredClone(cfg);
+    const it4 = c.initialSurvey.forms.initial.sections.flatMap((s) => s.items).find((x) => x.key === 'b4');
+    it4.free = true;
+    const r = await exportInitialBook(await makeInitialBook(), [rec({ treeNo: 'AB003', b4: '自由に書いた値' })], c);
+    expect(r.errors).toEqual([]);
+    expect(r.stats.written.some((w) => w.treeNo === 'AB003')).toBe(true);
+    const bad = await exportInitialBook(await makeInitialBook(), [rec({ treeNo: 'AB003', b4: '自由に書いた値' })], cfg);
+    expect(bad.errors.join('\n')).toContain('ブックの選択肢にありません');
+  });
+});

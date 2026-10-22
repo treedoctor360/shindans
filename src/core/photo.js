@@ -1,5 +1,5 @@
 // 必要な写真の判定
-// どの入力でどの写真が要るかは、設定（cfg.photo と noteChips の photo / fullOnly）で決める。
+// どの入力でどの写真が要るかは、設定（cfg.photo と noteChips の photo / fullOnly、noteMeasures.kinds の photo / fullOnly）で決める。
 //
 // 判定の順：
 //  1. 弱点写真が要る項目がある → 全景＋弱点写真
@@ -7,6 +7,7 @@
 //  3. 写真で分からない弱点だけ → 全景のみ
 //  4. どれもない              → 写真不要
 
+import { measurePhotos } from './noteMeasures.js';
 import { chipsIn } from './notes.js';
 import { isLocked, matches } from './tree.js';
 
@@ -23,9 +24,12 @@ export function photoPlan(tree, cfg) {
   };
   p.weak.filter((c) => matches(tree, c, cfg)).forEach((c) => add(c.name));
   chips.forEach((c) => add(c.photo));
+  // 特記事項の寸法の1行（腐朽・亀裂・鋼棒貫入など）
+  const mp = locked ? { weak: [], fullOnly: false } : measurePhotos(tree, cfg);
+  mp.weak.forEach(add);
 
   const shared = p.shared.filter((c) => matches(tree, c, cfg)).map((c) => c.name);
-  const fullOnly = p.fullOnly.some((c) => matches(tree, c, cfg)) || chips.some((c) => c.fullOnly);
+  const fullOnly = p.fullOnly.some((c) => matches(tree, c, cfg)) || chips.some((c) => c.fullOnly) || mp.fullOnly;
 
   const full = { key: 'full', name: shared.length ? [p.fullName, ...shared].join('・') : p.fullName, orient: p.fullOrient };
   const weakSlots = weak.map((n) => ({ key: 'w:' + n, name: n, orient: p.weakOrient }));

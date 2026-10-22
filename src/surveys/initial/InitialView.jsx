@@ -84,6 +84,18 @@ function Item({ it, rec, cfg, opts, set, press, edit, inGrid = false }) {
           {it.label} {tags}
         </span>
         <Choice k={it.key} opts={opts} value={v} onPress={press} />
+        {/* 任意記入（設定 free）：選択肢にないときは書ける。書いた値がそのまま入る */}
+        {it.free && (
+          <input
+            id={`i-${it.key}-free`}
+            type="text"
+            className="detail"
+            value={opts.includes(v) ? '' : v}
+            placeholder="選択肢にないときは、ここに書く"
+            onChange={(e) => set(it.key, e.target.value)}
+            data-free={it.key}
+          />
+        )}
         {showDetail && edit && partsOf(it, cfg).length > 0 && <DetailParts it={it} dk={dk} rec={rec} cfg={cfg} edit={edit} />}
         {(showDetail || (it.type === 'weak' && rec[dk])) && (
           <input
