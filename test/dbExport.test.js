@@ -267,3 +267,41 @@ describe('xlsx の補正', () => {
     for (const x of files) expect(zip.file(x.file)).not.toBeNull();
   });
 });
+
+describe('追加した木の番号が、台帳の別の場所の木と同じとき', () => {
+  // 現地の番号札が、台帳では別の場所の木の番号だった（台帳にない木として追加した）
+  const added = { ...entry, id: 'new:1', uid: 'dev-1', siteType: 'park', treeNo: 'AB002', dupIndex: 1, source: 'app', status: '追加', parkCode: 'K09', parkName: '別の架空公園', species: 'ベツノキ' };
+
+  it('台帳の行（別の場所）には書かず、末尾に足す。照合に通る', async () => {
+    const { buf, trees } = await setup();
+    const r = await exportDb(buf, [...trees, added], cfg);
+    expect(r.errors).toEqual([]);
+    expect(r.stats).toMatchObject({ written: 0, appended: 1 });
+    const wb = await load(r.buffer);
+    expect(['D7', 'C7', 'E7'].map((a) => val(wb, '公園', a))).toEqual(['AB002', '別の架空公園', 'ベツノキ']);
+    expect(val(wb, '公園', 'L4') || '').toBe(''); // 台帳の AB002（架空公園）は元のまま（未入力）
+  });
+
+  it('足した後の一覧表にもう一度書き戻すときは、足した行（同じ場所）を見つける（二重に足さない）', async () => {
+    const { buf, trees } = await setup();
+    const first = await exportDb(buf, [...trees, added], cfg);
+    const r = await exportDb(first.buffer, [...trees, added], cfg);
+    expect(r.errors).toEqual([]);
+    expect(r.stats).toMatchObject({ appended: 0, skippedLedgerDone: ['AB002'] });
+  });
+
+  it('台帳を読み込み直しても、追加した木が台帳の別の場所の木に入れ替わらない', async () => {
+    const { buf, trees } = await setup();
+    const { rows } = await readLedger(buf, cfg);
+    // 追加した木が一覧の後ろにある状態（読み込み直すと、台帳にない木は後ろに並ぶ）
+    for (let i = 0; i < 2; i++) {
+      const { trees: again } = mergeLedger([...trees, added], rows, cfg);
+      const a = again.find((t) => t.uid === 'dev-1');
+      expect(a).toMatchObject({ parkName: '別の架空公園', species: 'ベツノキ', done: true, source: 'app' });
+      expect(a.ledgerRow).toBeUndefined();
+      const l = again.filter((t) => t.treeNo === 'AB002' && t.ledgerRow);
+      expect(l).toHaveLength(1);
+      expect(l[0].parkName).toBe('架空公園');
+    }
+  });
+});

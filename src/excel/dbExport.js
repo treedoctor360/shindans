@@ -70,6 +70,7 @@ const ratioFormula = (f, map, ws, r) =>
 function indexRows(ws, map, f) {
   const index = new Map();
   const count = new Map();
+  const rowsByNo = new Map(); // 番号 → その番号の行番号の一覧（上から順）
   let last = f.dataRow - 1;
   ws.eachRow((row, r) => {
     if (r < f.dataRow) return;
@@ -78,9 +79,11 @@ function indexRows(ws, map, f) {
     const n = (count.get(no) || 0) + 1;
     count.set(no, n);
     index.set(`${no}|${n}`, r);
+    if (!rowsByNo.has(no)) rowsByNo.set(no, []);
+    rowsByNo.get(no).push(r);
     last = Math.max(last, r);
   });
-  return { index, count, last };
+  return { index, count, rowsByNo, last };
 }
 
 // 書き戻す。返す形：{ buffer（照合に通ったときだけ）, stats, errors }
@@ -99,13 +102,19 @@ export async function exportDb(ledgerBuffer, trees, cfg) {
     const map = columnMap(ws, f);
     const spec = f.sheets.find((s) => map[s.identify] !== undefined);
     if (!spec || map.treeNo === undefined) continue;
-    const { index, last } = indexRows(ws, map, f);
+    const { index, rowsByNo, last } = indexRows(ws, map, f);
+    // その番号の行のうち、場所の名前が合う最初の行
+    const samePlaceRow = (no, t) =>
+      (rowsByNo.get(no) || []).find((r) => half(cellValue(ws.getRow(r).getCell(map[spec.identify]))) === half(t[spec.identify]));
     let next = last;
 
     for (const t of mine.filter((x) => x.siteType === spec.type)) {
       const no = half(t.treeNo);
       const label = t.dupIndex > 1 ? `${no}（${t.dupIndex}本目）` : no;
-      let r = index.get(`${no}|${t.dupIndex || 1}`);
+      // 台帳から読み込んだ木は「番号＋何本目か」の行。
+      // 追加した木は、同じ番号で場所の名前も合う行（前に書き戻して足した行）。なければ末尾に足す
+      //  （現地の番号札が、台帳では別の場所の木の番号だったとき、その行に書かないため）
+      let r = t.ledgerRow ? index.get(`${no}|${t.dupIndex || 1}`) : samePlaceRow(no, t);
       const row = r ? ws.getRow(r) : null;
 
       if (row) {
