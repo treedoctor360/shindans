@@ -303,3 +303,9 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 /* 保存ボタンの近くの「保存すると記録される調査日・調査者」。調査日が今日でなければ目立たせる */
 .stamp{font-size:13px;color:var(--muted);text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center}
 .stamp.not-today{color:var(--ink);background:var(--warn-soft);border-radius:8px;padding:8px}
+
+/* 出力：未送信の記録の一覧（何が・なぜ送れていないか） */
+.unsent-list{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.unsent-list li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--sunk);font-size:14px}
+.unsent-list li b{color:var(--danger);font-weight:600}
+.unsent-list .btn{flex:none;width:auto;padding:6px 14px;min-height:0}

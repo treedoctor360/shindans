@@ -183,8 +183,11 @@ test('同じ木を2台で直したら、後の端末で食い違いとして出�
   await b.click('text=保存して次の木へ');
 
   await expect(b.locator('[data-testid=review-notice]')).toContainText('食い違っている木が1本');
-  await b.click('[data-testid=review-notice]');
-  await b.click('[data-tree=AB002]');
+  // 出力の画面で、未送信の記録が何か・なぜ送れていないかが分かり、そこから木を開ける
+  await b.click('.tab:has-text("出力")');
+  await expect(b.locator('[data-testid=unsent-list]')).toContainText('AB002');
+  await expect(b.locator('[data-testid=unsent-list]')).toContainText('食い違っています');
+  await b.click('[data-testid=unsent-list] [data-act=open-unsent]');
   await expect(b.locator('[data-testid=conflict]')).toBeVisible();
   await expect(b.locator('[data-testid=conflict] .diff')).toContainText('樹高');
   await b.click('[data-act=use-theirs]');

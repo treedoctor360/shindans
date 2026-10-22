@@ -19,6 +19,7 @@ import {
   resolveConflict,
   toBase64,
   unsentCount,
+  unsentList,
   unsentTrees,
 } from '../src/store/sync.js';
 import { makeFakeGas } from './helpers/fakeGas.js';
@@ -209,6 +210,45 @@ describe('送信と受信（にせの Google で通しで確認）', () => {
     // 返事を失った後でさらに直していた場合は、従来どおり食い違いとして見せる（中身が違うので）
     const edited = { ...s, trees: s.trees.map((t) => ({ ...t, height: '9', updatedAt: 'y' })) };
     expect((await sync(edited, g)).conflicts).toEqual(['A1']);
+  });
+
+  it('【再発防止】2台で同じ内容に直した（保存した時刻だけ違う）：食い違いにせず、送信済みにする（前に残った食い違いも）', async () => {
+    const g = makeFakeGas();
+    const base = await sync(S([P('a1', { done: true, height: '8', updatedAt: 'x' })]), g);
+    const devA = base.state;
+    const devB = { ...base.state, server: { ...base.state.server, deviceId: 'dev2' } };
+    const edit = (s, at) => ({ ...s, trees: s.trees.map((t) => ({ ...t, height: '10', sent: false, updatedAt: at })) });
+    await sync(edit(devA, 'a'), g);
+    // 送るとき（サーバーに断られた返事に、同じ内容が入っている）
+    const b = await sync(edit(devB, 'b'), g);
+    expect(b.conflicts).toEqual([]);
+    expect(b.state.trees[0]).toMatchObject({ height: '10', rev: 2, sent: true, conflict: null });
+    expect(unsentCount(b.state)).toBe(0);
+    // 受け取るとき（まだ送っていない自分の修正と、届いた版の中身が同じ）
+    const p = await pull(edit(devB, 'c'), cfg, g.fetchFn);
+    const r = applyPull(edit(devB, 'c'), p.records, p.lastSeq, cfg);
+    expect(r.conflicts).toEqual([]);
+    expect(r.state.trees[0]).toMatchObject({ rev: 2, sent: true, conflict: null });
+    // 前の版のアプリで残った、中身が同じ食い違いは、受け取ったときに片付ける
+    const old = { ...devB, trees: devB.trees.map((t) => ({ ...t, height: '10', sent: false, updatedAt: 'd', conflict: { rev: 2, by: '', updatedAt: 'a', data: { ...b.state.trees[0], updatedAt: 'a', id: undefined, rev: undefined, sent: undefined, conflict: undefined, order: undefined } } })) };
+    expect(unsentCount(old)).toBe(1);
+    const q = await pull(old, cfg, g.fetchFn);
+    const r2 = applyPull(old, q.records, q.lastSeq, cfg);
+    expect(r2.state.trees[0]).toMatchObject({ rev: 2, sent: true, conflict: null });
+    expect(unsentCount(r2.state)).toBe(0);
+  });
+
+  it('未送信の一覧：どの記録か・なぜ送れていないか（食い違いで選ぶ待ち）が分かる', () => {
+    const s = S([
+      P('a1', { done: true, sent: false }),
+      P('a2', { done: true, sent: false, rev: 1, conflict: { rev: 2, data: {} } }),
+      P('a3', { done: true, sent: true, rev: 1 }),
+    ]);
+    expect(unsentCount(s)).toBe(2);
+    expect(unsentList(s, cfg).map((x) => [x.label, x.conflict])).toEqual([
+      ['A1', false],
+      ['A2', true],
+    ]);
   });
 
   it('受け取った版が、まだ送っていない自分の修正とぶつかったら、上書きせずに食い違いにする', async () => {
