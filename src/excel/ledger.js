@@ -37,7 +37,11 @@ export async function readLedger(buffer, cfg) {
     const map = columnMap(ws, f);
     const type = f.sheets.find((s) => map[s.identify] !== undefined);
     if (!type || map.treeNo === undefined) return;
-    sheets.push({ name: ws.name, type: type.type, columns: map });
+    // 見出しの並び（列の順のキーと、見出しの文字）。一覧表形式の表示を一覧表と同じ並びにするため
+    const order = Object.entries(map)
+      .sort((a, b) => a[1] - b[1])
+      .map(([key, col]) => ({ key, header: String(cellValue(ws.getRow(f.headerRow).getCell(col)) ?? '').replace(/\s+/g, ' ').trim() }));
+    sheets.push({ name: ws.name, type: type.type, columns: map, order });
     ws.eachRow((row, r) => {
       if (r < f.dataRow) return;
       const values = {};
@@ -126,6 +130,7 @@ export function mergeLedger(trees, rows, cfg) {
     // 場所などの情報は毎回台帳から写す
     for (const k of f.infoKeys) if (k in v) t[k] = str(k);
     t.ledgerSpecies = str('species'); // 書き戻すときの照合用（アプリで樹種を直しても、これは台帳のまま）
+    if (f.serialKey) t.ledgerSerial = str(f.serialKey); // 一覧表形式の表示用（通し番号）
     if (!t.species) t.species = str('species');
     const st = f.serialStatus?.[str(f.serialKey)];
     if (st) t.status = st;

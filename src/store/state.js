@@ -26,7 +26,7 @@ export function initialState() {
     karteTemplateInfo: null, // 読み込んだカルテの様式（確認用カルテ用）{ name, date, sheets: [シート名…], errors: [...] }
     group: '', // 表示中の公園・路線
     currentId: '',
-    ledgerInfo: null, // { name, date }
+    ledgerInfo: null, // { name, date, columns: { シートの種類: [{ key, header }…]（見出しの並び） } }
     templateName: '',
     // サーバー（GAS）：URL と合言葉はこの端末にだけ保存する。deviceId はこの端末の印（送信元の記録用）
     server: { url: '', pass: '', deviceId: '', lastSent: '', lastFetched: '', lastSeq: 0 },
@@ -124,7 +124,10 @@ export async function readLedgerFile(name, buffer, cfg, today) {
   const { rows, sheets } = await readLedger(buffer.slice(0), cfg);
   if (!rows.length) throw new Error('樹木番号の列が見つかりませんでした。台帳（樹木の一覧の Excel）を選んでください');
   await idbPut('ledger', { name, date: today, buffer });
-  return { rows, sheets, info: { name, date: today } };
+  // シートの種類ごとの見出しの並び（一覧表形式の表示用。同じ種類のシートが複数あれば最初のシート）
+  const columns = {};
+  for (const sh of sheets) if (!columns[sh.type]) columns[sh.type] = sh.order;
+  return { rows, sheets, info: { name, date: today, columns } };
 }
 export function applyLedger(state, parsed, cfg) {
   const { trees, stats } = mergeLedger(state.trees, parsed.rows, cfg);

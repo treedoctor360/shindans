@@ -15,7 +15,7 @@ import { composeTreat } from '../core/treat.js';
 import { isCheckKey, isLocked } from '../core/tree.js';
 import { cellValue, ymdOfCell } from './cell.js';
 import { columnMap } from './ledger.js';
-import { finishXlsx } from './xlsxFix.js';
+import { definedNamesXml, finishXlsx, restoreDefinedNames } from './xlsxFix.js';
 
 const half = (v) => toHalf(v).trim();
 
@@ -184,7 +184,7 @@ export async function exportDb(ledgerBuffer, trees, cfg) {
 
   wb.creator = '';
   wb.lastModifiedBy = '';
-  const out = await finishXlsx(await wb.xlsx.writeBuffer());
+  const out = await restoreDefinedNames(await finishXlsx(await wb.xlsx.writeBuffer()), ledgerBuffer);
   const check = await verifyDb(out, ledgerBuffer, plan, cfg);
   return check.length ? { buffer: null, stats, errors: check, plan } : { buffer: out, stats, errors: [], plan };
 }
@@ -217,6 +217,9 @@ export async function verifyDb(outBuffer, origBuffer, plan, cfg) {
   await wbO.xlsx.load(origBuffer);
   const wbN = new ExcelJS.Workbook();
   await wbN.xlsx.load(outBuffer);
+
+  // 名前付き範囲（オートフィルター・印刷範囲など）が元のファイルと1文字も違わないか（崩れていると Excel で「修復」になる）
+  if ((await definedNamesXml(outBuffer)) !== (await definedNamesXml(origBuffer))) errs.push('名前付き範囲（オートフィルター・印刷範囲など）が元のファイルと違います');
 
   // 元のファイルのシートが、書き出したファイルにも全部あるか（シートごと消えていないか）
   for (const wsO of wbO.worksheets) if (!wbN.getWorksheet(wsO.name)) errs.push(`シート「${wsO.name}」が書き出したファイルにありません`);
