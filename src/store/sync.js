@@ -53,6 +53,26 @@ const dirtyConfirms = (state) => Object.values(state.confirms || {}).filter((x) 
 export const unsentCount = (state) =>
   SURVEYS.reduce((n, sv) => n + unsentOf(state, sv).length, 0) + dirtyStickies(state).length + dirtyConfirms(state).length;
 
+// 未送信の記録の一覧（画面で「何が・なぜ」送れていないかを見せる）
+//  返す形：[{ kind, id, label, conflict（別の端末との食い違いで、どちらを使うか選ぶまで送らない） }]
+export function unsentList(state, cfg) {
+  const out = [];
+  for (const sv of SURVEYS)
+    for (const t of unsentOf(state, sv))
+      out.push({ kind: sv.kind, id: t.id, label: `${sv.id === 'simple' ? '' : '詳しい診断 '}${t.treeNo || '（番号なし）'}`, conflict: !!t.conflict });
+  for (const x of dirtyStickies(state)) out.push({ kind: 'sticky', id: x.id, label: `付箋（${labelOfKey(state, x.treeId, cfg)}）`, conflict: false });
+  for (const x of dirtyConfirms(state)) out.push({ kind: 'confirm', id: x.treeId, label: `確定の印（${labelOfKey(state, x.treeId, cfg)}）`, conflict: false });
+  return out;
+}
+// 記録の鍵から、木の番号を探す（見つからなければ鍵のまま）
+function labelOfKey(state, key, cfg) {
+  for (const sv of SURVEYS) {
+    const t = recordsOf(state, sv).find((r) => sv.keyOf(r, cfg) === key);
+    if (t) return t.treeNo || key;
+  }
+  return key || '';
+}
+
 const treeData = (t) => {
   const d = { ...t };
   LOCAL_ONLY.forEach((k) => delete d[k]);
@@ -104,14 +124,23 @@ export async function push(state, cfg, fetchFn = fetch) {
 const canon = (v) =>
   Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v;
 const sameData = (a, b) => JSON.stringify(canon(a ?? null)) === JSON.stringify(canon(b ?? null));
+// 入力内容が同じか（保存した時刻 updatedAt は比べない。2台で同じ内容に直したときは食い違いにしない）
+const withoutTime = (d) => {
+  if (!d || typeof d !== 'object') return d;
+  const { updatedAt, ...rest } = d;
+  return rest;
+};
+const sameContent = (a, b) => sameData(withoutTime(a), withoutTime(b));
 
 // どちらの端末でも削除済み：中身を比べるまでもないので、食い違いにせずサーバーの版にそろえる
 const bothDeleted = (server, local) => !!server?.deleted && !!local?.deleted;
 const takeServer = (local, data, rev) => ({ ...data, id: local.id, order: local.order, rev, sent: true, conflict: null });
 
-// 前の版のアプリで残った「どちらも削除済み」の食い違いを片付ける
+// 前の版のアプリで残った「どちらも削除済み」「中身が同じ（保存した時刻だけ違う）」の食い違いを片付ける
 function settleDeleted(list) {
-  return list.map((t) => (t.conflict && bothDeleted(t.conflict.data, t) ? takeServer(t, t.conflict.data, t.conflict.rev) : t));
+  return list.map((t) =>
+    t.conflict && (bothDeleted(t.conflict.data, t) || sameContent(t.conflict.data, treeData(t))) ? takeServer(t, t.conflict.data, t.conflict.rev) : t,
+  );
 }
 
 // 付箋の食い違いを、持ち主ごとに合わせる（送り直す前提で dirty のまま、版はサーバーに合わせる）
@@ -152,6 +181,11 @@ export function applyPush(state, results, tokens, cfg) {
         if (r.conflict && bothDeleted(r.data, t)) {
           saved++;
           return takeServer(t, r.data, r.rev);
+        }
+        // 別の端末が先に同じ内容を送っていた（保存した時刻だけ違う）：食い違いにせず、サーバーの版にそろえる
+        if (r.conflict && sameContent(r.data, treeData(t))) {
+          saved++;
+          return t.updatedAt === tk.token ? takeServer(t, r.data, r.rev) : { ...t, rev: r.rev, conflict: null };
         }
         if (r.conflict) {
           conflicts.push(t.treeNo);
@@ -248,6 +282,9 @@ export function applyPull(state, records, lastSeq, cfg) {
       } else if (dirty && sameData(rec.data, treeData(local))) {
         // この端末が送った内容（返事を受け取れなかった送信）。送信済みにする
         trees[i] = { ...local, rev: rec.rev, sent: true, conflict: null };
+      } else if (dirty && sameContent(rec.data, treeData(local))) {
+        // 別の端末が同じ内容に直していた（保存した時刻だけ違う）。食い違いにせず、サーバーの版にそろえる
+        trees[i] = takeServer(local, rec.data, rec.rev);
       } else if (dirty) {
         // 自分にも送っていない修正がある → 黙って上書きしない
         trees[i] = { ...local, conflict: { rev: rec.rev, by: rec.by, updatedAt: rec.updatedAt, data: rec.data } };

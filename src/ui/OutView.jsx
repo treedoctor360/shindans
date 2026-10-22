@@ -1,6 +1,6 @@
 // 出力画面：野帳・一覧表の Excel 出力（照合つき）と、一覧表形式での確認
 import { useState } from 'react';
-import { groupLabel, treesOfGroup } from '../core/groups.js';
+import { groupKey, groupLabel, treesOfGroup } from '../core/groups.js';
 import { numberRanges, toHalf } from '../core/text.js';
 import { dbValues, exportDb } from '../excel/dbExport.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
@@ -8,7 +8,7 @@ import { exportInitialBook } from '../excel/initialExport.js';
 import { exportKarte } from '../excel/karteExport.js';
 import { gradeWriteBack, initialsForBook, karteRecords } from '../store/initial.js';
 import { loadInitialBookFile, loadKarteTemplateFile, loadLedgerFile, loadTemplate } from '../store/state.js';
-import { unsentCount } from '../store/sync.js';
+import { unsentCount, unsentList } from '../store/sync.js';
 import { initialKey, simpleKey } from '../store/surveys.js';
 import { treesForDb } from '../store/review.js';
 import { fieldSheetMarks, loadIndex } from '../store/previous.js';
@@ -182,6 +182,18 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
     });
 
   const unsent = unsentCount(state);
+  const unsentItems = unsent ? unsentList(state, cfg) : [];
+  // 未送信の記録の木を開く（食い違いなら、開いた画面でどちらを使うか選ぶ）
+  const openUnsent = (x) => {
+    if (x.kind === 'tree') {
+      const t = state.trees.find((r) => r.id === x.id);
+      if (t) update((s) => ({ ...s, group: groupKey(t, cfg), area: '', currentId: t.id, view: 'form' }));
+    } else if (x.kind === 'initial') {
+      const rec = state.initials.find((r) => r.id === x.id);
+      const t = rec && state.trees.find((r) => simpleKey(r, cfg) === simpleKey(rec, cfg));
+      if (t) update((s) => ({ ...s, group: groupKey(t, cfg), area: '', currentId: t.id, view: 'initial', initialTreeId: t.id }));
+    }
+  };
   // 送信と受信をまとめて行う
   const onSync = async () => {
     const r = await send?.();
@@ -377,6 +389,23 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
               アプリで入力 {mine.length}本 ／ 未送信 {unsent}件
               <small>{state.server.lastSent ? `最後に送信：${fmtTime(state.server.lastSent)}` : ''}</small>
             </div>
+            {unsentItems.length > 0 && (
+              <ul className="unsent-list" data-testid="unsent-list">
+                {unsentItems.map((x) => (
+                  <li key={`${x.kind}:${x.id}`}>
+                    <span>
+                      {x.label}
+                      {x.conflict ? <b>：別の端末の内容と食い違っています。開いて、どちらを使うか選ぶまで送りません</b> : '：送信待ち'}
+                    </span>
+                    {(x.kind === 'tree' || x.kind === 'initial') && (
+                      <button type="button" className="btn small" onClick={() => openUnsent(x)} data-act="open-unsent">
+                        開く
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
             {sendStatus?.error && <div className="alert warn">送信できませんでした：{sendStatus.error}（入力は端末に残っています。電波のある所でもう一度送ってください）</div>}
             <button type="button" className="btn big" disabled={sendStatus?.busy} onClick={onSync} data-testid="sync">
               {sendStatus?.busy ? 'やり取り中…' : unsent ? `未送信の${unsent}件を送って、最新を受け取る` : 'サーバーから最新を受け取る'}
