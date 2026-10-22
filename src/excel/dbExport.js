@@ -15,7 +15,7 @@ import { composeTreat } from '../core/treat.js';
 import { isCheckKey, isLocked } from '../core/tree.js';
 import { cellValue, ymdOfCell } from './cell.js';
 import { columnMap } from './ledger.js';
-import { definedNamesXml, finishXlsx, restoreDefinedNames } from './xlsxFix.js';
+import { definedNamesXml, externalLinkParts, finishXlsx, restoreDefinedNames, restoreExternalLinks } from './xlsxFix.js';
 
 const half = (v) => toHalf(v).trim();
 
@@ -184,7 +184,8 @@ export async function exportDb(ledgerBuffer, trees, cfg) {
 
   wb.creator = '';
   wb.lastModifiedBy = '';
-  const out = await restoreDefinedNames(await finishXlsx(await wb.xlsx.writeBuffer()), ledgerBuffer);
+  // ExcelJS が崩す・落とす部分（名前付き範囲・外部リンク）を元のファイルのとおりに戻す
+  const out = await restoreExternalLinks(await restoreDefinedNames(await finishXlsx(await wb.xlsx.writeBuffer()), ledgerBuffer), ledgerBuffer);
   const check = await verifyDb(out, ledgerBuffer, plan, cfg);
   return check.length ? { buffer: null, stats, errors: check, plan } : { buffer: out, stats, errors: [], plan };
 }
@@ -220,6 +221,9 @@ export async function verifyDb(outBuffer, origBuffer, plan, cfg) {
 
   // 名前付き範囲（オートフィルター・印刷範囲など）が元のファイルと1文字も違わないか（崩れていると Excel で「修復」になる）
   if ((await definedNamesXml(outBuffer)) !== (await definedNamesXml(origBuffer))) errs.push('名前付き範囲（オートフィルター・印刷範囲など）が元のファイルと違います');
+  // 外部リンク（別のブックを指す名前付き範囲の参照先）が元のファイルと同じ並び・同じ中身か（なくなっていると Excel で「修復」になる）
+  if (JSON.stringify(await externalLinkParts(outBuffer)) !== JSON.stringify(await externalLinkParts(origBuffer)))
+    errs.push('外部リンク（別のブックを参照する名前付き範囲の参照先）が元のファイルと違います');
 
   // 元のファイルのシートが、書き出したファイルにも全部あるか（シートごと消えていないか）
   for (const wsO of wbO.worksheets) if (!wbN.getWorksheet(wsO.name)) errs.push(`シート「${wsO.name}」が書き出したファイルにありません`);

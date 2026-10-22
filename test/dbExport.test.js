@@ -341,3 +341,43 @@ describe('【再発防止】名前付き範囲（オートフィルター・印�
     expect((await verifyDb(broken, buf, [], cfg)).join('\n')).toMatch(/名前付き範囲/);
   });
 });
+
+describe('【再発防止】外部リンク（別のブックを指す名前付き範囲の参照先）を落とさない', () => {
+  // ExcelJS は外部リンクの部品を書き出さず、「[1]シート!$A$1」の名前の参照先がなくなって Excel で「修復」になっていた
+  const LINK = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><externalBook r:id="rId1"><sheetNames><sheetName val="架空のシート"/></sheetNames></externalBook></externalLink>';
+  const LINK_RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="/架空/別のブック.xlsm" TargetMode="External"/></Relationships>';
+  async function withLink() {
+    const zip = await JSZip.loadAsync(await makeLedger());
+    zip.file('xl/externalLinks/externalLink1.xml', LINK);
+    zip.file('xl/externalLinks/_rels/externalLink1.xml.rels', LINK_RELS);
+    const rels = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+    zip.file('xl/_rels/workbook.xml.rels', rels.replace('</Relationships>', '<Relationship Id="rId99" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/></Relationships>'));
+    const ct = await zip.file('[Content_Types].xml').async('string');
+    zip.file('[Content_Types].xml', ct.replace('</Types>', '<Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/></Types>'));
+    const wb = await zip.file('xl/workbook.xml').async('string');
+    zip.file('xl/workbook.xml', wb.replace('</sheets>', '</sheets><externalReferences><externalReference r:id="rId99"/></externalReferences><definedNames><definedName name="外部の名前">[1]架空のシート!$T$7</definedName></definedNames>'));
+    return zip.generateAsync({ type: 'uint8array' });
+  }
+
+  it('書き戻したファイルに、外部リンクの部品・関連付け・ファイルの種類が元のとおりにある', async () => {
+    const buf = await withLink();
+    const { rows } = await readLedger(buf, cfg);
+    const { trees } = mergeLedger([], rows, cfg);
+    const r = await exportDb(buf, trees.map((t) => (t.treeNo === 'AB002' ? { ...t, ...entry } : t)), cfg);
+    expect(r.errors).toEqual([]);
+    const z = await JSZip.loadAsync(r.buffer);
+    const wb = await z.file('xl/workbook.xml').async('string');
+    // シートの一覧 → 外部リンク → 名前付き範囲 の並び（Excel の決まり）
+    expect(wb).toMatch(/<\/sheets><externalReferences><externalReference r:id="(rIdExt1)"\/><\/externalReferences><definedNames>/);
+    expect(await z.file('xl/externalLinks/externalLink1.xml').async('string')).toBe(LINK);
+    expect(await z.file('xl/externalLinks/_rels/externalLink1.xml.rels').async('string')).toBe(LINK_RELS);
+    expect(await z.file('xl/_rels/workbook.xml.rels').async('string')).toContain('Id="rIdExt1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"');
+    expect(await z.file('[Content_Types].xml').async('string')).toContain('PartName="/xl/externalLinks/externalLink1.xml"');
+  });
+
+  it('照合：外部リンクがなくなっていれば知らせる', async () => {
+    const buf = await withLink();
+    const broken = await (await load(buf)).xlsx.writeBuffer(); // ExcelJS でそのまま書き出すと落ちる
+    expect((await verifyDb(broken, buf, [], cfg)).join('\n')).toMatch(/外部リンク/);
+  });
+});
