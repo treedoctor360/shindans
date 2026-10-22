@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
+import { photoPlan } from '../src/core/photo.js';
 import { appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord, measuresToInitial } from '../src/core/noteMeasures.js';
 
 const cfg = structuredClone(cfgJson);
@@ -155,5 +156,32 @@ describe('決まった値を入れる（fromMeasures の set）', () => {
     };
     expect(bad((m) => (m.set = { site: '根元' }))).toContain('選択肢にありません');
     expect(bad((m) => (m.set = { nothing: 'x' }))).toContain('数値にありません');
+  });
+});
+
+describe('特記事項の寸法の1行から撮る写真を決める（kinds の photo / fullOnly）', () => {
+  const c = structuredClone(cfgJson);
+  c.noteMeasures.kinds.find((k) => k.key === 'decay').photo = '{place}の腐朽';
+  c.noteMeasures.kinds.find((k) => k.key === 'rod').fullOnly = true;
+  const base = { vigor: '並', lean: '無', deadBranch: '無', decay: '無', fungus: '無', initialNeeded: '否', grade: 'B' };
+  const tree = (measures, notes) => ({ ...base, measures, notes });
+  const decay = measureRecord('decay', '幹', {}, '幹の腐朽：10×20cm');
+  const rod = measureRecord('rod', '根株', {}, '根株の鋼棒貫入：2cm');
+
+  it('設定は正しい（photo・fullOnly を足しても通る）', () => expect(validateConfig(c)).toEqual({ ok: true, errors: [] }));
+
+  it('photo の種類の1行があれば、その弱点写真が要る', () => {
+    const p = photoPlan(tree([decay], `・${decay.line}`), c);
+    expect(p.mode).toBe('full+weak');
+    expect(p.slots.map((s) => s.name)).toEqual(['全景', '幹の腐朽']);
+  });
+
+  it('fullOnly の種類の1行だけなら、全景だけ要る', () => {
+    expect(photoPlan(tree([rod], `・${rod.line}`), c).mode).toBe('fullOnly');
+  });
+
+  it('特記事項から消した・書き換えた1行は使わない。設定にない種類は今までどおり', () => {
+    expect(photoPlan(tree([decay, rod], '・別の特記'), c).mode).toBe('none');
+    expect(photoPlan(tree([decay], `・${decay.line}`), cfgJson).mode).toBe('none');
   });
 });

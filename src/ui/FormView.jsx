@@ -279,8 +279,9 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
     <section className="view" data-testid="form">
       {/* 前後の木の帯は画面の上に残す（スクロールしても、いまどの木を入力しているか分かるように） */}
       <div className="sub tree-bar" style={{ justifyContent: 'space-between' }} data-testid="tree-bar">
-        <button type="button" className="btn" disabled={idx <= 0} onClick={() => go(ts[idx - 1].id)}>
+        <button type="button" className="btn nav-tree" disabled={idx <= 0} onClick={() => go(ts[idx - 1].id)} data-testid="prev-tree">
           ← 前の木
+          {idx > 0 && <small className="nav-no">{toHalf(ts[idx - 1].treeNo) || '(番号なし)'}</small>}
         </button>
         <span className="tree-bar-name">
           <b className="no" data-testid="tree-bar-no">{toHalf(t.treeNo) || '(番号なし)'}</b>{' '}
@@ -289,8 +290,9 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
             {idx + 1} / {ts.length}
           </small>
         </span>
-        <button type="button" className="btn" disabled={idx >= ts.length - 1} onClick={() => go(ts[idx + 1].id)}>
+        <button type="button" className="btn nav-tree" disabled={idx >= ts.length - 1} onClick={() => go(ts[idx + 1].id)} data-testid="next-tree">
           次の木 →
+          {idx < ts.length - 1 && <small className="nav-no">{toHalf(ts[idx + 1].treeNo) || '(番号なし)'}</small>}
         </button>
       </div>
 

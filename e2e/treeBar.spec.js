@@ -17,6 +17,9 @@ test('入力画面：スクロールしても樹木番号と樹種が上に残�
   await page.fill('#f-species', 'テストノキ');
   await expect(page.locator('[data-testid=tree-bar-no]')).toHaveText('AB002');
   await expect(page.locator('[data-testid=tree-bar-species]')).toHaveText('テストノキ');
+  // 前後の木の番号をボタンに出す
+  await expect(page.locator('[data-testid=prev-tree]')).toContainText('AB001');
+  await expect(page.locator('[data-testid=next-tree]')).toContainText('AB003');
 
   // 一番下の特記事項までスクロールしても、帯は上の帯（表題）のすぐ下に見えている
   await page.locator('#f-notes').scrollIntoViewIfNeeded();

@@ -309,3 +309,7 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .unsent-list li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--sunk);font-size:14px}
 .unsent-list li b{color:var(--danger);font-weight:600}
 .unsent-list .btn{flex:none;width:auto;padding:6px 14px;min-height:0}
+
+/* 入力画面の「前の木」「次の木」：ボタンの中に前後の樹木番号を小さく出す */
+.btn.nav-tree{display:inline-flex;flex-direction:column;align-items:center;line-height:1.2}
+.btn.nav-tree .nav-no{font-size:12px;color:var(--muted);font-weight:400;margin-top:2px}

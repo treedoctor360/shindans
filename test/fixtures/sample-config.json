@@ -917,7 +917,8 @@
               {
                 "key": "stake",
                 "label": "支柱の損傷",
-                "type": "choice"
+                "type": "choice",
+                "free": true
               }
             ]
           }

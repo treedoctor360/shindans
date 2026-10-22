@@ -47,6 +47,10 @@ function valuesFor(rec, spec, serialKey) {
 // 書き込む
 //  records：書き込む詳しい診断の記録（入力済み・削除していないもの。絞り込みは呼ぶ側）
 //  返す形：{ buffer, errors: [...], stats: { written: [{ treeNo, sheet, row }], skippedInBook: [番号…], skippedNoNumber: n } }
+// 設定で任意記入（free）にした項目の名前（選択肢にない値も書ける）
+const freeKeys = (cfg, form) =>
+  new Set((cfg.initialSurvey?.forms?.[form]?.sections || []).flatMap((sec) => sec.items).filter((it) => it.free).map((it) => it.key));
+
 export async function exportInitialBook(buffer, records, cfg) {
   const book = cfg.initialSurvey?.book;
   if (!book) throw new Error('設定に initialSurvey（データ入力用ブックの書式）がありません');
@@ -101,9 +105,10 @@ export async function exportInitialBook(buffer, records, cfg) {
         continue;
       }
       const vals = valuesFor(rec, spec, serialKey);
-      // 選択肢の項目は、入力規則にある値だけ（候補を出すだけの入力規則は除く）
+      // 選択肢の項目は、入力規則にある値だけ（候補を出すだけの入力規則と、設定で任意記入（free）にした項目は除く）
+      const free = freeKeys(cfg, spec.form);
       for (const v of vals) {
-        const opts = sheet.strict?.has(v.key) ? sheet.options[v.key] : null;
+        const opts = sheet.strict?.has(v.key) && !free.has(v.key) ? sheet.options[v.key] : null;
         if (opts && !opts.includes(String(v.value))) errors.push(`${no}：${sheet.name} の ${v.col}列（${v.key}）の「${v.value}」はブックの選択肢にありません`);
       }
       const row = freeRows.get(sheet.name).shift();
