@@ -247,6 +247,15 @@ describe('入力画面の部品（並び・選択肢・すべて無・未入力�
     const r = fillNone({ weather: '有' }, sec, cfg, opts);
     expect(r.record).toEqual({ weather: '有', stake: '無' });
     expect(r.keys).toEqual(['stake']);
+    // 項目に noneValue があれば、その値（物そのものが無いときの選択肢）を入れる。選択肢になければ「無」
+    const c2 = structuredClone(cfg);
+    const sec2 = c2.initialSurvey.forms.environment.sections[0];
+    sec2.items.find((x) => x.key === 'stake').noneValue = '支柱なし';
+    const r2 = fillNone({}, sec2, c2, opts);
+    expect(r2.record).toEqual({ weather: '無', stake: '支柱なし' });
+    expect(r2.custom).toBe(true);
+    expect(fillNone({}, sec2, c2, (it) => it.options || ['無', '有']).record.stake).toBe('無');
+    expect(validateConfig(c2)).toEqual({ ok: true, errors: [] });
   });
 
   it('未入力は現場の選択肢の項目だけ数え、保存で調査日・調査者を記録する', () => {
