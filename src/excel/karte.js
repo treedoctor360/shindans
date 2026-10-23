@@ -11,7 +11,8 @@
 //  photoCaptions … 写真・図の見出し（写真がどの見出しの下にあるかで、写真の名前にする）
 //  captionBelow … true なら、写真のすぐ下の文字（同じ列の範囲）があれば、それを写真の名前にする
 //  dropTexts … 評価の欄から除く言葉（表の飾りの言葉など）
-//  info    … 画面に「見出し 値」で並べる基本情報（見出しの文字の右 nth 番目の値。title で表示の名前を変えられる）
+//  info    … 画面に「見出し 値」で並べる基本情報（見出しの文字の右 nth 番目の値。title で表示の名前を変えられる。
+//            unit で値の後ろに単位を付ける（単位がセルの書式で、値に入っていないとき。例 樹高・幹周））
 //
 // 結合セルは左上のセルだけを読む（同じ文字を何度も拾わないように）。
 // 「□無 ■有」のようなチェック欄は、■の付いた言葉だけを取り出す。
@@ -142,7 +143,13 @@ export function readKarteRows(rows, images, specs, opts = {}) {
       v = valueRight(cells, def.label, def.nth || 1);
       if (v != null) break;
     }
-    if (v) info.push({ label: def.title || def.label.replace(/[：:]$/, ''), value: serialDate(checked(v)) });
+    if (v) {
+      let value = serialDate(checked(v));
+      // 数は Excel の小数の誤差（1.1499999999999999 など）を除く
+      if (/^-?\d+\.\d{7,}$/.test(value)) value = String(Number(Number(value).toPrecision(12)));
+      if (def.unit && /^-?\d+(\.\d+)?$/.test(value)) value = `${value} ${def.unit}`;
+      info.push({ label: def.title || def.label.replace(/[：:]$/, ''), value });
+    }
   }
 
   // 弱点（「有」の行だけ）
