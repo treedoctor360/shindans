@@ -209,18 +209,22 @@ const isEmpty = (v) => v == null || String(v).trim() === '';
 const NONE = (cfg) => cfg.initialSurvey?.noneValue || '無';
 
 // 「この区切りはすべて無」：区切りの中の、まだ選んでいない選択肢の項目に「無」を入れる（選んである項目は変えない）
-//  返す形：{ record, keys: [入れた項目…] }
+//  項目に設定 noneValue（例「支柱なし」）があれば、「無」の代わりにその値を入れる（物そのものが無いときの選択肢）
+//  返す形：{ record, keys: [入れた項目…], custom: noneValue を入れた項目があったか }
 export function fillNone(record, section, cfg, optionsFor) {
   const keys = [];
   const next = { ...record };
+  let custom = false;
   for (const it of section.items) {
     if (!['choice', 'weak'].includes(it.type) || !isEmpty(next[it.key])) continue;
     const opts = optionsFor(it) || [];
-    if (!opts.includes(NONE(cfg))) continue;
-    next[it.key] = NONE(cfg);
+    const value = it.noneValue && opts.includes(it.noneValue) ? it.noneValue : NONE(cfg);
+    if (!opts.includes(value)) continue;
+    next[it.key] = value;
     keys.push(it.key);
+    if (value !== NONE(cfg)) custom = true;
   }
-  return { record: next, keys };
+  return { record: next, keys, custom };
 }
 
 // 入力していない現場の項目（選択肢の項目だけ数える。「後で（机上）」の項目は数えない）。返す形：[項目名…]

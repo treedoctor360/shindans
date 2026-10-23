@@ -318,6 +318,7 @@ function validateInitialForms(forms, need) {
         need(ok, `${at}.sections[${i}].items[${j}] は { key, label, type（${INITIAL_ITEM_TYPES.join('・')}）, options? } の形にしてください`);
         if (ok) keys.push(it.key, ...(it.type === 'weak' ? [it.detailKey || `${it.key}Detail`] : []));
         if (ok && it.row != null) need(isStr(it.row) && ['number', 'text'].includes(it.type), `${at}.sections[${i}].items[${j}].row（横に並べる組の名前）は、数・1行の文字の項目に文字で付けてください`);
+        if (ok && it.noneValue != null) need(isStr(it.noneValue) && ['choice', 'weak'].includes(it.type), `${at}.sections[${i}].items[${j}].noneValue（「すべて無」で入れる値）は、選択肢の項目に文字で付けてください`);
         if (ok && it.free != null) need(it.free === true && it.type === 'choice', `${at}.sections[${i}].items[${j}].free（任意記入）は、選択肢の項目に true で付けてください`);
         if (ok && it.blank != null) need(isStr(it.blank) && ['number', 'text'].includes(it.type), `${at}.sections[${i}].items[${j}].blank（空欄のときの値）は、数・1行の文字の項目に文字で付けてください`);
       });

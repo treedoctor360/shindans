@@ -271,7 +271,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
     const r = fillNone(rec, sec, cfg, optionsFor);
     if (!r.keys.length) return toast('まだ選んでいない項目はありません');
     update((s) => updateInitial(s, rec.id, () => r.record));
-    toast(`まだ選んでいなかった${r.keys.length}項目を「${cfg.initialSurvey.noneValue || '無'}」にしました`);
+    toast(`まだ選んでいなかった${r.keys.length}項目を「${cfg.initialSurvey.noneValue || '無'}」${r.custom ? '（物が無い項目は「〜なし」）' : ''}にしました`);
   };
   const onSave = (force = false) => {
     const r = saveInitial(state, rec.id, cfg, { force });
