@@ -49,6 +49,7 @@ describe('カルテを読む', () => {
       { label: '木の種類', value: 'テストノキ' },
       { label: '植えた年', value: '1990' },
       { label: '手入れ', value: '年に1回' },
+      { label: '高さ', value: '12.3 m' }, // 数は Excel の小数の誤差を除き、unit を付ける
     ]);
     expect(t.items).toEqual([
       { part: '枝', item: '②折れた枝', result: '有', grade: 'C', detail: '1本、地上約5m' },
