@@ -57,6 +57,13 @@ test('簡易診断で「必要」にして保存すると続けて入力でき�
   await page.click('[data-group=stake] [data-v="無"]');
   await expect(page.locator('[data-free=stake]')).toHaveValue('');
 
+  // 保存（この木のまま）：保存しても同じ木の画面のまま（一覧へ戻らない）
+  await page.click('[data-testid=save-initial-stay]');
+  await expect(page.locator('.toast')).toContainText('保存しました');
+  await expect(page.locator('[data-testid=initial-view]')).toBeVisible();
+  await expect(page.locator('[data-testid=tree-bar]')).toContainText('入力済み');
+  await expect(page.locator('[data-free=stake]')).toBeVisible();
+
   await page.click('[data-testid=save-initial]');
   await expect(page.locator('.toast')).toContainText('保存しました');
 
