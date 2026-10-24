@@ -182,6 +182,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const forms = Object.keys(cfg?.initialSurvey?.forms || {});
   const [form, setForm] = useState(forms[0] || 'initial');
   const [missingAsk, setMissingAsk] = useState(null);
+  const [askStay, setAskStay] = useState(false); // 「未入力のまま保存する」の後も、押したボタンと同じ行き先にする
   const [showBook, setShowBook] = useState(false); // アプリの記録があるとき、ブックの内容を見るか
   const [askRemove, setAskRemove] = useState(false); // 取り消し・下書きを消すの確かめ中か
   useBarHeight(); // 樹木番号の帯の高さ（区切りの見出しを、その下に止めるため）
@@ -273,14 +274,22 @@ export default function InitialView({ state, update, config: cfg, toast, send })
     update((s) => updateInitial(s, rec.id, () => r.record));
     toast(`まだ選んでいなかった${r.keys.length}項目を「${cfg.initialSurvey.noneValue || '無'}」${r.custom ? '（物が無い項目は「〜なし」）' : ''}にしました`);
   };
-  const onSave = (force = false) => {
+  // 保存。stay：true なら同じ木の画面のまま（一覧へ戻らず、見ていた所から続けて直せる）
+  const onSave = (force = false, stay = false) => {
     const r = saveInitial(state, rec.id, cfg, { force });
-    if (!r.saved) return setMissingAsk(r.missing);
+    if (!r.saved) {
+      setMissingAsk(r.missing);
+      setAskStay(stay);
+      return;
+    }
     setMissingAsk(null);
     // 保存は、その時点の最新の状態に対して行う（送受信で届いた変更を古い状態で上書きしないように）
-    update((cur) => ({ ...saveInitial(cur, rec.id, cfg, { force: true }).state, view: 'list' }), { now: true }).then(() => send?.());
+    update((cur) => {
+      const saved = saveInitial(cur, rec.id, cfg, { force: true }).state;
+      return stay ? saved : { ...saved, view: 'list' };
+    }, { now: true }).then(() => send?.());
     toast(`${toHalf(tree.treeNo) || 'この木'} の${cfg.initialSurvey.label}を保存しました`);
-    window.scrollTo(0, 0);
+    if (!stay) window.scrollTo(0, 0);
   };
 
   return (
@@ -411,7 +420,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
             <div className="alert warn" role="alert">
               <span>未入力があります：{missing.join('、')}</span>
               <div className="acts">
-                <button type="button" className="btn" onClick={() => onSave(true)}>
+                <button type="button" className="btn" onClick={() => onSave(true, askStay)}>
                   未入力のまま保存する
                 </button>
               </div>
@@ -444,6 +453,10 @@ export default function InitialView({ state, update, config: cfg, toast, send })
           <SessionStamp state={state} update={update} />
           <button type="button" className="btn fill big" onClick={() => onSave(false)} data-testid="save-initial">
             保存して一覧へ
+          </button>
+          {/* 保存だけ：同じ木のまま続けて直せる */}
+          <button type="button" className="btn big" onClick={() => onSave(false, true)} data-testid="save-initial-stay">
+            保存（この木のまま）
           </button>
         </div>
       )}
