@@ -194,6 +194,12 @@ describe('特記事項の寸法の1行から撮る写真を決める（kinds の
     expect(p.shoot.map((x) => x.name)).toEqual(['全景', '枝の偏り', '根株の鋼棒貫入', '幹に古い傷あり']);
   });
 
+  it('【再現】手で直した寸法の1行は「：」の前だけを名前にし、弱点写真・寸法の1行と同じ名前なら二重に出さない', () => {
+    const p = photoPlan(tree([decay], `・${decay.line}\n・幹の腐朽：地上1m、10cm×5cm\n・根株の腐朽：地上0～0.2m、25cm×20cm`), c);
+    expect(p.slots.map((s) => s.name)).toEqual(['全景', '幹の腐朽']);
+    expect(p.extra.map((x) => x.name)).toEqual(['根株の腐朽']);
+  });
+
   it('弱点写真と同じ名前は二重に出さない。弱点がなくても特記があれば全景も撮る', () => {
     const p = photoPlan(tree([decay], `・${decay.line}`), c);
     expect(p.slots.map((s) => s.name)).toEqual(['全景', '幹の腐朽']);
