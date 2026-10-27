@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { photoPlan } from '../src/core/photo.js';
-import { appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord, measuresToInitial } from '../src/core/noteMeasures.js';
+import { addMeasure, appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord, measuresToInitial } from '../src/core/noteMeasures.js';
 
 const cfg = structuredClone(cfgJson);
 
@@ -208,5 +208,46 @@ describe('特記事項の寸法の1行から撮る写真を決める（kinds の
     expect(q.mode).toBe('none');
     expect(q.shoot.map((x) => x.name)).toEqual(['全景', '枝の偏り']);
     expect(photoPlan(tree([], ''), cfgJson).shoot).toEqual([]);
+  });
+});
+
+describe('同じ部位・種類の寸法を1行にまとめる（noteMeasures.merge）', () => {
+  const c = structuredClone(cfgJson);
+  c.noteMeasures.merge = true;
+  c.noteMeasures.parts.height.prefix = 'H';
+  c.noteMeasures.parts.size.unitEach = false;
+  c.initialSurvey.forms.initial.sections[1].items.push({ key: 't2', label: '腐朽', type: 'weak', parts: ['height', 'size'] });
+  c.initialSurvey.fromMeasures.push({ kind: 'decay', place: '根株', item: 't2', parts: { height: 'height', size: 'size' } });
+  const rec = (place, values) => measureRecord('decay', place, values, measureLine(c, 'decay', place, values));
+  const add = (tree, r) => ({ ...tree, ...addMeasure(tree, c, r) });
+
+  it('設定は通る', () => expect(validateConfig(c).errors).toEqual([]));
+
+  it('2つ目からは、同じ部位・種類の1行に①②…でまとめる。ほかの行・別の部位はそのまま', () => {
+    let t = { notes: '・ガードリング(不可)', measures: [] };
+    t = add(t, rec('根株', { height: { a: '0', b: '0.4' }, size: [{ w: '40', h: '20' }] }));
+    expect(t.notes).toBe('・ガードリング(不可)\n・根株の腐朽：H0～0.4m、40×20cm');
+    t = add(t, rec('幹', { size: [{ w: '10', h: '5' }] }));
+    t = add(t, rec('根株', { height: { a: '0', b: '0.5' }, size: [{ w: '50', h: '10' }] }));
+    t = add(t, rec('根株', { height: { a: '0', b: '0.3' }, size: [{ w: '30', h: '30' }] }));
+    expect(t.notes).toBe('・ガードリング(不可)\n・根株の腐朽：①H0～0.4m、40×20cm ②H0～0.5m、50×10cm ③H0～0.3m、30×30cm\n・幹の腐朽：10×5cm');
+    // まとめた寸法は、どれも特記事項に残っている扱い → 詳しい診断に全部写す（大きさは並べ、高さは一番低い所から高い所まで）
+    expect(t.measures.filter((m) => m.place === '根株').every((m) => t.notes.includes(m.line))).toBe(true);
+    const r = measuresToInitial(t, c);
+    expect(r.values.t2DetailParts.size).toHaveLength(3);
+    expect(r.values.t2DetailParts.height).toEqual({ a: '0', b: '0.5' });
+  });
+
+  it('手で書き直した1行はまとめない（新しい1行として足す）。merge がなければ今までどおり別の行', () => {
+    let t = { notes: '', measures: [] };
+    t = add(t, rec('根株', { size: [{ w: '40', h: '20' }] }));
+    t = { ...t, notes: '・根株の腐朽：40×20cm（南側）' };
+    t = add(t, rec('根株', { size: [{ w: '50', h: '10' }] }));
+    expect(t.notes).toBe('・根株の腐朽：40×20cm（南側）\n・根株の腐朽：50×10cm');
+    const off = { ...c, noteMeasures: { ...c.noteMeasures, merge: false } };
+    let u = { notes: '', measures: [] };
+    u = { ...u, ...addMeasure(u, off, rec('根株', { size: [{ w: '40', h: '20' }] })) };
+    u = { ...u, ...addMeasure(u, off, rec('根株', { size: [{ w: '50', h: '10' }] })) };
+    expect(u.notes.split('\n')).toHaveLength(2);
   });
 });
