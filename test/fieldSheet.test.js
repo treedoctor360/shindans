@@ -100,6 +100,30 @@ describe('野帳の出力', () => {
     expect(tags.some((t) => t.startsWith('AB002'))).toBe(false);
   });
 
+  it('特記事項・処置の文が枠に収まらなければ、文字を小さくする（最小 6pt）。短い文は 9pt のまま', async () => {
+    const tpl = await makeTemplate();
+    const long = Array.from({ length: 6 }, (_, i) => `・根株の腐朽：H0～0.${i + 1}m、40×20cm、20/170`).join('\n');
+    const huge = '・長い文。'.repeat(60);
+    const pages = buildPages([doneTree('AB001', { notes: long }), doneTree('AB002'), doneTree('AB003', { notes: huge })], cfg);
+    const r = await exportFieldSheet(tpl, pages, cfg);
+    expect(r.errors).toEqual([]);
+    const ws = (await load(r.buffer)).worksheets[0];
+    expect(ws.getCell('I4').font.size).toBeLessThan(9);
+    expect(ws.getCell('I4').font.size).toBeGreaterThanOrEqual(6);
+    expect(ws.getCell('I4').alignment.wrapText).toBe(true);
+    expect(ws.getCell('I6').font.size).toBe(9);
+    expect(ws.getCell('L6').font.size).toBe(9);
+    // 6pt でも収まらない欄は知らせる（文は切らない）
+    expect(ws.getCell('I8').font.size).toBe(6);
+    expect(r.tooLong).toEqual([{ page: '1', treeNo: 'AB003', field: '特記事項' }]);
+  });
+
+  it('最小の大きさは設定で変えられる（5〜9）', () => {
+    const c = structuredClone(cfg);
+    c.fieldSheet.minFontSize = 4;
+    expect(validateConfig(c).errors.join('\n')).toContain('minFontSize');
+  });
+
   it('前回の調査の印を番号の欄に書く。印が消えていたら照合で見つける', async () => {
     const tpl = await makeTemplate();
     const pages = buildPages([doneTree('AB001', { prevMarks: ['前回詳(2090)'] }), todo('AB002', { prevNote: '前の特記', prevMarks: ['前回詳(2090)'] })], cfg);

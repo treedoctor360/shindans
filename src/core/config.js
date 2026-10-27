@@ -344,6 +344,7 @@ function validateFieldSheet(fs, need) {
   need(ints.every((k) => Number.isInteger(fs[k]) && fs[k] > 0), `fieldSheet の ${ints.join('・')} は正の整数にしてください`);
   need(isNum(fs.charPx) && isNum(fs.defaultColWidth) && isNum(fs.optionFontPt) && isNum(fs.optionLinePt), 'fieldSheet の charPx・defaultColWidth・optionFontPt・optionLinePt は数にしてください');
   need(isStr(fs.font) && /^[0-9A-F]{8}$/i.test(fs.penColor || ''), 'fieldSheet の font・penColor（例 FF1F3D99）が必要です');
+  need(fs.minFontSize == null || (isNum(fs.minFontSize) && fs.minFontSize >= 5 && fs.minFontSize <= 9), 'fieldSheet.minFontSize（長い文を小さくするときの最小の文字の大きさ）は 5〜9 の数にしてください');
   const h = fs.header;
   need(isObj(h) && isAddr(h.title) && isAddr(h.inspector) && isAddr(h.date) && isStr(h.dateTemplate) && isNum(h.eraOffset) && isStr(h.multiLabel), 'fieldSheet.header の形が違います');
   const keys = ['treeNo', 'species', 'height', 'girth', 'branch', 'note', 'initial', 'treat', 'reason'];

@@ -18,6 +18,7 @@ import { fill, monthDay, num, toHalf } from '../core/text.js';
 import { composeTreat } from '../core/treat.js';
 import { isCheckKey, isLocked } from '../core/tree.js';
 import { cellValue } from './cell.js';
+import { fitSize } from './fitText.js';
 import { fixBorderXml, sheetFiles } from './xlsxFix.js';
 
 const EMU = 12700; // 1pt を図形の単位（EMU）にする係数
@@ -269,6 +270,9 @@ export async function exportFieldSheet(templateBuffer, pages, cfg, { title = '' 
   await wb.xlsx.load(templateBuffer);
   const src = wb.worksheets[0];
   const geo = templateGeometry(src, cfg);
+  const boxOf = cellBox(src.model.merges || [], geo); // 欄の枠（結合の範囲）の大きさ
+  const minFont = fs.minFontSize ?? 6; // 長い文を小さくするときの最小の大きさ（pt）
+  const tooLong = []; // 最小の大きさでも枠に収まらない欄 [{ page, treeNo, field }]
 
   // 先に必要な枚数だけ原本を複製する（値を書く前に）
   const model = src.model;
@@ -336,10 +340,16 @@ export async function exportFieldSheet(templateBuffer, pages, cfg, { title = '' 
       write(c.branch, branchCell(t), 10);
       for (const L of optLetters) ws.getCell(`${L}${r}`).value = null; // 選択肢は図形で描く
       perSheet[pi].push(...treeShapes(t, r - 1, geo, cfg));
-      write(c.note, noteLines(toHalf(t.notes)).map((x) => '・' + x).join('\n'), 9, true);
+      // 文の欄：枠に収まらなければ文字を小さくする（最小 minFont まで）
+      const writeText = (field, label, text) => {
+        const f = fitSize(text, boxOf(c[field], r), 9, minFont);
+        write(c[field], text, f.size, true);
+        if (!f.fits) tooLong.push({ page: ws.name, treeNo: half(t.treeNo), field: label });
+      };
+      writeText('note', '特記事項', noteLines(toHalf(t.notes)).map((x) => '・' + x).join('\n'));
       write(c.initial, t.initialNeeded || '', 14);
-      write(c.treat, toHalf(composeTreat(t, cfg)), 9, true);
-      write(c.reason, t.fellingReason || '', 9, true);
+      writeText('treat', '処置', toHalf(composeTreat(t, cfg)));
+      writeText('reason', '伐採理由', t.fellingReason || '');
     });
   });
 
@@ -347,7 +357,26 @@ export async function exportFieldSheet(templateBuffer, pages, cfg, { title = '' 
   wb.lastModifiedBy = '';
   const out = await addShapes(await wb.xlsx.writeBuffer(), perSheet, geo, fs.font);
   const errors = await verifyFieldSheet(out, templateBuffer, pages, cfg);
-  return errors.length ? { buffer: null, errors, pages } : { buffer: out, errors: [], pages };
+  return errors.length ? { buffer: null, errors, pages, tooLong } : { buffer: out, errors: [], pages, tooLong };
+}
+
+// 欄の枠（結合していれば結合の範囲）の幅・高さ（pt）を返す関数を作る
+//  merges：原本の結合の一覧（"M7:M8" の形）。geo：原本の列幅・行の高さ（templateGeometry）
+export function cellBox(merges, geo) {
+  const ranges = merges.map((m) => {
+    const [a, b = a] = m.split(':');
+    const p = (x) => ({ c: colIndex(x.match(/[A-Z]+/)[0]), r: Number(x.match(/\d+/)[0]) });
+    return { a: p(a), b: p(b) };
+  });
+  return (col, row) => {
+    const c = colIndex(col);
+    const m = ranges.find((x) => c >= x.a.c && c <= x.b.c && row >= x.a.r && row <= x.b.r) || { a: { c, r: row }, b: { c, r: row } };
+    let width = 0;
+    for (let i = m.a.c; i <= m.b.c; i++) width += geo.colW[i] ?? 0;
+    let height = 0;
+    for (let i = m.a.r; i <= m.b.r; i++) height += geo.rowH[i - 1] ?? 15;
+    return { width, height };
+  };
 }
 
 // ---------- 出力後の照合 ----------
