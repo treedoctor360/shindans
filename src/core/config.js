@@ -25,6 +25,7 @@ const RULE_FIELDS = {
   treatForbidden: ['pattern'],
   treatRequires: ['pattern', 'field', 'label'],
   gradeNeedsTreat: ['grades'],
+  measureNeedsCheck: ['items'],
   photoOver: [],
 };
 // 正規表現として読む項目
@@ -118,6 +119,11 @@ export function validateConfig(cfg) {
         need(
           isArr(r.items) && r.items.every((it) => ['height', 'branch'].includes(it.ratio) && isNum(it.threshold) && isStr(it.label)),
           `${at} の items の形が違います`,
+        );
+      if (r.type === 'measureNeedsCheck')
+        need(
+          isArr(r.items) && r.items.every((it) => isArr(it?.kinds) && it.kinds.every(isStr) && isStr(it.field) && isStr(it.label)) && (r.none == null || (isArr(r.none) && r.none.every(isStr))),
+          `${at} の items（[{ kinds: [寸法の種類], field, label }]）・none の形が違います`,
         );
       if (r.type === 'conflict') need(isCond(r.when) && isArr(r.hits) && r.hits.every((h) => isCond(h) && isStr(h.label)), `${at} の when・hits の形が違います`);
       if (r.actions != null)

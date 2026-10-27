@@ -9,7 +9,7 @@ import SettingsView from './ui/SettingsView.jsx';
 import { useAppState } from './ui/useAppState.js';
 import { useTopHeight } from './ui/useTopHeight.js';
 import { reviewStatesOf } from './store/review.js';
-import { APP_VERSION } from './version.js';
+import { APP_VERSION, BUILD_TIME } from './version.js';
 
 const TABS = [
   ['list', '一覧'],
@@ -51,7 +51,7 @@ export default function App() {
       <header className="top">
         <div className="top-row">
           <h1>{app.config?.job?.title || '樹木点検 野帳'}</h1>
-          <span className="proto">v{APP_VERSION}</span>
+          <span className="proto" data-testid="app-version">v{APP_VERSION}{BUILD_TIME && `（${BUILD_TIME}）`}</span>
         </div>
         <div className="meta" data-testid="top-meta">
           {app.config && state.trees.length ? `${groupLabel(state.trees, activeGroup(state, app.config), app.config)}　` : ''}

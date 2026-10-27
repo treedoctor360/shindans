@@ -4,7 +4,7 @@ import { bookCount } from '../store/initial.js';
 import { applyLedger, loadConfigText, importInitialBook, readKarteTemplateFile, readLedgerFile, saveTemplate } from '../store/state.js';
 import PrevSection from './PrevSection.jsx';
 import { diagnosticDump } from '../store/diagnose.js';
-import { APP_VERSION } from '../version.js';
+import { APP_VERSION, BUILD_TIME } from '../version.js';
 import ServerSection from './ServerSection.jsx';
 
 // 今日の日付 "2099-04-05"（端末の時刻で）
@@ -265,7 +265,7 @@ export default function SettingsView({ state, update, config, setConfig, toast }
           className="btn"
           data-testid="diagnostic"
           onClick={() => {
-            const json = JSON.stringify(diagnosticDump(state, config, APP_VERSION), null, 1);
+            const json = JSON.stringify(diagnosticDump(state, config, BUILD_TIME ? `${APP_VERSION} (${BUILD_TIME})` : APP_VERSION), null, 1);
             const a = document.createElement('a');
             a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
             a.download = `調べるためのデータ_${todayYmd().replace(/-/g, '')}.json`;

@@ -85,6 +85,17 @@ const CHECKERS = {
   // 健全度が指定の値なのに処置が空欄
   gradeNeedsTreat: (t, r, cfg) => (r.grades.includes(t.grade) && !composeTreat(t, cfg) ? { grade: t.grade } : null),
 
+  // 特記事項に寸法の1行（noteMeasures）があるのに、対応する点検項目が「無」（例：腐朽の寸法があるのに ④ が無）
+  //  items：[{ kinds: [寸法の種類], field: 点検項目, label }]。none：「無」とみなす値（既定 ['無']）
+  //  特記事項から消した・手で書き換えた1行の寸法は数えない。未選択は入力漏れで知らせるので、ここでは出さない
+  measureNeedsCheck: (t, r) => {
+    const notes = String(t.notes || '');
+    const kinds = new Set((t.measures || []).filter((m) => m?.line && notes.includes(m.line)).map((m) => m.kind));
+    const none = r.none || ['無'];
+    const hits = r.items.filter((it) => it.kinds.some((k) => kinds.has(k)) && none.includes(t[it.field])).map((it) => it.label);
+    return hits.length ? { hits: hits.join('・') } : null;
+  },
+
   // 弱点写真の枚数が上限を超えた
   photoOver: (t, r, cfg) => (photoPlan(t, cfg).over ? { max: cfg.photo.maxWeak } : null),
 };
