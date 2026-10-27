@@ -6,7 +6,7 @@ import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
-import { bookEntry, bookValues, discardInitial, karteExtras, karteRecords, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial } from '../src/store/initial.js';
+import { bookEntry, bookValues, discardInitial, karteExtras, karteRecords, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial, pendingMeasures, applyMeasures } from '../src/store/initial.js';
 import { addSticky, answerSticky, closeSticky, fieldLabel, reviewFields, reviewState, reviewStatesOf, setConfirm, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
 import { INITIAL, initialKey } from '../src/store/surveys.js';
@@ -350,6 +350,53 @@ describe('特記事項の寸法の引き継ぎ', () => {
     expect(r.b4DetailParts).toEqual({ count: '2', height: { a: '3' }, branchDia: '6' });
     expect(r.inherited).toContain('b4Detail');
     expect(r.b4).toBeUndefined(); // 「有」の程度は写さない（人が選ぶ）
+  });
+
+  it('寸法の1行がなくても、簡易診断の枯れ枝の本数（種類の prefill）を写す', () => {
+    const t = need('AB001', { deadBranch: '有', deadBranchCount: '3' });
+    const r = startInitial(S([t]), t, cfg).record;
+    expect(r.b4DetailParts).toEqual({ count: '3' });
+    expect(r.b4Detail).toBe('3本');
+    expect(r.inherited).toContain('b4Detail');
+  });
+
+  it('【再現】記録を作った後に簡易診断で寸法を足した・直したら知らせ、「写す」で写す・「このままにする」で知らせを消す', () => {
+    const line = '枯れ枝：2本、地上3m';
+    const m = (count, l = line) => ({ kind: 'deadBranch', place: '', values: { count, height: { a: '3' } }, line: l });
+    let t = need('AB001');
+    let s = startInitial(S([t]), t, cfg).state;
+    let rec = s.initials[0];
+    expect(pendingMeasures(rec, t, cfg)).toEqual([]);
+    // 後から寸法を足した
+    t = { ...t, notes: `・${line}`, measures: [m('2')] };
+    expect(pendingMeasures(rec, t, cfg)).toEqual([{ key: 'b4Detail', label: '枯れ枝', replaces: false }]);
+    rec = applyMeasures(rec, t, cfg, ['b4Detail']);
+    expect(rec.b4Detail).toBe('2本、地上3m');
+    expect(rec.inherited).toContain('b4Detail');
+    expect(pendingMeasures(rec, t, cfg)).toEqual([]);
+    // 初期診断で詳細を手で直した後に、簡易診断の寸法を直した → 置き換えることを知らせる
+    rec = { ...rec, b4Detail: '手で直した文', b4DetailManual: true };
+    expect(pendingMeasures(rec, t, cfg)).toEqual([]); // 簡易診断が変わっていなければ知らせない
+    const line2 = '枯れ枝：4本、地上3m';
+    t = { ...t, notes: `・${line2}`, measures: [m('4', line2)] };
+    expect(pendingMeasures(rec, t, cfg)).toEqual([{ key: 'b4Detail', label: '枯れ枝', replaces: true }]);
+    // このままにする：値は変えず、知らせだけ消える
+    const kept = applyMeasures(rec, t, cfg, ['b4Detail'], { apply: false });
+    expect(kept.b4Detail).toBe('手で直した文');
+    expect(pendingMeasures(kept, t, cfg)).toEqual([]);
+    // 写す：手で直した印も外して作り直す
+    const applied = applyMeasures(rec, t, cfg, ['b4Detail']);
+    expect(applied.b4Detail).toBe('4本、地上3m');
+    expect(applied.b4DetailManual).toBeUndefined();
+  });
+
+  it('前の版で作った記録（写した印がない）は、写した値と同じなら知らせない', () => {
+    const line = '枯れ枝：2本';
+    const t = need('AB001', { notes: `・${line}`, measures: [{ kind: 'deadBranch', place: '', values: { count: '2' }, line }] });
+    const { measureSig, ...old } = startInitial(S([t]), t, cfg).record;
+    expect(measureSig).toBeTruthy();
+    expect(pendingMeasures(old, t, cfg)).toEqual([]);
+    expect(pendingMeasures({ ...old, b4DetailParts: undefined, b4Detail: '' }, t, cfg)).toHaveLength(1);
   });
 });
 
