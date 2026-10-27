@@ -149,6 +149,52 @@ export function bookValues(entry, cfg) {
   return v;
 }
 
+// ---------- 簡易診断の寸法を、後から写す ----------
+//  記録を作ったときに写した寸法は、その後に簡易診断で足したり直したりしても写らない。
+//  そこで、写した時点の寸法の写し（measureSig）と今の寸法を比べ、変わった・まだ写していない弱点の項目を知らせる。
+//  写すのは人がボタンを押したときだけ（初期診断で手で直した内容を、黙って置き換えないため）
+const sigOf = (v) => JSON.stringify(v ?? null);
+
+// まだ写していない（または簡易診断で変わった）寸法。返す形：[{ key: 詳細の項目, label: 弱点の名前, replaces: 今の詳細を置き換えるか }]
+export function pendingMeasures(rec, tree, cfg) {
+  if (!rec || !tree) return [];
+  const ms = measuresToInitial(tree, cfg);
+  const out = [];
+  for (const dk of ms.keys) {
+    const pk = partsKeyOf(dk);
+    const now = sigOf(ms.values[pk]);
+    const sig = rec.measureSig?.[dk];
+    if (sig === now) continue; // 前に写した（または「このまま」にした）時から変わっていない
+    if (sig === undefined && sigOf(rec[pk]) === now) continue; // 前の版で写したもの（印がない）と同じ
+    const item = itemByDetailKey(cfg, dk);
+    out.push({ key: dk, label: item?.label || dk, replaces: !!String(rec[dk] ?? '').trim() && rec[dk] !== ms.values[dk] });
+  }
+  return out;
+}
+
+// 寸法を写す（keys の項目だけ）。apply=false なら写さずに「このまま」の印だけ付ける（同じ寸法では知らせない）
+export function applyMeasures(rec, tree, cfg, keys, { apply = true } = {}) {
+  const ms = measuresToInitial(tree, cfg);
+  const next = { ...rec, measureSig: { ...(rec.measureSig || {}) } };
+  for (const dk of keys) {
+    const pk = partsKeyOf(dk);
+    if (!(dk in ms.values)) continue;
+    next.measureSig[dk] = sigOf(ms.values[pk]);
+    if (!apply) continue;
+    next[dk] = ms.values[dk];
+    next[pk] = structuredClone(ms.values[pk]);
+    delete next[manualKeyOf(dk)]; // 手で直した文の印を外す（写した数値から文を作り直す）
+    next.inherited = [...new Set([...(rec.inherited || []), dk])];
+  }
+  return next;
+}
+
+function itemByDetailKey(cfg, dk) {
+  for (const form of Object.values(cfg.initialSurvey?.forms || {}))
+    for (const sec of form.sections || []) for (const it of sec.items || []) if (it.type === 'weak' && detailKeyOfItem(it) === dk) return it;
+  return null;
+}
+
 // 記録を作る（すでにあれば何もしない）。返す形：{ state, record, created }
 //  元の木を見分ける項目（シートの種類・番号・何本目・uid）と場所の情報を写し、簡易診断の値を引き継ぐ
 //  ブックで入力済みの木は、force を付けたときだけ作る。そのときはブックの値を下書きにする（引き継ぎより優先）
@@ -167,6 +213,7 @@ export function startInitial(state, tree, cfg, { now = new Date().toISOString(),
   const measureKeys = ms.keys.filter((dk) => !(dk in fromBook));
   const fromMeasures = {};
   for (const dk of measureKeys) Object.assign(fromMeasures, { [dk]: ms.values[dk], [partsKeyOf(dk)]: ms.values[partsKeyOf(dk)] });
+  if (measureKeys.length) fromMeasures.measureSig = Object.fromEntries(measureKeys.map((dk) => [dk, sigOf(ms.values[partsKeyOf(dk)])]));
   const record = {
     id: `ini:${tree.id}`,
     ...copy,

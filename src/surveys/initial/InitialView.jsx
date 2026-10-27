@@ -20,6 +20,8 @@ import {
   initialWordingIssues,
   fixInitialWording,
   optionsOf,
+  applyMeasures,
+  pendingMeasures,
   saveInitial,
   startInitial,
   updateInitial,
@@ -229,6 +231,16 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const status = initialStatus(tree, state, cfg);
   const missing = readOnly ? [] : missingInitial(rec, cfg);
   const wording = readOnly ? [] : initialWordingIssues(rec, cfg); // 表記の統一（設定 wording）
+  // 簡易診断の寸法で、まだ写していない（簡易診断で後から足した・直した）もの
+  const pending = readOnly ? [] : pendingMeasures(rec, tree, cfg);
+  const onMeasures = (apply) => {
+    // その時点の最新の木と記録に対して行う
+    update((cur) => {
+      const t = cur.trees.find((x) => x.id === tree.id) || tree;
+      return updateInitial(cur, rec.id, (r) => applyMeasures(r, t, cfg, pendingMeasures(r, t, cfg).map((x) => x.key), { apply }));
+    });
+    toast(apply ? `簡易診断の寸法を写しました（${pending.map((x) => x.label).join('、')}）` : '今の内容のままにしました');
+  };
 
   // 入力の取り消し・下書きを消す
   const label = cfg.initialSurvey.label;
@@ -347,6 +359,25 @@ export default function InitialView({ state, update, config: cfg, toast, send })
           </div>
         )}
       </div>
+
+      {pending.length > 0 && (
+        <div className="sec">
+          <div className="alert info" data-testid="measures-pending">
+            <span>
+              簡易診断の寸法で、まだ写していないものがあります：{pending.map((x) => x.label).join('、')}
+              {pending.some((x) => x.replaces) && `（${pending.filter((x) => x.replaces).map((x) => x.label).join('、')}は、今の詳細を置き換えます）`}
+            </span>
+            <div className="acts">
+              <button type="button" className="btn fill" onClick={() => onMeasures(true)} data-testid="measures-apply">
+                写す
+              </button>
+              <button type="button" className="btn" onClick={() => onMeasures(false)} data-testid="measures-keep">
+                このままにする
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!viewingBook && (
         <ReviewPanel

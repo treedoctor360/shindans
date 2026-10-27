@@ -161,8 +161,14 @@ export function measuresToInitial(tree, cfg) {
   if (!rules.length) return out;
   const notes = String(tree?.notes || '');
   const byItem = new Map();
-  for (const m of tree?.measures || []) {
-    if (!m?.line || !notes.includes(m.line)) continue;
+  const used = (tree?.measures || []).filter((m) => m?.line && notes.includes(m.line));
+  // 寸法の1行がない種類でも、簡易診断の入力から入れておける値（種類の prefill。例 枯れ枝の本数 ← 簡易の枯れ枝の本数）は写す
+  for (const kind of measureKinds(cfg)) {
+    if (!kind.prefill || used.some((m) => m.kind === kind.key)) continue;
+    const values = measurePrefill(kind.key, tree, cfg);
+    if (Object.keys(values).length) used.push({ kind: kind.key, place: '', values, line: '' });
+  }
+  for (const m of used) {
     const rule = rules.find((x) => x.kind === m.kind && (x.place == null || x.place === m.place));
     if (!rule) continue;
     const vals = byItem.get(rule.item) || {};
