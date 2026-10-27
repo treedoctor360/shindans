@@ -2,7 +2,7 @@
 //  種類と部位を選び、数字の欄に入れる → 「特記事項に追加」で1行足す（記号・単位はアプリが付ける）。
 //  何か所でも続けて足せる（足すたびに数字の欄は空に戻る）。書き方は設定 noteMeasures（noteMeasures.js）
 import { useState } from 'react';
-import { measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord } from '../core/noteMeasures.js';
+import { addMeasure, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord } from '../core/noteMeasures.js';
 import PartsInputs from './PartsInputs.jsx';
 import { withAuto } from '../core/detailParts.js';
 
@@ -34,6 +34,9 @@ export default function NoteMeasures({ cfg, tree, onAdd }) {
       </button>
     );
   const line = measureLine(cfg, kind, place, values);
+  // 同じ部位・種類の1行にまとめるときは、まとめた後の1行を見せる
+  const preview = line ? addMeasure(tree, cfg, measureRecord(kind, measurePlaces(kind, cfg).length ? place : '', values, line)).measures.at(-1).line : '';
+  const merging = !!line && preview !== line;
   return (
     <div className="measure" data-testid="measure">
       <div className="chips" role="group" aria-label="種類">
@@ -70,7 +73,7 @@ export default function NoteMeasures({ cfg, tree, onAdd }) {
         />
       )}
       <div className="hint" data-testid="measure-preview">
-        {line || (!kind ? '種類を選んでください' : place || !measurePlaces(kind, cfg).length ? '数字を入れると、ここに足す1行が出ます' : '部位を選んでください')}
+        {line ? (merging ? `同じ部位の1行にまとめます：${preview}` : line) : (!kind ? '種類を選んでください' : place || !measurePlaces(kind, cfg).length ? '数字を入れると、ここに足す1行が出ます' : '部位を選んでください')}
       </div>
       <div className="sub">
         <button

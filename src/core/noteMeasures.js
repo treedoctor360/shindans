@@ -46,14 +46,57 @@ export function measurePrefill(kindKey, tree, cfg) {
 
 // 1行を作る。種類・（部位を選ぶ種類なら）部位が選ばれていない、または数字が何もなければ空
 export function measureLine(cfg, kindKey, place, values) {
-  const m = cfg.noteMeasures;
   const kind = kindOf(kindKey, cfg);
   if (!kind) return '';
   const needPlace = measurePlaces(kindKey, cfg).length > 0;
   if (needPlace && !place) return '';
-  const text = buildText(values, measureParts(kindKey, cfg), m.join ?? '、');
+  const text = measureText(cfg, kindKey, values);
   if (!text) return '';
-  return (kind.line || m.line || '{place}の{kind}：{text}').replace('{place}', needPlace ? place : '').replace('{kind}', kind.label).replace('{text}', text);
+  return lineOf(cfg, kind, needPlace ? place : '', text);
+}
+
+// 数字の部分だけの文（例「H0～0.4m、40×20cm」）
+const measureText = (cfg, kindKey, values) => buildText(values, measureParts(kindKey, cfg), cfg.noteMeasures?.join ?? '、');
+const lineOf = (cfg, kind, place, text) =>
+  (kind.line || cfg.noteMeasures.line || '{place}の{kind}：{text}').replace('{place}', place).replace('{kind}', kind.label).replace('{text}', text);
+
+// 丸数字（①〜⑳。それより多ければ「(21)」）
+const circled = (i) => (i < 20 ? String.fromCharCode(0x2460 + i) : `(${i + 1})`);
+
+// 寸法の1行を特記事項に足す。返す形：{ notes, measures }
+//  設定 noteMeasures.merge が true なら、同じ部位・同じ種類の1行が特記事項に残っていれば1行にまとめる
+//  （例「根株の腐朽：①H0～0.4m、40×20cm ②H0～0.5m、50×10cm」。野帳の枠に収めるため）。
+//  まとめた1行は、まとめた寸法の記録すべての line にする（特記事項にその1行が残っている間は、どれも詳しい診断へ写せる）
+export function addMeasure(tree, cfg, rec) {
+  const notes = String(tree?.notes || '');
+  const measures = tree?.measures || [];
+  const kind = kindOf(rec.kind, cfg);
+  const lines = notes.split('\n');
+  const bare = (l) => l.replace(/^[・･\-\s]+/, '').trim();
+  const same = cfg.noteMeasures?.merge && kind
+    ? measures.filter((x) => x.kind === rec.kind && (x.place || '') === (rec.place || '') && x.line && lines.some((l) => bare(l) === x.line))
+    : [];
+  if (!same.length) return { notes: appendNoteLine(notes, rec.line), measures: [...measures, rec] };
+  // 特記事項に残っている同じ部位・種類の1行（まとめた1行なら、その中の寸法すべて）と、新しい寸法を並べ直す
+  const oldLines = [...new Set(same.map((x) => x.line))];
+  const group = [...measures.filter((x) => oldLines.includes(x.line)), rec];
+  const texts = group.map((x) => measureText(cfg, x.kind, x.values)).filter(Boolean);
+  const merged = lineOf(cfg, kind, rec.place || '', texts.length > 1 ? texts.map((t, i) => circled(i) + t).join(' ') : texts[0] || '');
+  // 最初に出てくる1行の所に、まとめた1行を置く（ほかの同じ1行は消す）
+  let placed = false;
+  const nextLines = [];
+  for (const l of lines) {
+    if (!oldLines.includes(bare(l))) {
+      nextLines.push(l);
+      continue;
+    }
+    if (!placed) nextLines.push(`・${merged}`);
+    placed = true;
+  }
+  return {
+    notes: nextLines.join('\n'),
+    measures: [...measures.map((x) => (oldLines.includes(x.line) ? { ...x, line: merged } : x)), { ...rec, line: merged }],
+  };
 }
 
 // 特記事項に残っている寸法の1行から、撮る写真を決める（設定の kinds の photo / fullOnly。写真の判定 photo.js から呼ぶ）
@@ -103,6 +146,7 @@ export function validateNoteMeasures(m, need) {
   need(Array.isArray(m.places) && m.places.length > 0 && m.places.every(isStr), 'noteMeasures.places（部位の選択肢）を1つ以上の文字で書いてください');
   need(m.line == null || (isStr(m.line) && m.line.includes('{text}')), 'noteMeasures.line は {text} を含む文字にしてください');
   need(m.join == null || typeof m.join === 'string', 'noteMeasures.join は文字にしてください');
+  need(m.merge == null || typeof m.merge === 'boolean', 'noteMeasures.merge は true か false にしてください');
   const okDefs = validatePartDefs(m.parts, 'noteMeasures.parts', need);
   if (!need(Array.isArray(m.kinds) && m.kinds.length > 0, 'noteMeasures.kinds（寸法の種類）がありません')) return;
   const keys = new Set();
