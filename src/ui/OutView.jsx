@@ -129,7 +129,11 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
       download(`野帳_${safeName(groupTrees[0]?.[sheet?.identify]) || '野帳'}_${yymmdd()}.xlsx`, r.buffer);
       const nDone = groupTrees.filter((t) => t.done).length;
       const nMarked = marked.filter((t) => t.prevMarks.length).length;
-      toast(`検査OK（${pages.length}枚・入力済み${nDone}本の全項目が一致${nMarked ? `・前回の印${nMarked}本` : ''}）。保存しました`);
+      const long = r.tooLong || [];
+      toast(
+        `検査OK（${pages.length}枚・入力済み${nDone}本の全項目が一致${nMarked ? `・前回の印${nMarked}本` : ''}）。保存しました` +
+          (long.length ? `。文字を小さくしても枠に収まらない欄：${long.map((x) => `${x.treeNo}の${x.field}`).join('、')}（短くするか、野帳で確かめてください）` : ''),
+      );
     });
 
   const onDb = () =>
@@ -194,6 +198,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
       setKarteLong(r.stats.tooLong || []);
       toast(
         `検査OK。${n}本・${r.stats.sheets.length}枚のカルテを作りました（確認用。提出はマクロで作ったカルテで）` +
+          (r.stats.grown?.length ? `。長い文が入るよう${r.stats.grown.length}か所の行の高さを広げました` : '') +
           (r.stats.tooLong?.length ? `。文字を小さくしても枠に収まらない欄が${r.stats.tooLong.length}か所あります（画面の下に一覧）` : ''),
       );
     });
