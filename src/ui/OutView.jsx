@@ -59,6 +59,12 @@ function columns(cfg, siteType, ledgerColumns, trees) {
 }
 
 // 表のセルに出す文字
+// 一覧表形式の右端に足す列：特記事項（野帳の特記事項の全文。一覧表用の特記では寸法などが省かれるため）
+const FULL_NOTE = '特記事項（全文）';
+const fullNoteOf = (t) => (t.source === 'app' ? String(t.notes || '') : '');
+// 全文の列は色を変える（一覧表にない列だと分かるように）
+const fullNoteStyle = { background: 'var(--info-soft)', minWidth: '16em' };
+
 function cellText(t, k, v, cfg) {
   const f = cfg.dbFormat;
   if (k === f.serialKey) return t.ledgerRow ? t.ledgerSerial || '' : (f.serialFor?.[t.status] ?? f.newSerial ?? '');
@@ -227,10 +233,10 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   };
 
   const onCopy = async () => {
-    const head = cols.map((c) => c[1]);
+    const head = [...cols.map((c) => c[1]), FULL_NOTE];
     const rows = shown.map((t) => {
       const v = dbValues(t, cfg);
-      return cols.map(([k]) => cellText(t, k, v[k], cfg));
+      return [...cols.map(([k]) => cellText(t, k, v[k], cfg)), fullNoteOf(t)];
     });
     const tsv = [head, ...rows].map((r) => r.map((x) => String(x ?? '').replace(/\t|\n/g, ' ')).join('\t')).join('\n');
     try {
@@ -442,7 +448,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
       <div className="sec">
         <h2>一覧表形式：{gname}</h2>
         <div className="hint">
-          入力済み {shown.length}本（アプリ {shown.filter((t) => t.source === 'app').length}本・台帳 {shown.filter((t) => t.source === 'ledger').length}本）。色付きの行がアプリで入力した木です。列の並びは一覧表と同じです。
+          入力済み {shown.length}本（アプリ {shown.filter((t) => t.source === 'app').length}本・台帳 {shown.filter((t) => t.source === 'ledger').length}本）。色付きの行がアプリで入力した木です。列の並びは一覧表と同じです。右端の青い列は一覧表にない列で、特記事項の全文です。
         </div>
         <div className="tbl">
           <table data-testid="out-table">
@@ -451,6 +457,9 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
                 {cols.map(([k, l]) => (
                   <th key={k}>{l}</th>
                 ))}
+                <th style={fullNoteStyle} data-testid="out-note-full-head">
+                  {FULL_NOTE}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -463,12 +472,15 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
                         {cellText(t, k, v[k], cfg)}
                       </td>
                     ))}
+                    <td style={{ whiteSpace: 'pre-line', ...fullNoteStyle }} data-testid="out-note-full">
+                      {fullNoteOf(t)}
+                    </td>
                   </tr>
                 );
               })}
               {!shown.length && (
                 <tr>
-                  <td colSpan={cols.length}>入力済みの木はまだありません</td>
+                  <td colSpan={cols.length + 1}>入力済みの木はまだありません</td>
                 </tr>
               )}
             </tbody>

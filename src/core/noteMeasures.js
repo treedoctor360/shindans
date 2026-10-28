@@ -8,6 +8,7 @@
 //              places：その種類の部位の選択肢（[] なら部位を選ばない）。line：その種類の1行の形
 //              prefill：{ 欄の名前: 木の項目 } 開いたときに木の入力から入れておく（例 本数 ← 枯れ枝の本数）
 //              photo：その1行があるときに撮る弱点写真の名前（{place} で部位を入れられる）。fullOnly：true なら全景だけ要る
+//              db：その1行があるときに一覧表用の特記に入れる言い回し（{place} で部位。notes.js の autoDbNote）
 //   line   … 1行の形（省略時「{place}の{kind}：{text}」）
 // 作った1行は特記事項（野帳）に足すだけで、ほかの項目は変えない。足した後は手で直せる。
 // 足した1行の元の数字は木の measures に残し、詳しい診断の記録を作るときに弱点の詳細へ写す
@@ -160,6 +161,7 @@ export function validateNoteMeasures(m, need) {
     need(k.line == null || (isStr(k.line) && k.line.includes('{text}')), `${at}.line は {text} を含む文字にしてください`);
     need(k.photo == null || isStr(k.photo), `${at}.photo は写真の名前（文字）にしてください`);
     need(k.fullOnly == null || typeof k.fullOnly === 'boolean', `${at}.fullOnly は true か false にしてください`);
+    need(k.db == null || isStr(k.db), `${at}.db は一覧表用の言い回し（文字）にしてください`);
     need(
       k.prefill == null || (isObj(k.prefill) && Object.entries(k.prefill).every(([p, f]) => k.parts.includes(p) && isStr(f))),
       `${at}.prefill は { その種類の欄の名前: 木の項目 } の形にしてください`,

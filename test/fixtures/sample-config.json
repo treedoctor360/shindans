@@ -1312,6 +1312,12 @@
         "type": "flag",
         "label": "最大のもの",
         "text": "（最大）"
+      },
+      "len": {
+        "type": "number",
+        "label": "長さ",
+        "prefix": "L",
+        "unit": "m"
       }
     },
     "kinds": [
@@ -1355,6 +1361,21 @@
           "branchLen",
           "max"
         ]
+      },
+      {
+        "key": "overhang",
+        "label": "はみ出し",
+        "places": [
+          "左",
+          "右"
+        ],
+        "line": "{kind}({place})：{text}",
+        "parts": [
+          "height",
+          "len"
+        ],
+        "photo": "はみ出し枝",
+        "db": "はみ出し({place}側)"
       }
     ]
   },

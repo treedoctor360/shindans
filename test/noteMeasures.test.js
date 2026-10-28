@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
+import { autoDbNote, dbNoteOf } from '../src/core/notes.js';
 import { photoPlan } from '../src/core/photo.js';
 import { addMeasure, appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord, measuresToInitial } from '../src/core/noteMeasures.js';
 
@@ -9,7 +10,7 @@ const cfg = structuredClone(cfgJson);
 
 describe('寸法の1行', () => {
   it('部位・種類と数字から、決まった書き方の1行を作る', () => {
-    expect(measureKinds(cfg).map((k) => k.label)).toEqual(['腐朽', '鋼棒貫入', '打診音異常', '枯れ枝']);
+    expect(measureKinds(cfg).map((k) => k.label)).toEqual(['腐朽', '鋼棒貫入', '打診音異常', '枯れ枝', 'はみ出し']);
     expect(measureParts('decay', cfg).map((p) => p.name)).toEqual(['height', 'size', 'circ', 'core']);
     expect(measureLine(cfg, 'decay', '幹', { height: { a: '２' }, size: [{ w: '20', h: '50' }], circ: { a: '110', b: '150' }, core: true })).toBe(
       '幹の腐朽：地上2m、20cm×50cm、110/150（芯達）',
@@ -249,5 +250,43 @@ describe('同じ部位・種類の寸法を1行にまとめる（noteMeasures.me
     u = { ...u, ...addMeasure(u, off, rec('根株', { size: [{ w: '40', h: '20' }] })) };
     u = { ...u, ...addMeasure(u, off, rec('根株', { size: [{ w: '50', h: '10' }] })) };
     expect(u.notes.split('\n')).toHaveLength(2);
+  });
+});
+
+describe('寸法の1行を一覧表用の特記にも入れる（kinds の db）', () => {
+  it('高さと長さの1行（部位は種類の places）', () => {
+    expect(measurePlaces('overhang', cfg)).toEqual(['左', '右']);
+    expect(measureLine(cfg, 'overhang', '右', { height: { a: '2.5' }, len: '1.2' })).toBe('はみ出し(右)：地上2.5m、L1.2m');
+  });
+  it('特記事項に残っている寸法の1行は、db の言い回しで一覧表用の特記に入る（定型文と同じく入力した順）', () => {
+    const line = measureLine(cfg, 'overhang', '右', { height: { a: '2.5' }, len: '1.2' });
+    const t = { notes: '', measures: [] };
+    const a = addMeasure({ notes: '・枝の偏り' }, cfg, measureRecord('overhang', '右', { height: { a: '2.5' }, len: '1.2' }, line));
+    Object.assign(t, a);
+    expect(dbNoteOf(t, cfg)).toBe('枝の偏り、はみ出し(右側)あり。');
+    // 写真も定型文と同じ名前
+    expect(photoPlan({ ...t, vigor: cfg.options.vigor[0] }, cfg).slots.map((x) => x.name)).toContain('はみ出し枝');
+  });
+  it('同じ部位の2つ目は①②でまとめた1行になり、一覧表用は1回だけ', () => {
+    const mc = structuredClone(cfgJson);
+    mc.noteMeasures.merge = true;
+    let t = { notes: '', measures: [] };
+    for (const len of ['1.2', '0.8']) {
+      const v = { height: { a: '2.5' }, len };
+      t = { ...t, ...addMeasure(t, mc, measureRecord('overhang', '左', v, measureLine(mc, 'overhang', '左', v))) };
+    }
+    expect(t.notes).toBe('・はみ出し(左)：①地上2.5m、L1.2m ②地上2.5m、L0.8m');
+    expect(dbNoteOf(t, mc)).toBe('はみ出し(左側)あり。');
+  });
+  it('手で消した・書き換えた行や、db のない種類は入れない', () => {
+    const line = measureLine(cfg, 'overhang', '右', { len: '1' });
+    expect(autoDbNote('・はみ出し(右)：L1m（直した）', cfg, [measureRecord('overhang', '右', { len: '1' }, line)])).toBe('');
+    const tap = measureLine(cfg, 'tap', '幹', { height: { a: '1' } });
+    expect(autoDbNote(`・${tap}`, cfg, [measureRecord('tap', '幹', { height: { a: '1' } }, tap)])).toBe('');
+  });
+  it('db は文字でなければ設定の誤り', () => {
+    const bad = structuredClone(cfgJson);
+    bad.noteMeasures.kinds.find((k) => k.key === 'overhang').db = 1;
+    expect(validateConfig(bad).errors.join()).toContain('.db');
   });
 });
