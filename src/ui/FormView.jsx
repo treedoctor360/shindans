@@ -128,6 +128,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const [asking, setAsking] = useState(null); // 確かめ中のボタン { alertId, act }
   const [undo, setUndo] = useState(null); // 直前の操作を取り消すための、押す前の木 { treeId, before, label }
   const [askRemove, setAskRemove] = useState(''); // 削除・入力の取り消しを確かめ中の木の id
+  const [askGirth, setAskGirth] = useState(''); // 値の入った幹周を減らすか確かめ中の木の id
   const [askAfter, setAskAfter] = useState('next'); // 未入力を確かめ中の保存の行き先
 
   if (!cfg || !state.trees.length) {
@@ -434,15 +435,47 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                 ))}
               </div>
               <div className="sub">
-                <button type="button" className="more" onClick={() => change((x) => ({ ...x, girths: [...x.girths, ''] }))}>
+                <button type="button" className="more" data-testid="girth-add" onClick={() => change((x) => ({ ...x, girths: [...x.girths, ''] }))}>
                   ＋ 幹を追加
                 </button>
                 {t.girths.length > 1 && (
-                  <button type="button" className="more" onClick={() => change((x) => ({ ...x, girths: x.girths.slice(0, -1) }))}>
+                  <button
+                    type="button"
+                    className="more"
+                    data-testid="girth-remove"
+                    onClick={() => {
+                      // 最後の幹周が空ならすぐ減らす。値が入っていれば、消してよいか確かめる（押し間違えで消さない）
+                      if (toHalf(t.girths.at(-1) ?? '').trim()) return setAskGirth(t.id);
+                      change((x) => ({ ...x, girths: x.girths.slice(0, -1) }));
+                    }}
+                  >
                     − 1本減らす
                   </button>
                 )}
               </div>
+              {askGirth === t.id && t.girths.length > 1 && (
+                <div className="alert danger" data-testid="girth-remove-ask">
+                  <span>
+                    {t.girths.length}本目（{toHalf(t.girths.at(-1)).trim()}m）を消しますか？
+                  </span>
+                  <div className="acts">
+                    <button
+                      type="button"
+                      className="btn fill"
+                      data-testid="girth-remove-ok"
+                      onClick={() => {
+                        setAskGirth('');
+                        change((x) => ({ ...x, girths: x.girths.slice(0, -1) }));
+                      }}
+                    >
+                      消す
+                    </button>
+                    <button type="button" className="btn" data-testid="girth-remove-cancel" onClick={() => setAskGirth('')}>
+                      やめる
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <div className="grid2">
