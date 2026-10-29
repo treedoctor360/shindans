@@ -226,6 +226,17 @@ function validateInitialSurvey(s, cfg, need) {
   if (s.forms != null) validateInitialForms(s.forms, need);
   validateDetailParts(s, need); // 弱点の詳細を組み立てる部品（省略可）
   if (s.fromMeasures != null) validateFromMeasures(s.fromMeasures, cfg, need); // 特記事項の寸法から弱点の詳細へ写す（省略可）
+  if (s.crossCheck != null) {
+    // 簡易診断で「有」なのに詳しい診断で「有」がない、の注意（省略可）
+    const weakKeys = new Set(Object.values(s.forms || {}).flatMap((f) => (f?.sections || []).flatMap((sec) => (sec?.items || []).filter((it) => it?.type === 'weak').map((it) => it.key))));
+    if (need(Array.isArray(s.crossCheck), 'initialSurvey.crossCheck は並び（[…]）にしてください'))
+      s.crossCheck.forEach((r, i) => {
+        const at = `initialSurvey.crossCheck[${i}]`;
+        const eqOk = typeof r?.eq === 'string' || (Array.isArray(r?.eq) && r.eq.length > 0 && r.eq.every((x) => typeof x === 'string'));
+        if (!need(r && typeof r.field === 'string' && eqOk && Array.isArray(r.items) && r.items.length > 0 && (r.label == null || typeof r.label === 'string'), `${at} は { field, eq: 値 か [値…], items: [弱点の項目…], label? } の形にしてください`)) return;
+        need(r.items.every((k) => weakKeys.has(k)), `${at}.items に、弱点（weak）の項目にないものがあります`);
+      });
+  }
   // 一覧表の健全度への書き戻し（省略可）：{ from: "詳しい診断の項目", values: [書く値…], treatFrom?: "処置の項目" }
   if (s.gradeWriteBack != null)
     need(
@@ -351,6 +362,10 @@ function validateFieldSheet(fs, need) {
   need(isNum(fs.charPx) && isNum(fs.defaultColWidth) && isNum(fs.optionFontPt) && isNum(fs.optionLinePt), 'fieldSheet の charPx・defaultColWidth・optionFontPt・optionLinePt は数にしてください');
   need(isStr(fs.font) && /^[0-9A-F]{8}$/i.test(fs.penColor || ''), 'fieldSheet の font・penColor（例 FF1F3D99）が必要です');
   need(fs.minFontSize == null || (isNum(fs.minFontSize) && fs.minFontSize >= 5 && fs.minFontSize <= 9), 'fieldSheet.minFontSize（長い文を小さくするときの最小の文字の大きさ）は 5〜9 の数にしてください');
+  need(fs.optionStyle == null || ['circle', 'selected'].includes(fs.optionStyle), 'fieldSheet.optionStyle は circle（○で囲む）か selected（選んだものだけ）にしてください');
+  need(fs.optionWidth == null || (isNum(fs.optionWidth) && fs.optionWidth > 0 && fs.optionWidth <= 1), 'fieldSheet.optionWidth（選択肢の列の幅の割合）は 0 より大きく 1 以下の数にしてください');
+  need(fs.widenCol == null || isCol(fs.widenCol), 'fieldSheet.widenCol（細くした分を足す列）は列の文字（例 M）にしてください');
+  need(fs.selectedFontPt == null || (isNum(fs.selectedFontPt) && fs.selectedFontPt >= 6 && fs.selectedFontPt <= 20), 'fieldSheet.selectedFontPt は 6〜20 の数にしてください');
   const h = fs.header;
   need(isObj(h) && isAddr(h.title) && isAddr(h.inspector) && isAddr(h.date) && isStr(h.dateTemplate) && isNum(h.eraOffset) && isStr(h.multiLabel), 'fieldSheet.header の形が違います');
   const keys = ['treeNo', 'species', 'height', 'girth', 'branch', 'note', 'initial', 'treat', 'reason'];

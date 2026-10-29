@@ -289,6 +289,33 @@ export function fillNone(record, section, cfg, optionsFor) {
   return { record: next, keys, custom, kept };
 }
 
+// 入力の食い違いの注意（保存のときに確かめる。返す形：[文…]）
+//  1. 弱点の項目に詳細（寸法など）が入っているのに、有無が「無」か未選択
+//  2. 簡易診断で「有」の点検項目に対応する詳しい診断の項目が、どれも「有」になっていない
+//     （設定 initialSurvey.crossCheck：[{ field: 簡易診断の項目, eq: 値 か [値…], items: [詳しい診断の弱点の項目…], label? }]）
+export function initialWarnings(record, tree, cfg) {
+  const out = [];
+  if (!record) return out;
+  const items = new Map();
+  for (const form of Object.values(cfg.initialSurvey?.forms || {}))
+    for (const sec of form.sections || [])
+      for (const it of sec.items || []) if (it.type === 'weak') items.set(it.key, { it, name: `${String(sec.title || '').split('・').pop()}の${it.label}` });
+  const isYes = (it, v) => !isEmpty(v) && v !== NONE(cfg) && v !== it.noneValue;
+  for (const { it, name } of items.values()) {
+    if (isEmpty(record[detailKeyOf(it)]) || isYes(it, record[it.key])) continue;
+    out.push(`${name}：詳細が入っていますが「${isEmpty(record[it.key]) ? '未選択' : record[it.key]}」です`);
+  }
+  for (const rule of cfg.initialSurvey?.crossCheck || []) {
+    const v = tree?.[rule.field];
+    if (!tree || isEmpty(v) || ![].concat(rule.eq).includes(v)) continue;
+    const targets = rule.items.map((k) => items.get(k)).filter(Boolean);
+    if (!targets.length || targets.some(({ it }) => isYes(it, record[it.key]))) continue;
+    const label = rule.label || cfg.checks?.find((c) => c.key === rule.field)?.label || rule.field;
+    out.push(`簡易診断で${label}が「${v}」ですが、${targets.map((x) => x.name).join('・')}${targets.length > 1 ? 'のどれも' : 'が'}「有」になっていません`);
+  }
+  return out;
+}
+
 // 入力していない現場の項目（選択肢の項目だけ数える。「後で（机上）」の項目は数えない）。返す形：[項目名…]
 export function missingInitial(record, cfg) {
   const out = [];
@@ -305,9 +332,11 @@ export const updateInitial = (state, id, fn) => updateRecord(state, INITIAL, id,
 //  返す形：{ state, missing, saved }
 export function saveInitial(state, id, cfg, { force = false, now = new Date().toISOString() } = {}) {
   const r = (state.initials || []).find((x) => x.id === id);
-  if (!r) return { state, missing: [], saved: false };
+  if (!r) return { state, missing: [], warnings: [], saved: false };
   const missing = missingInitial(r, cfg);
-  if (missing.length && !force) return { state, missing, saved: false };
+  const tree = state.trees?.find((t) => `initial|${simpleKey(t, cfg)}` === initialKey(r, cfg)) || null;
+  const warnings = initialWarnings(r, tree, cfg);
+  if ((missing.length || warnings.length) && !force) return { state, missing, warnings, saved: false };
   const st = cfg.initialSurvey?.stamp || {};
   const stamp = {};
   const [y, m, d] = String(state.session?.date || '').split('-').map(Number);
@@ -318,7 +347,7 @@ export function saveInitial(state, id, cfg, { force = false, now = new Date().to
   for (const form of Object.values(cfg.initialSurvey?.forms || {}))
     for (const sec of form.sections) for (const it of sec.items) if (it.blank != null && isEmpty(r[it.key])) blanks[it.key] = it.blank;
   const next = updateRecord(state, INITIAL, id, (x) => ({ ...x, ...blanks, ...stamp, done: true, sent: false, source: 'app', updatedAt: now }));
-  return { state: next, missing, saved: true };
+  return { state: next, missing, warnings, saved: true };
 }
 
 // ---------- 一覧表の健全度への書き戻し ----------

@@ -81,6 +81,11 @@ export function pageMeta(trees, cfg) {
 }
 
 // ---------- 選択肢の欄 ----------
+//  書き方（設定 fieldSheet.optionStyle）：
+//   circle（既定）… すべての選択肢を書き、選んだものを○で囲む（紙に手で書くときと同じ見た目）
+//   selected     … 選んだものだけを大きめの字で書く（selectedFontPt、既定 12pt）。
+//                  optionWidth（0〜1）で選択肢の列を細くし、細くした分を widenCol の列（例 特記事項）に足す（用紙の幅は変わらない）
+export const selectedOnly = (cfg) => cfg.fieldSheet?.optionStyle === 'selected';
 
 // 木1本の選択肢の欄：[{ col（0始まり）, field, val（選んだ値）, opts: [{ v, lines }] }]
 export function optionColumns(t, cfg) {
@@ -126,6 +131,24 @@ export function templateGeometry(ws, cfg) {
   return { colW, rowH };
 }
 
+// 選んだものだけを書くとき、選択肢の列を細くして、その分を widenCol の列に足す（用紙の幅は変えない）
+export function narrowOptionColumns(ws, cfg) {
+  const fs = cfg.fieldSheet;
+  const k = fs.optionWidth ?? 1;
+  if (k >= 1) return;
+  let freed = 0;
+  for (const oc of fs.optionCols) {
+    const col = ws.getColumn(colIndex(oc.col) + 1);
+    const w = col.width ?? fs.defaultColWidth;
+    col.width = Math.round(w * k * 100) / 100;
+    freed += w - col.width;
+  }
+  if (fs.widenCol) {
+    const col = ws.getColumn(colIndex(fs.widenCol) + 1);
+    col.width = Math.round(((col.width ?? fs.defaultColWidth) + freed) * 100) / 100;
+  }
+}
+
 // 文字の幅の目安（pt）。半角は全角の 0.55 倍
 const textWidth = (s, pt) => [...s].reduce((a, ch) => a + (/[\x20-\x7e]/.test(ch) ? 0.55 : 1) * pt, 0);
 const sum = (arr, n) => arr.slice(0, n).reduce((a, b) => a + b, 0);
@@ -139,6 +162,18 @@ export function treeShapes(t, row0, geo, cfg) {
   for (const oc of optionColumns(t, cfg)) {
     const left = sum(geo.colW, oc.col);
     const cw = geo.colW[oc.col];
+    if (selectedOnly(cfg)) {
+      // 選んだものだけ：その木の行の真ん中に、○を付けずに書く（選んでいなければ何も書かない）
+      const o = oc.opts.find((x) => oc.val && x.v === oc.val);
+      if (!o) continue;
+      // 列の幅・木の行の高さに収まるよう、字を小さくする（最小 6pt）
+      const widest = Math.max(...o.lines.map((l) => textWidth(l, 1)));
+      const pt = Math.max(6, Math.min(fs.selectedFontPt ?? 12, (cw - 4) / widest, (H - 6) / (o.lines.length * 1.25)));
+      const w = Math.min(cw - 2, widest * pt + 4);
+      const h = o.lines.length * pt * 1.25 + 4;
+      shapes.push({ x: left + (cw - w) / 2, y: top + (H - h) / 2, w, h, lines: o.lines, sel: true, pt, plain: true, tag: `${half(t.treeNo)}|${oc.col}|${o.v}|1` });
+      continue;
+    }
     oc.opts.forEach((o, k) => {
       const sel = !!oc.val && oc.val === o.v;
       const w = Math.min(cw - 2, Math.max(...o.lines.map((l) => textWidth(l, fs.optionFontPt))) + 9);
@@ -169,11 +204,12 @@ export function drawingXml(shapes, geo, font) {
     const [r1, ry1] = cellPos(sp.y, geo.rowH);
     const [c2, cx2] = cellPos(sp.x + sp.w, geo.colW);
     const [r2, ry2] = cellPos(sp.y + sp.h, geo.rowH);
-    const line = sp.sel ? '<a:ln w="15875"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>' : '<a:ln><a:noFill/></a:ln>';
+    const circle = sp.sel && !sp.plain; // plain：選んだものだけを書くとき（○で囲まない）
+    const line = circle ? '<a:ln w="15875"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>' : '<a:ln><a:noFill/></a:ln>';
     const runs = sp.lines
       .map(
         (l) =>
-          `<a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="ja-JP" sz="1000"${sp.sel ? ' b="1"' : ''}><a:solidFill><a:srgbClr val="000000"/></a:solidFill>` +
+          `<a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="ja-JP" sz="${Math.round((sp.pt || 10) * 100)}"${sp.sel ? ' b="1"' : ''}><a:solidFill><a:srgbClr val="000000"/></a:solidFill>` +
           `<a:latin typeface="${xmlEsc(font)}"/><a:ea typeface="${xmlEsc(font)}"/></a:rPr><a:t>${xmlEsc(l)}</a:t></a:r></a:p>`,
       )
       .join('');
@@ -182,7 +218,7 @@ export function drawingXml(shapes, geo, font) {
       `<xdr:from><xdr:col>${c1}</xdr:col><xdr:colOff>${e(cx1)}</xdr:colOff><xdr:row>${r1}</xdr:row><xdr:rowOff>${e(ry1)}</xdr:rowOff></xdr:from>` +
       `<xdr:to><xdr:col>${c2}</xdr:col><xdr:colOff>${e(cx2)}</xdr:colOff><xdr:row>${r2}</xdr:row><xdr:rowOff>${e(ry2)}</xdr:rowOff></xdr:to>` +
       `<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="${id}" name="${xmlEsc(sp.tag)}"/><xdr:cNvSpPr/></xdr:nvSpPr>` +
-      `<xdr:spPr><a:prstGeom prst="${sp.sel ? 'ellipse' : 'rect'}"><a:avLst/></a:prstGeom><a:noFill/>${line}</xdr:spPr>` +
+      `<xdr:spPr><a:prstGeom prst="${circle ? 'ellipse' : 'rect'}"><a:avLst/></a:prstGeom><a:noFill/>${line}</xdr:spPr>` +
       `<xdr:txBody><a:bodyPr vertOverflow="overflow" horzOverflow="overflow" wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" anchor="ctr" anchorCtr="1"/><a:lstStyle/>${runs}</xdr:txBody>` +
       `</xdr:sp><xdr:clientData/></xdr:twoCellAnchor>`
     );
@@ -269,6 +305,7 @@ export async function exportFieldSheet(templateBuffer, pages, cfg, { title = '' 
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(templateBuffer);
   const src = wb.worksheets[0];
+  if (selectedOnly(cfg)) narrowOptionColumns(src, cfg); // 複製の前に（複製は原本の列幅を写す）
   const geo = templateGeometry(src, cfg);
   const boxOf = cellBox(src.model.merges || [], geo); // 欄の枠（結合の範囲）の大きさ
   const minFont = fs.minFontSize ?? 6; // 長い文を小さくするときの最小の大きさ（pt）
@@ -431,9 +468,11 @@ export async function verifyFieldSheet(outBuffer, templateBuffer, pages, cfg) {
     });
 
     // 図形
-    const shapes = await readShapes(zip, files[i].file);
+    const shapes = await readShapes(zip, files[i].file, selectedOnly(cfg));
     const done = page.trees.filter((t) => t.done);
-    const expectN = done.reduce((a, t) => a + optionColumns(t, cfg).reduce((b, oc) => b + oc.opts.length, 0), 0);
+    // 図形の数：○で囲む書き方は選択肢の数、選んだものだけの書き方は選んだ欄の数
+    const shapesOf = (oc) => (selectedOnly(cfg) ? (oc.val && oc.opts.some((o) => o.v === oc.val) ? 1 : 0) : oc.opts.length);
+    const expectN = done.reduce((a, t) => a + optionColumns(t, cfg).reduce((b, oc) => b + shapesOf(oc), 0), 0);
     if (shapes.length !== expectN) errs.push(`${label}：選択肢の図形の数が合いません（${shapes.length}個・予定${expectN}個）`);
     const rowOf = new Map(page.trees.map((t, k) => [half(t.treeNo), fs.firstRow - 1 + k * fs.rowsPerTree])); // 0始まり
     for (const sp of shapes) {
@@ -459,7 +498,8 @@ export async function verifyFieldSheet(outBuffer, templateBuffer, pages, cfg) {
 }
 
 // シートの図形を読み出す：[{ tag, no, colTag, v, sel, row（0始まり）, col（0始まり）, ellipse }]
-async function readShapes(zip, sheetPath) {
+//  plain：選んだものだけを書く書き方（○で囲まない）。そのときは印（名前の最後）だけで選んだかを見る
+async function readShapes(zip, sheetPath, plain = false) {
   const base = sheetPath.split('/').pop();
   const rel = zip.file(`xl/worksheets/_rels/${base}.rels`);
   if (!rel) return [];
@@ -473,6 +513,6 @@ async function readShapes(zip, sheetPath) {
     const [no, colTag, v, s] = tag.split('|');
     const from = a.match(/<xdr:from><xdr:col>(\d+)<\/xdr:col>.*?<xdr:row>(\d+)<\/xdr:row>/);
     const ellipse = /prst="ellipse"/.test(a);
-    return { tag, no, colTag: +colTag, v, sel: s === '1' && ellipse, row: from ? +from[2] : -1, col: from ? +from[1] : -1, ellipse };
+    return { tag, no, colTag: +colTag, v, sel: s === '1' && (plain ? !ellipse : ellipse), row: from ? +from[2] : -1, col: from ? +from[1] : -1, ellipse };
   });
 }

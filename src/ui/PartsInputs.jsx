@@ -2,7 +2,7 @@
 //  parts：欄の定義（detailParts.js の PART_TYPES）、values：入れた値、onPut(名前, 値)：値が変わったとき
 //  Choice：選択肢のボタンの部品（呼ぶ側の見た目に合わせる）
 //  pi：周囲長から直径を出すときの円周率（設定の calc.pi）
-import { coreReached, diameterOf, ratioChoice } from '../core/detailParts.js';
+import { coreReached, diameterOf, horizontalOf, ratioChoice } from '../core/detailParts.js';
 
 export default function PartsInputs({ parts, values, onPut, testId, Choice, pi = Math.PI }) {
   const put = onPut;
@@ -19,7 +19,8 @@ export default function PartsInputs({ parts, values, onPut, testId, Choice, pi =
           const x = v || {};
           input = (
             <span className="pair">
-              {num(`${p.name}.a`, x.a, (a) => put(p.name, { ...x, a }), p.type === 'height' ? '例 2' : '')}
+              {/* 水平距離を手で入れたら、斜めの長さからの計算はやめる */}
+              {num(`${p.name}.a`, x.a, (a) => put(p.name, { ...x, a, ...(p.slant ? { s: '' } : {}) }), p.type === 'height' ? '例 2' : '')}
               <span>{p.type === 'height' ? p.sep || '～' : p.sep || '/'}</span>
               {/* 直径を手で入れたら、周囲長からの計算はやめる */}
               {num(`${p.name}.b`, x.b, (b) => put(p.name, { ...x, b, c: '' }), p.type === 'height' ? '上端' : '')}
@@ -35,6 +36,18 @@ export default function PartsInputs({ parts, values, onPut, testId, Choice, pi =
                 <small className="auto" data-auto={p.name}>
                   計算では{rc}
                 </small>
+              </>
+            );
+          // 斜めの長さを入れると水平距離を計算して a に入れる（設定の slant があるとき。例 鋼棒を45度で差し込んだ長さ）
+          if (p.slant)
+            input = (
+              <>
+                {input}
+                <span className="pair circ">
+                  <small>{p.slant.label}</small>
+                  {num(`${p.name}.s`, x.s, (s) => put(p.name, { ...x, s, a: horizontalOf(s, p.slant.angle, p.digits) }), `入れると水平距離（${p.slant.angle}°）`)}
+                  <span>{p.unit ?? ''}</span>
+                </span>
               </>
             );
           // 周囲長を入れると直径を計算して入れる（設定の circ があるとき）

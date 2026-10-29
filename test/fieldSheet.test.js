@@ -226,3 +226,50 @@ describe('野帳の照合（不具合を見逃さないか）', () => {
     expect(s).toMatch(/B2：未入力の木の選択肢の欄/);
   });
 });
+
+describe('選んだものだけを書く書き方（fieldSheet.optionStyle: selected）', () => {
+  const sel = structuredClone(cfgJson);
+  Object.assign(sel.fieldSheet, { optionStyle: 'selected', optionWidth: 0.7, widenCol: 'I', selectedFontPt: 12 });
+
+  it('選んだ選択肢だけを○なしで書き、選択肢の列を細くした分を特記事項の列に足す（用紙の幅は同じ）。照合に通る', async () => {
+    expect(validateConfig(sel).errors).toEqual([]);
+    const tpl = await makeTemplate();
+    const pages = buildPages([doneTree('AB001'), todo('AB002'), doneTree('AB003', { grade: '' })], sel);
+    const r = await exportFieldSheet(tpl, pages, sel);
+    expect(r.errors).toEqual([]);
+    const tags = (await shapeTags(r.buffer))[0];
+    // 選んだものだけ（AB003 は健全度が空なので健全度の図形はない）
+    expect(tags.sort()).toEqual(
+      ['AB001|4|並|1', 'AB001|5|有|1', 'AB001|6|有|1', 'AB001|7|無|1', 'AB001|10|B|1', 'AB001|13|有|1',
+       'AB003|4|並|1', 'AB003|5|有|1', 'AB003|6|有|1', 'AB003|7|無|1', 'AB003|13|有|1'].sort(),
+    );
+    const zip = await JSZip.loadAsync(r.buffer);
+    const xml = await zip.file('xl/drawings/drawing1.xml').async('string');
+    expect(xml).not.toContain('prst="ellipse"'); // ○で囲まない
+    expect(xml).toContain('sz="1200"');
+    // 列の幅：選択肢の列は 0.7 倍、細くした分を特記事項の列へ
+    const before = (await load(tpl)).worksheets[0];
+    const after = (await load(r.buffer)).worksheets[0];
+    const w = (ws, L) => ws.getColumn(L).width ?? sel.fieldSheet.defaultColWidth;
+    const opt = sel.fieldSheet.optionCols.map((o) => o.col);
+    for (const L of opt) expect(w(after, L)).toBeCloseTo(w(before, L) * 0.7, 1);
+    const total = (ws) => [...opt, 'I'].reduce((a, L) => a + w(ws, L), 0);
+    expect(total(after)).toBeCloseTo(total(before), 1);
+    expect(w(after, 'I')).toBeGreaterThan(w(before, 'I'));
+    // 未入力の木の選択肢の欄は原本の文字のまま
+    expect(cellValue(after.getCell('E6'))).toBe('良\n並\n枯');
+  });
+
+  it('選んだ選択肢と違う図形・○で囲んだ図形は照合で見つける', async () => {
+    const tpl = await makeTemplate();
+    const pages = buildPages([doneTree('A1')], sel);
+    const r = await exportFieldSheet(tpl, pages, sel);
+    const zip = await JSZip.loadAsync(r.buffer);
+    const path = 'xl/drawings/drawing1.xml';
+    const x = await zip.file(path).async('string');
+    zip.file(path, x.replace('name="A1|4|並|1"', 'name="A1|4|良|1"'));
+    expect((await verifyFieldSheet(await zip.generateAsync({ type: 'uint8array' }), tpl, pages, sel)).join('\n')).toMatch(/A1：vigor の○が「良」/);
+    zip.file(path, x.replace(/(name="A1\|5\|有\|1"[\s\S]*?prst=")rect/, '$1ellipse'));
+    expect((await verifyFieldSheet(await zip.generateAsync({ type: 'uint8array' }), tpl, pages, sel)).join('\n')).toMatch(/A1：\w+ の○が「なし」（正しくは「有」）/);
+  });
+});

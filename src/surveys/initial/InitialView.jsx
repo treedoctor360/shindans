@@ -16,6 +16,7 @@ import {
   formOf,
   initialOf,
   initialStatus,
+  initialWarnings,
   missingInitial,
   initialWordingIssues,
   fixInitialWording,
@@ -230,6 +231,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const press = (k, v) => update((s) => updateInitial(s, rec.id, (r) => ({ ...r, [k]: r[k] === v ? '' : v })));
   const status = initialStatus(tree, state, cfg);
   const missing = readOnly ? [] : missingInitial(rec, cfg);
+  const warnings = readOnly ? [] : initialWarnings(rec, tree, cfg); // 詳細があるのに「無」・簡易診断で「有」なのに詳しい診断で「無」
   const wording = readOnly ? [] : initialWordingIssues(rec, cfg); // 表記の統一（設定 wording）
   // 簡易診断の寸法で、まだ写していない（簡易診断で後から足した・直した）もの
   const pending = readOnly ? [] : pendingMeasures(rec, tree, cfg);
@@ -449,12 +451,22 @@ export default function InitialView({ state, update, config: cfg, toast, send })
 
       {!readOnly && (
         <div className="savebar">
-          {missingAsk && missing.length > 0 ? (
-            <div className="alert warn" role="alert">
-              <span>未入力があります：{missing.join('、')}</span>
+          {/* 入力の食い違い（保存の前から出しておく） */}
+          {warnings.length > 0 && !(missingAsk && missing.length + warnings.length > 0) && (
+            <div className="alert warn" data-testid="initial-warnings">
+              <span>確かめてください：{warnings.join('／')}</span>
+            </div>
+          )}
+          {missingAsk && missing.length + warnings.length > 0 ? (
+            <div className="alert warn" role="alert" data-testid="initial-save-ask">
+              <span>
+                {missing.length > 0 && <>未入力があります：{missing.join('、')}</>}
+                {missing.length > 0 && warnings.length > 0 && <br />}
+                {warnings.length > 0 && <>確かめてください：{warnings.join('／')}</>}
+              </span>
               <div className="acts">
                 <button type="button" className="btn" onClick={() => onSave(true, askStay)}>
-                  未入力のまま保存する
+                  {missing.length > 0 ? '未入力のまま保存する' : 'このまま保存する'}
                 </button>
               </div>
             </div>
