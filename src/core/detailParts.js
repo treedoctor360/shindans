@@ -99,6 +99,7 @@ export function buildDetail(values, parts, cfg) {
 
 // ---------- 自動で決まる値 ----------
 //  pair の circ：「周囲長」の欄を出し、入れると b（直径）を 周囲長÷円周率 で入れる（b を手で入れてもよい。digits：小数点以下の桁、既定は整数）
+//  pair の slant：{ label, angle }「斜めの長さ」の欄を出し、入れると a（水平距離）を 長さ×cos(angle) で入れる（a を手で入れてもよい）
 //  flag の coreFrom：pair の名前。その a（例 貫入深）が b（例 直径）の半分（半径）以上なら印を付け、未満なら外す
 //                     pair を変えたときに決め直す。その後で印を手で付け外ししてもよい
 
@@ -113,6 +114,15 @@ export function diameterOf(circ, pi = Math.PI, digits = 0) {
   if (c == null || c <= 0) return '';
   const k = 10 ** digits;
   return String(Math.round((c / pi) * k) / k);
+}
+
+// 斜めに測った長さから水平距離（angle：水平からの角度（度）。digits：小数点以下の桁。既定は整数）
+//  例 鋼棒を45度で差し込んだ長さ 30 → 水平距離 21
+export function horizontalOf(len, angle, digits = 0) {
+  const l = numOf(len);
+  if (l == null || l <= 0 || !(angle > 0 && angle < 90)) return '';
+  const k = 10 ** digits;
+  return String(Math.round(l * Math.cos((angle * Math.PI) / 180) * k) / k);
 }
 
 // 芯達か（a が b の半分以上）。数がそろっていなければ null
@@ -168,6 +178,8 @@ export function checkNumbers(values, parts) {
     }
     const c = clean(v.c);
     if (p.circ && c) out.push(`${p.circ}${c}${p.unit ?? ''}`);
+    const s = clean(v.s);
+    if (p.slant && s) out.push(`${p.slant.label}${s}${p.unit ?? ''}`);
   }
   return out;
 }
@@ -207,6 +219,11 @@ export function validatePartDefs(defs, at0, need) {
     if (p.type === 'flag') need(typeof p.text === 'string' && p.text.length > 0, `${at}：flag には text（押したときに付ける文字）が必要です`);
     for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
     if (p.circ != null) need(p.type === 'pair', `${at}.circ（周囲長の欄）は pair だけに付けられます`);
+    if (p.slant != null)
+      need(
+        p.type === 'pair' && isObj(p.slant) && typeof p.slant.label === 'string' && p.slant.label && typeof p.slant.angle === 'number' && p.slant.angle > 0 && p.slant.angle < 90,
+        `${at}.slant（斜めの長さの欄）は pair に付け、{ label, angle（0〜90 の角度） } の形にしてください`,
+      );
     if (p.digits != null) need(Number.isInteger(p.digits) && p.digits >= 0 && p.digits <= 3, `${at}.digits は 0〜3 の整数にしてください`);
     if (p.coreFrom != null) need(p.type === 'flag' && defs[p.coreFrom]?.type === 'pair', `${at}.coreFrom は flag に付け、pair の名前にしてください`);
     if (p.noText != null) need(typeof p.noText === 'boolean', `${at}.noText は true か false にしてください`);

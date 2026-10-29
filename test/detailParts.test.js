@@ -173,6 +173,20 @@ describe('確認用の数（文に出さない欄・周囲長）', () => {
     expect(partText(rod, { a: '', b: '50' })).toBe('/50cm');
     expect(partText(rod, { a: '21', b: '70' })).toBe('21cm/70cm');
   });
+  it('斜めの長さから水平距離（slant）。確認用に斜めの長さを出す', async () => {
+    const { horizontalOf, checkNumbers, partText, validatePartDefs } = await import('../src/core/detailParts.js');
+    expect(horizontalOf('30', 45)).toBe('21'); // 30×cos45° = 21.2
+    expect(horizontalOf('３０', 45, 1)).toBe('21.2');
+    expect(horizontalOf('', 45)).toBe('');
+    expect(horizontalOf('30', 90)).toBe('');
+    const rod = { name: 'rod', type: 'pair', unit: 'cm', slant: { label: '斜めの長さ', angle: 45 } };
+    expect(partText(rod, { a: '21', b: '70', s: '30' })).toBe('21cm/70cm'); // 文には水平距離だけ
+    expect(checkNumbers({ rod: { a: '21', b: '70', s: '30' } }, [rod])).toEqual(['斜めの長さ30cm']);
+    const errs = [];
+    const need = (ok, m) => (ok ? true : (errs.push(m), false));
+    validatePartDefs({ rod: { type: 'pair', label: 'x', slant: { label: 'y', angle: 120 } } }, 'p', need);
+    expect(errs.join()).toContain('slant');
+  });
   it('奥行を文に出さない大きさの欄に奥行があれば、確認用に「奥行」を出す', async () => {
     const { checkNumbers, partText } = await import('../src/core/detailParts.js');
     const size = { name: 'size', type: 'size', unitEach: true };

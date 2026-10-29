@@ -7,6 +7,7 @@ import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
 import { measureLine, measureRecord } from '../src/core/noteMeasures.js';
+import { initialWarnings } from '../src/store/initial.js';
 import { bookEntry, bookValues, discardInitial, karteExtras, karteRecords, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial, pendingMeasures, applyMeasures } from '../src/store/initial.js';
 import { addSticky, answerSticky, closeSticky, fieldLabel, reviewFields, reviewState, reviewStatesOf, setConfirm, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
@@ -274,6 +275,35 @@ describe('入力画面の部品（並び・選択肢・すべて無・未入力�
     expect(r2.custom).toBe(true);
     expect(fillNone({}, sec2, c2, (it) => it.options || ['無', '有']).record.stake).toBe('無');
     expect(validateConfig(c2)).toEqual({ ok: true, errors: [] });
+  });
+  it('食い違いの注意：詳細があるのに「無」・未選択、簡易診断で「有」なのに詳しい診断で「有」がない（crossCheck）', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.crossCheck = [{ field: 'deadBranch', eq: ['有'], items: ['b4'] }];
+    expect(validateConfig(c).errors).toEqual([]);
+    const tree = need('AB001', { deadBranch: '有', deadBranchCount: '2' });
+    const sec = c.initialSurvey.forms.initial.sections.find((x) => x.items.some((it) => it.key === 'b4'));
+    const name = `${sec.title.split('・').pop()}の${sec.items.find((it) => it.key === 'b4').label}`;
+    expect(initialWarnings({ b4: '無', b4Detail: '2本' }, tree, c)).toEqual([
+      `${name}：詳細が入っていますが「無」です`,
+      `簡易診断で${c.checks.find((x) => x.key === 'deadBranch').label}が「有」ですが、${name}が「有」になっていません`,
+    ]);
+    expect(initialWarnings({ b4Detail: '2本' }, tree, c)[0]).toBe(`${name}：詳細が入っていますが「未選択」です`);
+    expect(initialWarnings({ b4: '有（小）', b4Detail: '2本' }, tree, c)).toEqual([]);
+    expect(initialWarnings({ b4: '無' }, { ...tree, deadBranch: '無' }, c)).toEqual([]);
+    // 形の違う設定は使わない
+    c.initialSurvey.crossCheck = [{ field: 'deadBranch', eq: '有', items: ['nokey'] }];
+    expect(validateConfig(c).errors.join()).toContain('crossCheck[0].items');
+  });
+  it('食い違いがあれば、保存の前に確かめる（このまま保存もできる）', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.crossCheck = [{ field: 'deadBranch', eq: '有', items: ['b4'] }];
+    const tree = need('AB001', { deadBranch: '有' });
+    let s = startInitial(S([tree]), tree, c).state;
+    const id = s.initials[0].id;
+    const r = saveInitial(s, id, c);
+    expect(r.saved).toBe(false);
+    expect(r.warnings.length).toBe(1);
+    expect(saveInitial(s, id, c, { force: true }).saved).toBe(true);
   });
   it('「すべて無」は、詳細（簡易診断から写した寸法など）が入っている弱点の項目を「無」にしない', () => {
     const sec = cfg.initialSurvey.forms.initial.sections.find((x) => x.items.some((it) => it.key === 'b4'));
