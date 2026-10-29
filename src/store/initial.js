@@ -106,9 +106,18 @@ export function karteRecords(state, records, cfg) {
   return records.map((r) => {
     const tree = state.trees.find((t) => `initial|${simpleKey(t, cfg)}` === initialKey(r, cfg)) || null;
     const out = { ...r, ...karteExtras(tree, r, cfg) };
+    const fromM = tree ? measuresToInitial(tree, cfg).values : {};
     for (const it of weak) {
       const dk = detailKeyOf(it);
-      const nums = checkNumbers(r[partsKeyOf(dk)], partsOf(it, cfg));
+      const pk = partsKeyOf(dk);
+      // 文に出さない数（例 周囲長／幹周）を写す設定にする前に作った記録は、その数を持っていない。
+      //  詳細の文が寸法から作った文のまま（手で直していない）なら、寸法の数で補って確認用に出す
+      let vals = r[pk];
+      if (fromM[pk] && vals && !r[manualKeyOf(dk)] && String(r[dk] ?? '') === String(fromM[dk] ?? '')) {
+        vals = { ...vals };
+        for (const p of partsOf(it, cfg)) if (p.noText && vals[p.name] === undefined && fromM[pk][p.name] !== undefined) vals[p.name] = fromM[pk][p.name];
+      }
+      const nums = checkNumbers(vals, partsOf(it, cfg));
       if (nums.length) out[dk] = `${r[dk] || ''}【${nums.join('、')}】`;
     }
     return out;
@@ -257,13 +266,19 @@ const NONE = (cfg) => cfg.initialSurvey?.noneValue || '無';
 
 // 「この区切りはすべて無」：区切りの中の、まだ選んでいない選択肢の項目に「無」を入れる（選んである項目は変えない）
 //  項目に設定 noneValue（例「支柱なし」）があれば、「無」の代わりにその値を入れる（物そのものが無いときの選択肢）
-//  返す形：{ record, keys: [入れた項目…], custom: noneValue を入れた項目があったか }
+//  詳細が入っている弱点の項目（簡易診断の寸法から写った・手で書いた）は「無」にしない（有無を選んでもらう）
+//  返す形：{ record, keys: [入れた項目…], custom: noneValue を入れた項目があったか, kept: [詳細があるので残した項目の名前…] }
 export function fillNone(record, section, cfg, optionsFor) {
   const keys = [];
+  const kept = [];
   const next = { ...record };
   let custom = false;
   for (const it of section.items) {
     if (!['choice', 'weak'].includes(it.type) || !isEmpty(next[it.key])) continue;
+    if (it.type === 'weak' && !isEmpty(next[detailKeyOf(it)])) {
+      kept.push(it.label);
+      continue;
+    }
     const opts = optionsFor(it) || [];
     const value = it.noneValue && opts.includes(it.noneValue) ? it.noneValue : NONE(cfg);
     if (!opts.includes(value)) continue;
@@ -271,7 +286,7 @@ export function fillNone(record, section, cfg, optionsFor) {
     keys.push(it.key);
     if (value !== NONE(cfg)) custom = true;
   }
-  return { record: next, keys, custom };
+  return { record: next, keys, custom, kept };
 }
 
 // 入力していない現場の項目（選択肢の項目だけ数える。「後で（机上）」の項目は数えない）。返す形：[項目名…]

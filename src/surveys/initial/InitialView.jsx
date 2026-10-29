@@ -282,9 +282,11 @@ export default function InitialView({ state, update, config: cfg, toast, send })
 
   const onNone = (sec) => {
     const r = fillNone(rec, sec, cfg, optionsFor);
-    if (!r.keys.length) return toast('まだ選んでいない項目はありません');
+    // 詳細（寸法など）が入っているのに有無を選んでいない項目は「無」にしない
+    const keptMsg = r.kept.length ? `詳細が入っている${r.kept.join('・')}は「${cfg.initialSurvey.noneValue || '無'}」にしていません。有無を選んでください` : '';
+    if (!r.keys.length) return toast(keptMsg || 'まだ選んでいない項目はありません');
     update((s) => updateInitial(s, rec.id, () => r.record));
-    toast(`まだ選んでいなかった${r.keys.length}項目を「${cfg.initialSurvey.noneValue || '無'}」${r.custom ? '（物が無い項目は「〜なし」）' : ''}にしました`);
+    toast(`まだ選んでいなかった${r.keys.length}項目を「${cfg.initialSurvey.noneValue || '無'}」${r.custom ? '（物が無い項目は「〜なし」）' : ''}にしました` + (keptMsg ? `。${keptMsg}` : ''));
   };
   // 保存。stay：true なら同じ木の画面のまま（一覧へ戻らず、見ていた所から続けて直せる）
   const onSave = (force = false, stay = false) => {

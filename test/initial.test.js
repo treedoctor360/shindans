@@ -6,6 +6,7 @@ import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
+import { measureLine, measureRecord } from '../src/core/noteMeasures.js';
 import { bookEntry, bookValues, discardInitial, karteExtras, karteRecords, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial, pendingMeasures, applyMeasures } from '../src/store/initial.js';
 import { addSticky, answerSticky, closeSticky, fieldLabel, reviewFields, reviewState, reviewStatesOf, setConfirm, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
@@ -135,6 +136,23 @@ describe('確認用カルテに出す値（株立の幹周・樹高/幹径・枝
     // 入力の数がなければ足さない
     expect(karteRecords(s, s.initials, cfg)[0].b4Detail).toBe('2本');
   });
+  it('文に出さない数を写す設定にする前に作った記録も、寸法の数で補って【】に出す（文を手で直していなければ）', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.detailParts.circ = { type: 'pair', label: '周囲長／幹周', noText: true };
+    c.initialSurvey.forms.initial.sections[1].items[0].parts.push('circ');
+    c.noteMeasures.kinds.find((k) => k.key === 'deadBranch').parts.push('circ');
+    c.initialSurvey.fromMeasures[0].parts.circ = 'circ';
+    const values = { count: '2', circ: { a: '25', b: '187' } };
+    const line = measureLine(c, 'deadBranch', '', values);
+    const tree = need('AB001', { notes: `・${line}`, measures: [measureRecord('deadBranch', '', values, line)] });
+    let s = S([tree]);
+    s = startInitial(s, tree, cfg).state; // 前の設定で作った記録（周囲長／幹周を持っていない）
+    expect(s.initials[0].b4DetailParts.circ).toBeUndefined();
+    expect(karteRecords(s, s.initials, c)[0].b4Detail).toBe(`${s.initials[0].b4Detail}【25/187】`);
+    // 文を手で直した記録には補わない
+    const manual = { ...s, initials: s.initials.map((r) => ({ ...r, b4Detail: '手で直した', b4DetailManual: true })) };
+    expect(karteRecords(manual, manual.initials, c)[0].b4Detail).toBe('手で直した');
+  });
   it('枯死の木の枝長/枝径は表記の文字', () => {
     const tree = need('AB001', { vigor: cfg.deadVigor, branchLen: '7', branchDia: '0.3' });
     expect(karteExtras(tree, { height: 10, girth: 1 }, cfg)['@branchRatio']).toBe(cfg.calc.deadLabel);
@@ -256,6 +274,14 @@ describe('入力画面の部品（並び・選択肢・すべて無・未入力�
     expect(r2.custom).toBe(true);
     expect(fillNone({}, sec2, c2, (it) => it.options || ['無', '有']).record.stake).toBe('無');
     expect(validateConfig(c2)).toEqual({ ok: true, errors: [] });
+  });
+  it('「すべて無」は、詳細（簡易診断から写した寸法など）が入っている弱点の項目を「無」にしない', () => {
+    const sec = cfg.initialSurvey.forms.initial.sections.find((x) => x.items.some((it) => it.key === 'b4'));
+    const r = fillNone({ b4Detail: '2本、地上3m' }, sec, cfg, () => ['無', '有（小）', '有（大）']);
+    expect(r.record.b4).toBeUndefined();
+    expect(r.kept).toEqual([sec.items.find((it) => it.key === 'b4').label]);
+    // 有無を選んであれば、これまでどおり触らない
+    expect(fillNone({ b4: '有（小）', b4Detail: '2本' }, sec, cfg, () => ['無', '有（小）']).kept).toEqual([]);
   });
 
   it('未入力は現場の選択肢の項目だけ数え、保存で調査日・調査者を記録する', () => {

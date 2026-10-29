@@ -14,7 +14,7 @@
 //   number … '18'                            → prefix＋値＋unit（例「枝直径18cm」）
 //   choice … '＜1/3'（options から選ぶ）       → prefix＋値（例「周囲長比＜1/3」）
 //   text   … '（種名など）'                    → そのまま
-//   pair   … { a: '35', b: '100' }            → 「35cm/100cm」（unit・sep 省略時「/」）
+//   pair   … { a: '35', b: '100' }            → 「35cm/100cm」（unit・sep 省略時「/」。片方だけなら「35cm/」）
 //   flag   … true（押してあるか）               → text（例「（芯達）」）。「、」でつながず、前の文のすぐ後ろに付ける
 //              attach: false なら、ほかの部品と同じく「、」でつなぐ（例「長さ1.5m、芯達」）
 
@@ -72,7 +72,8 @@ export function partText(part, v) {
       const a = clean(v?.a);
       const b = clean(v?.b);
       if (!a && !b) return '';
-      return `${a}${unit('')}${part.sep || '/'}${b}${unit('')}`;
+      // 片方が空なら、その側は単位も出さない（「2cm/cm」にしない。例「2cm/」「/50cm」）
+      return `${a ? a + unit('') : ''}${part.sep || '/'}${b ? b + unit('') : ''}`;
     }
     default:
       return '';
@@ -148,12 +149,18 @@ export function withAuto(values, parts, changed) {
   return next;
 }
 
-// 確認用に出す、入力した数（文に出さない欄の数と、直径を出すのに入れた周囲長）。返す形：[文…]
-//  例 ["110cm/2.1m", "貫入部の周囲長141cm"]。提出用の文には入れない（確認用カルテにだけ足す）
+// 確認用に出す、入力した数（文に出さない欄の数・直径を出すのに入れた周囲長・文に出さない奥行）。返す形：[文…]
+//  例 ["110cm/2.1m", "貫入部の周囲長141cm", "奥行10cm"]。提出用の文には入れない（確認用カルテにだけ足す）
+//  奥行：簡易診断の寸法で入れた奥行が、奥行を出さない大きさの欄（depth のない size）に写ったとき
 export function checkNumbers(values, parts) {
   const out = [];
   for (const p of parts) {
     const v = values?.[p.name];
+    if (p.type === 'size' && !p.depth && Array.isArray(v)) {
+      const ds = v.map((x) => clean(x?.d)).filter(Boolean);
+      if (ds.length) out.push(`奥行${ds.join('・')}${p.unit ?? 'cm'}`);
+      continue;
+    }
     if (p.type !== 'pair' || !v) continue;
     if (p.noText) {
       const t = partText({ ...p, noText: false }, v);

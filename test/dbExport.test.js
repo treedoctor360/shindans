@@ -80,7 +80,7 @@ describe('一覧表への書き戻し', () => {
     const mine = trees.map((t) => (t.treeNo === 'AB002' ? { ...t, ...entry } : t));
     const r = await exportDb(buf, mine, cfg);
     expect(r.errors).toEqual([]);
-    expect(r.stats).toEqual({ written: 1, appended: 0, skippedLedgerDone: [], gradeOnly: [], gradeKept: [] });
+    expect(r.stats).toEqual({ written: 1, appended: 0, skippedLedgerDone: [], gradeOnly: [], gradeKept: [], gone: [] });
 
     const wb = await load(r.buffer);
     const ws = wb.getWorksheet('公園');
@@ -140,7 +140,7 @@ describe('一覧表への書き戻し', () => {
     const mine = trees.map((t) => (t.treeNo === 'AB001' && t.siteType === 'park' && t.dupIndex === 1 ? { ...t, ...entry, source: 'app' } : t));
     const r = await exportDb(buf, mine, cfg);
     expect(r.errors).toEqual([]);
-    expect(r.stats).toEqual({ written: 0, appended: 0, skippedLedgerDone: ['AB001'], gradeOnly: [], gradeKept: [] });
+    expect(r.stats).toEqual({ written: 0, appended: 0, skippedLedgerDone: ['AB001'], gradeOnly: [], gradeKept: [], gone: [] });
   });
 
   it('台帳で入力済みの行（紙から手で入力した行）には、健全度が空欄のときだけ詳しい診断の結果を書く。他のセルは元のまま', async () => {
@@ -383,7 +383,7 @@ describe('【再発防止】外部リンク（別のブックを指す名前付�
 });
 
 describe('【再現】読み込み直した台帳で番号が変わった木（RD0724？ → 別の番号）', () => {
-  it('出力の知らせに、どの公園・路線の木か（場所の名前・樹種）と、番号が変わった可能性を出す', async () => {
+  it('一覧表には書かず、出力は止めずに、どの公園・路線の木か（場所の名前・樹種）を知らせる', async () => {
     const { buf, trees } = await setup();
     // AB002 をアプリで入力した後、台帳の AB002 の番号が AB009 に直された
     const entered = trees.map((t) => (t.treeNo === 'ＡＢ００２' || t.treeNo === 'AB002' ? { ...t, ...entry, source: 'app' } : t));
@@ -395,7 +395,10 @@ describe('【再現】読み込み直した台帳で番号が変わった木（R
     const gone = again.find((t) => t.ledgerGone);
     expect(gone).toMatchObject({ source: 'app', parkName: '架空公園' });
     const r = await exportDb(buf2, again, cfg);
-    expect(r.buffer).toBeFalsy();
-    expect(r.errors.join('\n')).toMatch(/AB002（架空公園・ミホンカエデ）：読み込んだときにあった行が、一覧表に見つかりません（読み込み直した一覧表にこの番号がありません/);
+    expect(r.errors).toEqual([]);
+    expect(r.buffer).toBeTruthy(); // 照合（書いていない行が変わっていない）も通る
+    expect(r.stats.gone).toEqual(['AB002（架空公園・ミホンカエデ）']);
+    // 末尾に足していない
+    expect(r.stats.appended).toBe(0);
   });
 });

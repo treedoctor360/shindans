@@ -230,6 +230,12 @@ export function measuresToInitial(tree, cfg) {
   for (const [key, vals] of byItem) {
     const item = itemOf(cfg, key);
     if (!item || !Object.keys(vals).length) continue;
+    // 写した2つの数（例 周囲長／幹周）に比の設定（ratio.to）があれば、その選択肢も入れる（入力画面で数を入れたときと同じ）
+    for (const p of partsOf(item, cfg)) {
+      if (p.type !== 'pair' || !p.ratio?.to || vals[p.name] === undefined || vals[p.ratio.to] !== undefined) continue;
+      const r = ratioChoice(vals[p.name], p.ratio);
+      if (r) vals[p.ratio.to] = r;
+    }
     const dk = detailKeyOfItem(item);
     out.values[partsKeyOf(dk)] = vals;
     out.values[dk] = buildDetail(vals, partsOf(item, cfg), cfg);

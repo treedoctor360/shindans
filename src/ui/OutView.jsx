@@ -156,7 +156,10 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
           (st.skippedLedgerDone.length ? `。台帳で入力済みの${st.skippedLedgerDone.length}本は書き込んでいません` : '') +
           (db.excluded.length ? `。未確定の${db.excluded.length}本は書き込んでいません` : '') +
           (gw.written.length ? `。${cfg.initialSurvey.label}の結果を健全度に書いた木${gw.written.length}本` : '') +
-          (st.gradeOnly.length ? `。台帳で入力済みの行に健全度だけ書いた木${st.gradeOnly.length}本` : ''),
+          (st.gradeOnly.length ? `。台帳で入力済みの行に健全度だけ書いた木${st.gradeOnly.length}本` : '') +
+          (st.gone.length
+            ? `。台帳から消えた木${st.gone.length}本（${st.gone.slice(0, 5).join('・')}${st.gone.length > 5 ? 'ほか' : ''}）は書き込んでいません（番号が変わった可能性があります。不要なら削除してください。一覧の検索で「すべての公園・路線」を選んで探せます）`
+            : ''),
       );
     });
 

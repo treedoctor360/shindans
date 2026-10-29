@@ -166,6 +166,22 @@ describe('確認用の数（文に出さない欄・周囲長）', () => {
     expect(checkNumbers({ circ: { a: '110', b: '210' }, rod: { a: '15', b: '45', c: '141' } }, [circ, rod])).toEqual(['110cm/210cm', '貫入部の周囲長141cm']);
     expect(checkNumbers({}, [circ, rod])).toEqual([]);
   });
+  it('【再現】2つの数の片方が空なら、空の側の単位を出さない（「2cm/cm」にしない）', async () => {
+    const { partText } = await import('../src/core/detailParts.js');
+    const rod = { name: 'rod', type: 'pair', unit: 'cm' };
+    expect(partText(rod, { a: '2', b: '' })).toBe('2cm/');
+    expect(partText(rod, { a: '', b: '50' })).toBe('/50cm');
+    expect(partText(rod, { a: '21', b: '70' })).toBe('21cm/70cm');
+  });
+  it('奥行を文に出さない大きさの欄に奥行があれば、確認用に「奥行」を出す', async () => {
+    const { checkNumbers, partText } = await import('../src/core/detailParts.js');
+    const size = { name: 'size', type: 'size', unitEach: true };
+    const v = [{ w: '30', h: '25', d: '10' }, { w: '5', h: '5' }];
+    expect(partText(size, v)).toBe('30cm×25cm、5cm×5cm'); // 文（ブック）には出さない
+    expect(checkNumbers({ size: v }, [size])).toEqual(['奥行10cm']);
+    expect(checkNumbers({ size: [{ w: '1', h: '2' }] }, [size])).toEqual([]);
+    expect(checkNumbers({ size: v }, [{ ...size, depth: true }])).toEqual([]); // 奥行を文に出す欄なら足さない
+  });
 });
 
 describe('数値の欄ができる前に書いた詳細の文', () => {

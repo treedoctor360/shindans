@@ -290,3 +290,20 @@ describe('寸法の1行を一覧表用の特記にも入れる（kinds の db）
     expect(validateConfig(bad).errors.join()).toContain('.db');
   });
 });
+
+describe('寸法から写した2つの数の比（詳しい診断の pair の ratio.to）', () => {
+  it('周囲長／幹周を写すと、文に出さずに持ち、周囲長比の選択肢も決める', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.detailParts.circ = { type: 'pair', label: '周囲長／幹周', noText: true, ratio: { num: 1, den: 3, lt: '＜1/3', ge: '≧1/3', to: 'ratio' } };
+    const b4 = c.initialSurvey.forms.initial.sections[1].items[0];
+    b4.parts.push('size', 'circ', 'ratio');
+    c.initialSurvey.fromMeasures.push({ kind: 'decay', place: '幹', item: 'b4', parts: { size: 'size', circ: 'circ' } });
+    expect(validateConfig(c).errors).toEqual([]);
+    const values = { circ: { a: '120', b: '187' }, size: [{ w: '100', h: '120' }] };
+    const line = measureLine(c, 'decay', '幹', values);
+    const r = measuresToInitial({ notes: `・${line}`, measures: [measureRecord('decay', '幹', values, line)] }, c);
+    expect(r.values.b4DetailParts.circ).toEqual({ a: '120', b: '187' });
+    expect(r.values.b4DetailParts.ratio).toBe('≧1/3');
+    expect(r.values.b4Detail).toBe('100×120cm、周囲長比≧1/3');
+  });
+});
