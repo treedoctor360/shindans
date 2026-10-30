@@ -187,6 +187,13 @@ describe('確認用の数（文に出さない欄・周囲長）', () => {
     validatePartDefs({ rod: { type: 'pair', label: 'x', slant: { label: 'y', angle: 120 } } }, 'p', need);
     expect(errs.join()).toContain('slant');
   });
+  it('文に出さない言葉の欄（text・noText）は、確認用に prefix を付けて出す', async () => {
+    const { checkNumbers, partText } = await import('../src/core/detailParts.js');
+    const note = { name: 'note', type: 'text', noText: true, prefix: '備考：' };
+    expect(partText(note, '北側に開口')).toBe('');
+    expect(checkNumbers({ note: '北側に開口' }, [note])).toEqual(['備考：北側に開口']);
+    expect(checkNumbers({ note: ' ' }, [note])).toEqual([]);
+  });
   it('奥行を文に出さない大きさの欄に奥行があれば、確認用に「奥行」を出す', async () => {
     const { checkNumbers, partText } = await import('../src/core/detailParts.js');
     const size = { name: 'size', type: 'size', unitEach: true };

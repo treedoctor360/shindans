@@ -5,6 +5,8 @@
 //   kind "s"（文）… そのまま1行
 //   kind "n"（名詞）… まとめて「A、Bあり。」の形（区切り・末尾は設定で変更可）
 
+import { fullNotesOf, measuresWithLines } from './noteMeasures.js';
+
 const BULLET = /^[・･\-\s]+/;
 
 // 特記事項の各行（行頭の「・」を外したもの）
@@ -74,4 +76,4 @@ export function autoDbNote(notes, cfg, measures = []) {
 }
 
 // 一覧表用の特記事項（手で直していれば、その文を優先する）
-export const dbNoteOf = (tree, cfg) => (tree.dbNoteManual ? tree.dbNote || '' : autoDbNote(tree.notes, cfg, tree.measures || []));
+export const dbNoteOf = (tree, cfg) => (tree.dbNoteManual ? tree.dbNote || '' : autoDbNote(fullNotesOf(tree, cfg), cfg, measuresWithLines(tree, cfg)));

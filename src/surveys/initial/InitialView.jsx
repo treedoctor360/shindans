@@ -3,7 +3,7 @@
 //  選択肢は設定かデータ入力用ブックの入力規則から。簡易診断から引き継いだ項目には「簡易から」と出す。
 //  事務の端末では表示だけ（直すのは調査者）。
 //  データ入力用ブックに手で入力済みの木は、ブックの内容を表示だけする（「アプリで入力し直す」でブックの値を下書きにできる）。
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useBarHeight } from '../../ui/useTopHeight.js';
 import { toHalf } from '../../core/text.js';
 import {
@@ -22,7 +22,8 @@ import {
   fixInitialWording,
   optionsOf,
   applyMeasures,
-  pendingMeasures,
+  measureStatus,
+  syncInitialOfTree,
   saveInitial,
   startInitial,
   updateInitial,
@@ -67,12 +68,21 @@ function DetailParts({ it, dk, rec, cfg, edit }) {
 // 選択肢が多い・長い項目は、見出しの下にボタンを並べる（見出しの横だと、どの項目のボタンか分かりにくいため）
 const isWide = (opts) => opts.length > 3 || opts.some((o) => String(o).length > 4) || opts.join('').length > 10;
 
-function Item({ it, rec, cfg, opts, set, press, edit, inGrid = false }) {
+// mstat：その弱点の詳細と簡易診断の寸法の関係（store/initial.js の measureStatus）。onMatch：「簡易に合わせる」
+function Item({ it, rec, cfg, opts, set, press, edit, mstat, onMatch, inGrid = false }) {
   const v = rec[it.key] ?? '';
   const tags = (
     <>
       {it.desk && <small className="tag">後で</small>}
-      {(rec.inherited?.includes(it.key) || (it.type === 'weak' && rec.inherited?.includes(detailKeyOf(it)))) && <small className="tag prev">簡易から</small>}
+      {mstat ? (
+        mstat.follow ? (
+          mstat.simpleText && <small className="tag prev" data-mstat="follow">簡易の寸法から</small>
+        ) : (
+          <small className="tag" data-mstat="manual">{cfg.initialSurvey.label.replace(/（.*$/, '')}で直した</small>
+        )
+      ) : (
+        (rec.inherited?.includes(it.key) || (it.type === 'weak' && rec.inherited?.includes(detailKeyOf(it)))) && <small className="tag prev">簡易から</small>
+      )}
       {rec.fromBook?.includes(it.key) && <small className="tag prev">ブックから</small>}
       {it.hint && <small>{it.hint}</small>}
     </>
@@ -115,6 +125,19 @@ function Item({ it, rec, cfg, opts, set, press, edit, inGrid = false }) {
         {checkNumbers(rec[partsKeyOf(dk)], partsOf(it, cfg)).length > 0 && (
           <div className="hint" data-check={dk}>
             入力した数：【{checkNumbers(rec[partsKeyOf(dk)], partsOf(it, cfg)).join('、')}】（確認用カルテにだけ出します。ブックには書きません）
+          </div>
+        )}
+        {/* 詳しい診断で直した項目が、簡易診断の寸法と違う。「簡易に合わせる」で戻せる */}
+        {mstat && !mstat.follow && mstat.differs && (
+          <div className="alert warn" data-testid="measure-differs" data-differs={dk}>
+            <span>簡易の寸法と違います（簡易：{mstat.simpleText || 'なし'}）</span>
+            {onMatch && (
+              <div className="acts">
+                <button type="button" className="btn" onClick={() => onMatch(dk)} data-match={dk}>
+                  簡易に合わせる
+                </button>
+              </div>
+            )}
           </div>
         )}
         {rec[manualKeyOf(dk)] && edit && partsOf(it, cfg).length > 0 && (
@@ -194,6 +217,12 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const entry = tree && cfg?.initialSurvey ? bookEntry(state, tree, cfg) : null;
   const viewingBook = !!entry && (!appRec || showBook); // ブックの内容を表示している（表示だけ）
   const rec = viewingBook ? bookValues(entry, cfg) : appRec;
+  // 開いたとき・簡易診断の寸法が変わったとき：詳しい診断で直していない項目を簡易診断の寸法に合わせる（事務の端末は見るだけ）
+  const canSync = !!appRec && !!tree && state.user?.role !== 'office';
+  useEffect(() => {
+    // 木が変わるたびに確かめる（変わっていなければ何もしない）
+    if (canSync) update((cur) => syncInitialOfTree(cur, tree.id, cfg));
+  }, [canSync, tree]);
   const back = (view = 'list') => update((s) => ({ ...s, view, ...(view === 'form' && tree ? { currentId: tree.id } : {}) }));
 
   if (!cfg?.initialSurvey || !tree || !rec) {
@@ -233,15 +262,15 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const missing = readOnly ? [] : missingInitial(rec, cfg);
   const warnings = readOnly ? [] : initialWarnings(rec, tree, cfg); // 詳細があるのに「無」・簡易診断で「有」なのに詳しい診断で「無」
   const wording = readOnly ? [] : initialWordingIssues(rec, cfg); // 表記の統一（設定 wording）
-  // 簡易診断の寸法で、まだ写していない（簡易診断で後から足した・直した）もの
-  const pending = readOnly ? [] : pendingMeasures(rec, tree, cfg);
-  const onMeasures = (apply) => {
+  // 簡易診断の寸法と弱点の詳細の関係（詳しい診断で直していない項目は、自動で簡易診断の寸法に合わせる）
+  const mstats = new Map((viewingBook ? [] : measureStatus(rec, tree, cfg)).map((x) => [x.key, x]));
+  const onMatch = (dk) => {
     // その時点の最新の木と記録に対して行う
     update((cur) => {
       const t = cur.trees.find((x) => x.id === tree.id) || tree;
-      return updateInitial(cur, rec.id, (r) => applyMeasures(r, t, cfg, pendingMeasures(r, t, cfg).map((x) => x.key), { apply }));
+      return updateInitial(cur, rec.id, (r) => applyMeasures(r, t, cfg, [dk]));
     });
-    toast(apply ? `簡易診断の寸法を写しました（${pending.map((x) => x.label).join('、')}）` : '今の内容のままにしました');
+    toast('簡易診断の寸法に合わせました');
   };
 
   // 入力の取り消し・下書きを消す
@@ -364,25 +393,6 @@ export default function InitialView({ state, update, config: cfg, toast, send })
         )}
       </div>
 
-      {pending.length > 0 && (
-        <div className="sec">
-          <div className="alert info" data-testid="measures-pending">
-            <span>
-              簡易診断の寸法で、まだ写していないものがあります：{pending.map((x) => x.label).join('、')}
-              {pending.some((x) => x.replaces) && `（${pending.filter((x) => x.replaces).map((x) => x.label).join('、')}は、今の詳細を置き換えます）`}
-            </span>
-            <div className="acts">
-              <button type="button" className="btn fill" onClick={() => onMeasures(true)} data-testid="measures-apply">
-                写す
-              </button>
-              <button type="button" className="btn" onClick={() => onMeasures(false)} data-testid="measures-keep">
-                このままにする
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {!viewingBook && (
         <ReviewPanel
           t={rec}
@@ -415,11 +425,11 @@ export default function InitialView({ state, update, config: cfg, toast, send })
               g.grid ? (
                 <div className="grid2 item" key={g.items[0].key}>
                   {g.items.map((it) => (
-                    <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} edit={readOnly ? null : edit} inGrid />
+                    <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} edit={readOnly ? null : edit} inGrid mstat={it.type === 'weak' ? mstats.get(detailKeyOf(it)) : null} onMatch={readOnly ? null : onMatch} />
                   ))}
                 </div>
               ) : (
-                <Item key={g.items[0].key} it={g.items[0]} rec={rec} cfg={cfg} opts={optionsFor(g.items[0])} set={set} press={press} edit={readOnly ? null : edit} />
+                <Item key={g.items[0].key} it={g.items[0]} rec={rec} cfg={cfg} opts={optionsFor(g.items[0])} set={set} press={press} edit={readOnly ? null : edit} mstat={g.items[0].type === 'weak' ? mstats.get(detailKeyOf(g.items[0])) : null} onMatch={readOnly ? null : onMatch} />
               ),
             )}
           </div>

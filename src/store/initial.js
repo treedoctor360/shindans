@@ -164,38 +164,69 @@ export function bookValues(entry, cfg) {
 //  写すのは人がボタンを押したときだけ（初期診断で手で直した内容を、黙って置き換えないため）
 const sigOf = (v) => JSON.stringify(v ?? null);
 
-// まだ写していない（または簡易診断で変わった）寸法。返す形：[{ key: 詳細の項目, label: 弱点の名前, replaces: 今の詳細を置き換えるか }]
-export function pendingMeasures(rec, tree, cfg) {
+// 簡易診断の寸法と、詳しい診断の弱点の詳細の関係。返す形：[{ key: 詳細の項目, label, follow, differs, simpleText }]
+//  follow：詳しい診断の画面で直していない（写した時点のまま）→ 簡易診断の寸法に自動で合わせる
+//  differs：今の詳細が簡易診断の寸法と違う（follow でないときは「簡易の寸法と違います」と出す）
+//  簡易診断で消した寸法（前に写したもの）も入る（follow なら詳細を消す）
+export function measureStatus(rec, tree, cfg) {
   if (!rec || !tree) return [];
   const ms = measuresToInitial(tree, cfg);
-  const out = [];
-  for (const dk of ms.keys) {
+  const keys = [...new Set([...ms.keys, ...Object.keys(rec.measureSig || {})])];
+  return keys.map((dk) => {
     const pk = partsKeyOf(dk);
     const now = sigOf(ms.values[pk]);
     const sig = rec.measureSig?.[dk];
-    if (sig === now) continue; // 前に写した（または「このまま」にした）時から変わっていない
-    if (sig === undefined && sigOf(rec[pk]) === now) continue; // 前の版で写したもの（印がない）と同じ
+    const mine = sigOf(rec[pk]);
+    const blank = isEmpty(rec[dk]) && rec[pk] == null; // 詳しい診断で何も入れていない
+    const follow = !rec[manualKeyOf(dk)] && (sig !== undefined ? mine === sig : blank || mine === now);
+    const differs = mine !== now || (!!rec[manualKeyOf(dk)] && String(rec[dk] ?? '') !== String(ms.values[dk] ?? ''));
     const item = itemByDetailKey(cfg, dk);
-    out.push({ key: dk, label: item?.label || dk, replaces: !!String(rec[dk] ?? '').trim() && rec[dk] !== ms.values[dk] });
-  }
-  return out;
+    return { key: dk, label: item?.label || dk, follow, differs, simpleText: ms.values[dk] || '' };
+  });
 }
 
-// 寸法を写す（keys の項目だけ）。apply=false なら写さずに「このまま」の印だけ付ける（同じ寸法では知らせない）
-export function applyMeasures(rec, tree, cfg, keys, { apply = true } = {}) {
+// 詳しい診断で直していない項目を、簡易診断の寸法に合わせた記録を返す。返す形：{ record, changed: [弱点の名前…] }
+export function syncMeasures(rec, tree, cfg) {
+  const keys = measureStatus(rec, tree, cfg)
+    .filter((x) => x.follow && (x.differs || rec.measureSig?.[x.key] === undefined))
+    .map((x) => x.key);
+  if (!keys.length) return { record: rec, changed: [] };
+  const next = applyMeasures(rec, tree, cfg, keys);
+  // 中身が同じ（印を付けただけ）なら、変わったことにしない
+  const changed = keys.filter((dk) => sigOf(next[partsKeyOf(dk)]) !== sigOf(rec[partsKeyOf(dk)]) || String(next[dk] ?? '') !== String(rec[dk] ?? ''));
+  return { record: next, changed: changed.map((dk) => itemByDetailKey(cfg, dk)?.label || dk) };
+}
+
+// 寸法を写す（keys の項目だけ。「簡易に合わせる」も同じ）。簡易診断で消した寸法なら、詳細を消す
+export function applyMeasures(rec, tree, cfg, keys) {
   const ms = measuresToInitial(tree, cfg);
   const next = { ...rec, measureSig: { ...(rec.measureSig || {}) } };
   for (const dk of keys) {
     const pk = partsKeyOf(dk);
-    if (!(dk in ms.values)) continue;
+    delete next[manualKeyOf(dk)]; // 手で直した文の印を外す（写した数値から文を作り直す）
+    if (!(dk in ms.values)) {
+      delete next[pk];
+      next[dk] = '';
+      delete next.measureSig[dk];
+      continue;
+    }
     next.measureSig[dk] = sigOf(ms.values[pk]);
-    if (!apply) continue;
     next[dk] = ms.values[dk];
     next[pk] = structuredClone(ms.values[pk]);
-    delete next[manualKeyOf(dk)]; // 手で直した文の印を外す（写した数値から文を作り直す）
     next.inherited = [...new Set([...(rec.inherited || []), dk])];
   }
   return next;
+}
+
+// 簡易診断の木を保存した後などに、その木の詳しい診断の記録を簡易診断の寸法に合わせる（記録がなければそのまま）
+export function syncInitialOfTree(state, treeId, cfg) {
+  if (!cfg.initialSurvey?.fromMeasures?.length) return state;
+  const tree = state.trees.find((t) => t.id === treeId);
+  const rec = tree && initialOf(state, tree, cfg);
+  if (!rec) return state;
+  const r = syncMeasures(rec, tree, cfg);
+  // 中身が変わったときだけ直す（印だけ付けて送り直したり、確定を外したりしない）
+  return r.changed.length ? updateInitial(state, rec.id, () => r.record) : state;
 }
 
 function itemByDetailKey(cfg, dk) {

@@ -1,4 +1,5 @@
 // 出力画面：野帳・一覧表の Excel 出力（照合つき）と、一覧表形式での確認
+import { fullNotesOf } from '../core/noteMeasures.js';
 import { useState } from 'react';
 import { groupKey, groupLabel, treesOfGroup } from '../core/groups.js';
 import { numberRanges, toHalf } from '../core/text.js';
@@ -61,7 +62,7 @@ function columns(cfg, siteType, ledgerColumns, trees) {
 // 表のセルに出す文字
 // 一覧表形式の右端に足す列：特記事項（野帳の特記事項の全文。一覧表用の特記では寸法などが省かれるため）
 const FULL_NOTE = '特記事項（全文）';
-const fullNoteOf = (t) => (t.source === 'app' ? String(t.notes || '') : '');
+const fullNoteOf = (t, cfg) => (t.source === 'app' ? fullNotesOf(t, cfg) : '');
 // 全文の列は色を変える（一覧表にない列だと分かるように）
 const fullNoteStyle = { background: 'var(--info-soft)', minWidth: '16em' };
 
@@ -239,7 +240,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
     const head = [...cols.map((c) => c[1]), FULL_NOTE];
     const rows = shown.map((t) => {
       const v = dbValues(t, cfg);
-      return [...cols.map(([k]) => cellText(t, k, v[k], cfg)), fullNoteOf(t)];
+      return [...cols.map(([k]) => cellText(t, k, v[k], cfg)), fullNoteOf(t, cfg)];
     });
     const tsv = [head, ...rows].map((r) => r.map((x) => String(x ?? '').replace(/\t|\n/g, ' ')).join('\t')).join('\n');
     try {
@@ -476,7 +477,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
                       </td>
                     ))}
                     <td style={{ whiteSpace: 'pre-line', ...fullNoteStyle }} data-testid="out-note-full">
-                      {fullNoteOf(t)}
+                      {fullNoteOf(t, cfg)}
                     </td>
                   </tr>
                 );

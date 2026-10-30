@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { branchRatioRaw, branchRatioText, girthOf, heightRatioOf } from '../core/calc.js';
 import { groupLabel, treesOfGroup } from '../core/groups.js';
 import { dbNoteOf, freeNoteLines, isChipLine, noteLines, toggleChip } from '../core/notes.js';
-import { addMeasure } from '../core/noteMeasures.js';
+import { freeNotesOf, toMeasuresV2 } from '../core/noteMeasures.js';
 import NoteMeasures from './NoteMeasures.jsx';
 import SessionStamp from './SessionStamp.jsx';
 import { photoFlag, photoPlan } from '../core/photo.js';
@@ -26,7 +26,7 @@ import {
   withdrawTree,
 } from '../store/actions.js';
 import { activeGroup } from './ListView.jsx';
-import { INITIAL_STATUS_LABEL, inBook, initialOf, initialStatus, isInitialTarget } from '../store/initial.js';
+import { INITIAL_STATUS_LABEL, inBook, initialOf, initialStatus, isInitialTarget, syncInitialOfTree } from '../store/initial.js';
 import InitialPrompt, { openInitialWith } from './InitialPrompt.jsx';
 import PrevPanel from './PrevPanel.jsx';
 import ReviewPanel from './ReviewPanel.jsx';
@@ -206,7 +206,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
     // 詳しい診断が必要な木なら、次の木の画面で「続けて入力」を聞く（同じ木のままなら、画面の「詳しい診断を入力」から開ける）
     const prompt = after !== 'stay' && cfg.initialSurvey?.forms && isInitialTarget(r.state.trees.find((x) => x.id === t.id) || t, cfg) ? t.id : '';
     // 保存は「その時点の最新の状態」に対して行う（画面を描いた後に送受信で届いた変更を、古い状態で上書きしないように）
-    update((cur) => ({ ...saveTree({ ...cur, currentId: t.id, group }, cfg, { force: true, after }).state, initialPrompt: prompt }), { now: true }).then(() => send?.()); // 端末に保存してから、裏でサーバーへ送る
+    update((cur) => ({ ...syncInitialOfTree(saveTree({ ...cur, currentId: t.id, group }, cfg, { force: true, after }).state, t.id, cfg), initialPrompt: prompt }), { now: true }).then(() => send?.()); // 端末に保存してから、裏でサーバーへ送る
     toast(`${toHalf(t.treeNo) || 'この木'} を保存しました`);
     if (after !== 'stay') window.scrollTo(0, 0); // 同じ木のままなら、見ていた所から続けて直せるよう動かさない
   };
@@ -266,8 +266,9 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const topAlerts = alerts.filter((a) => a.acts?.some((x) => ['resurvey', 'useApp'].includes(x.type)));
   const otherAlerts = alerts.filter((a) => !topAlerts.includes(a));
   const chipsShow = cfg.noteChipsShow ?? 10;
-  const lines = noteLines(t.notes);
-  const free = freeNoteLines(t.notes, cfg);
+  const freeNotes = freeNotesOf(t, cfg); // 文字の欄に出す文（寸法の1行は下の一覧に出す）
+  const lines = noteLines(freeNotes);
+  const free = freeNoteLines(freeNotes, cfg);
   const strongWords = cfg.rules.filter((r) => r.type === 'contains').flatMap((r) => r.anyOf);
   const treeNoRule = cfg.rules.find((r) => r.type === 'treeNoPattern');
   const badNo = !!t.treeNo && treeNoRule && !new RegExp(treeNoRule.pattern).test(toHalf(t.treeNo));
@@ -586,7 +587,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
           {/* 特記事項は枯死の木でも書ける（点検項目だけを原則空欄にする） */}
           <div className="row" style={{ paddingTop: 8 }}>
             <label className="lbl" htmlFor="f-notes">
-              特記事項（野帳） <small>タップで追加・もう一度で削除。寸法なども書く</small>
+              特記事項（野帳） <small>タップで追加・もう一度で削除。寸法は下の「寸法を入れる」で</small>
             </label>
             <div className="chips" data-testid="note-chips">
               {cfg.noteChips.map((c, i) =>
@@ -595,7 +596,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                     key={c.t}
                     type="button"
                     className={`chip${lines.some((l) => isChipLine(c, l)) ? ' on' : ''}`}
-                    onClick={() => change((x) => ({ ...x, notes: toggleChip(x.notes, c) }))}
+                    onClick={() => change((x) => { const v = toMeasuresV2(x, cfg); return { ...v, notes: toggleChip(v.notes, c) }; })}
                   >
                     {c.t}
                   </button>
@@ -607,8 +608,17 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                 定型文をもっと見る（{cfg.noteChips.length - chipsShow}件）
               </button>
             )}
-            <textarea id="f-notes" rows={4} value={t.notes} placeholder="1行に1項目（音声入力も可）" onChange={(e) => setField('notes', e.target.value)} />
-            <NoteMeasures cfg={cfg} tree={t} onAdd={(line, m) => change((x) => ({ ...x, ...addMeasure(x, cfg, m) }))} />
+            <textarea
+              id="f-notes"
+              rows={4}
+              value={freeNotes}
+              placeholder="1行に1項目（音声入力も可）"
+              onChange={(e) => {
+                const v = e.target.value;
+                change((x) => ({ ...toMeasuresV2(x, cfg), notes: v })); // 寸法の1行は文字に入れない（新しい形に移す）
+              }}
+            />
+            <NoteMeasures cfg={cfg} tree={t} onChange={(fn) => change(fn)} readOnly={readOnly} />
             <label className="lbl" htmlFor="f-dbnote" style={{ marginTop: 6 }}>
               一覧表用の特記 <small>{t.dbNoteManual ? '手入力' : '定型文から自動で作成'}</small>
             </label>

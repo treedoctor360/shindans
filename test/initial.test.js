@@ -6,9 +6,9 @@ import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
-import { measureLine, measureRecord } from '../src/core/noteMeasures.js';
+import { measureLine, measureRecord, toMeasuresV2 } from '../src/core/noteMeasures.js';
 import { initialWarnings } from '../src/store/initial.js';
-import { bookEntry, bookValues, discardInitial, karteExtras, karteRecords, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial, pendingMeasures, applyMeasures } from '../src/store/initial.js';
+import { bookEntry, bookValues, discardInitial, karteExtras, karteRecords, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial, measureStatus, syncMeasures, applyMeasures } from '../src/store/initial.js';
 import { addSticky, answerSticky, closeSticky, fieldLabel, reviewFields, reviewState, reviewStatesOf, setConfirm, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
 import { INITIAL, initialKey } from '../src/store/surveys.js';
@@ -416,43 +416,60 @@ describe('特記事項の寸法の引き継ぎ', () => {
     expect(r.inherited).toContain('b4Detail');
   });
 
-  it('【再現】記録を作った後に簡易診断で寸法を足した・直したら知らせ、「写す」で写す・「このままにする」で知らせを消す', () => {
-    const line = '枯れ枝：2本、地上3m';
-    const m = (count, l = line) => ({ kind: 'deadBranch', place: '', values: { count, height: { a: '3' } }, line: l });
+  it('【再現】詳しい診断で直していない項目は、簡易診断の寸法に自動で合わせる（足した・直した・消した）', () => {
+    const v = (count) => ({ count, height: { a: '3' } });
+    const rec2 = (count) => ({ kind: 'deadBranch', place: '', values: v(count) });
     let t = need('AB001');
     let s = startInitial(S([t]), t, cfg).state;
     let rec = s.initials[0];
-    expect(pendingMeasures(rec, t, cfg)).toEqual([]);
-    // 後から寸法を足した
-    t = { ...t, notes: `・${line}`, measures: [m('2')] };
-    expect(pendingMeasures(rec, t, cfg)).toEqual([{ key: 'b4Detail', label: '枯れ枝', replaces: false }]);
-    rec = applyMeasures(rec, t, cfg, ['b4Detail']);
+    expect(syncMeasures(rec, t, cfg).changed).toEqual([]);
+    // 後から寸法を足した（新しい形：寸法は一覧だけ）
+    t = { ...t, measuresV: 2, measures: [rec2('2')] };
+    let r = syncMeasures(rec, t, cfg);
+    expect(r.changed).toEqual(['枯れ枝']);
+    rec = r.record;
     expect(rec.b4Detail).toBe('2本、地上3m');
-    expect(rec.inherited).toContain('b4Detail');
-    expect(pendingMeasures(rec, t, cfg)).toEqual([]);
-    // 初期診断で詳細を手で直した後に、簡易診断の寸法を直した → 置き換えることを知らせる
-    rec = { ...rec, b4Detail: '手で直した文', b4DetailManual: true };
-    expect(pendingMeasures(rec, t, cfg)).toEqual([]); // 簡易診断が変わっていなければ知らせない
-    const line2 = '枯れ枝：4本、地上3m';
-    t = { ...t, notes: `・${line2}`, measures: [m('4', line2)] };
-    expect(pendingMeasures(rec, t, cfg)).toEqual([{ key: 'b4Detail', label: '枯れ枝', replaces: true }]);
-    // このままにする：値は変えず、知らせだけ消える
-    const kept = applyMeasures(rec, t, cfg, ['b4Detail'], { apply: false });
-    expect(kept.b4Detail).toBe('手で直した文');
-    expect(pendingMeasures(kept, t, cfg)).toEqual([]);
-    // 写す：手で直した印も外して作り直す
-    const applied = applyMeasures(rec, t, cfg, ['b4Detail']);
-    expect(applied.b4Detail).toBe('4本、地上3m');
-    expect(applied.b4DetailManual).toBeUndefined();
+    // 簡易で直した → ついてくる
+    t = { ...t, measures: [rec2('4')] };
+    rec = syncMeasures(rec, t, cfg).record;
+    expect(rec.b4Detail).toBe('4本、地上3m');
+    expect(measureStatus(rec, t, cfg)).toEqual([{ key: 'b4Detail', label: '枯れ枝', follow: true, differs: false, simpleText: '4本、地上3m' }]);
+    // 詳しい診断で数値を直した → もうついてこない。違えば知らせる
+    const mine = { ...rec, b4DetailParts: { count: '5', height: { a: '3' } }, b4Detail: '5本、地上3m' };
+    expect(measureStatus(mine, t, cfg)[0]).toMatchObject({ follow: false, differs: true });
+    expect(syncMeasures(mine, t, cfg).changed).toEqual([]);
+    // 簡易に合わせる
+    expect(applyMeasures(mine, t, cfg, ['b4Detail']).b4Detail).toBe('4本、地上3m');
+    // 詳細の文を手で直した → ついてこない
+    const manual = { ...rec, b4Detail: '手で直した文', b4DetailManual: true };
+    expect(syncMeasures(manual, { ...t, measures: [rec2('6')] }, cfg).changed).toEqual([]);
+    // 簡易で寸法を消した → ついてきている項目は詳細も消える（本数は簡易の枯れ枝の本数から入る）
+    const gone = syncMeasures(rec, { ...t, measures: [], deadBranchCount: '' }, cfg).record;
+    expect(gone.b4Detail).toBe('');
+    expect(gone.b4DetailParts).toBeUndefined();
   });
 
-  it('前の版で作った記録（写した印がない）は、写した値と同じなら知らせない', () => {
+  it('【再現】前の形で寸法の1行を手で直しても、初期の詳細が「写す」で消えない（数値が減るだけの書き換えをしない）', () => {
+    // 前の形：寸法の1行が特記事項の文字にある。後ろに言葉を足した行は、備考がない設定ではふつうの文と寸法の両方として残す
+    const line = '枯れ枝：2本、地上3m';
+    const t = need('AB001', { deadBranch: '有', deadBranchCount: '2', notes: `・${line}`, measures: [{ kind: 'deadBranch', place: '', values: { count: '2', height: { a: '3' } }, line }] });
+    const s = startInitial(S([t]), t, cfg).state;
+    const rec = s.initials[0];
+    expect(rec.b4Detail).toBe('2本、地上3m');
+    const edited = { ...t, notes: `・${line}、園路上` };
+    expect(syncMeasures(rec, edited, cfg).record.b4Detail).toBe('2本、地上3m');
+    const v2 = toMeasuresV2(edited, cfg);
+    expect(v2.measures).toHaveLength(1);
+    expect(syncMeasures(rec, v2, cfg).record.b4Detail).toBe('2本、地上3m');
+  });
+
+  it('前の版で作った記録（写した印がない）は、写した値と同じなら合わせ直さない', () => {
     const line = '枯れ枝：2本';
     const t = need('AB001', { notes: `・${line}`, measures: [{ kind: 'deadBranch', place: '', values: { count: '2' }, line }] });
     const { measureSig, ...old } = startInitial(S([t]), t, cfg).record;
     expect(measureSig).toBeTruthy();
-    expect(pendingMeasures(old, t, cfg)).toEqual([]);
-    expect(pendingMeasures({ ...old, b4DetailParts: undefined, b4Detail: '' }, t, cfg)).toHaveLength(1);
+    expect(syncMeasures(old, t, cfg).changed).toEqual([]);
+    expect(measureStatus(old, t, cfg)[0]).toMatchObject({ follow: true, differs: false });
   });
 });
 

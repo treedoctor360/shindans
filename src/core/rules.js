@@ -2,6 +2,7 @@
 // 判定の基準（しきい値・菌の名前・文言など）はすべて設定ファイル（cfg.rules）に書く。
 // ここにあるのは「規則の種類ごとの動かし方」だけ。最終判断は人が行う（警告・提案のみ）。
 
+import { activeMeasures, isMeasuresV2, measureParts } from './noteMeasures.js';
 import { girthOf, heightRatioOf, branchRatioRaw } from './calc.js';
 import { chipOfLine, noteLines, toggleNote } from './notes.js';
 import { fixWording, wordingIssues } from './wording.js';
@@ -89,8 +90,7 @@ const CHECKERS = {
   //  items：[{ kinds: [寸法の種類], field: 点検項目, label }]。none：「無」とみなす値（既定 ['無']）
   //  特記事項から消した・手で書き換えた1行の寸法は数えない。未選択は入力漏れで知らせるので、ここでは出さない
   measureNeedsCheck: (t, r) => {
-    const notes = String(t.notes || '');
-    const kinds = new Set((t.measures || []).filter((m) => m?.line && notes.includes(m.line)).map((m) => m.kind));
+    const kinds = new Set(activeMeasures(t).map((m) => m.kind));
     const none = r.none || ['無'];
     const hits = r.items.filter((it) => it.kinds.some((k) => kinds.has(k)) && none.includes(t[it.field])).map((it) => it.label);
     return hits.length ? { hits: hits.join('・') } : null;
@@ -157,10 +157,20 @@ export function alertsOf(tree, cfg) {
   return a;
 }
 
+// 寸法の記録のうち、文字の欄（備考・種名など）。新しい形の木だけ（前の形は特記事項の1行で調べる）
+const textParts = (m, cfg) => measureParts(m.kind, cfg).filter((p) => p.type === 'text');
+const measureTexts = (tree, cfg) => (isMeasuresV2(tree) ? tree.measures.flatMap((m) => textParts(m, cfg).map((p) => m.values?.[p.name]).filter(Boolean)) : []);
+const fixTextParts = (m, cfg, fix) => {
+  const v = { ...(m.values || {}) };
+  for (const p of textParts(m, cfg)) if (v[p.name]) v[p.name] = fix(v[p.name]);
+  return v;
+};
+
 // 表記の統一を調べる文：特記事項のうち定型文でない行・処置（追記）・伐採理由・手で直した一覧表用の特記
 function wordingTexts(tree, cfg) {
   return [
     ...noteLines(tree.notes).filter((l) => !chipOfLine(l, cfg)),
+    ...measureTexts(tree, cfg),
     tree.treatFree,
     tree.fellingReason,
     ...(tree.dbNoteManual ? [tree.dbNote] : []),
@@ -181,7 +191,8 @@ function fixWordingOfTree(t, cfg) {
   const next = { ...t, notes: String(t.notes || '').split('\n').map(fixLine).join('\n') };
   for (const k of ['treatFree', 'fellingReason']) if (t[k]) next[k] = fixWording(t[k], cfg);
   if (t.dbNoteManual && t.dbNote) next.dbNote = fixWording(t.dbNote, cfg);
-  if (Array.isArray(t.measures)) next.measures = t.measures.map((m) => (m?.line ? { ...m, line: fixWording(m.line, cfg) } : m));
+  if (isMeasuresV2(t)) next.measures = t.measures.map((m) => ({ ...m, values: fixTextParts(m, cfg, (x) => fixWording(x, cfg)) }));
+  else if (Array.isArray(t.measures)) next.measures = t.measures.map((m) => (m?.line ? { ...m, line: fixWording(m.line, cfg) } : m));
   return next;
 }
 
