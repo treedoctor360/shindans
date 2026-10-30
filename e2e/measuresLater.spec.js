@@ -1,4 +1,4 @@
-// 詳しい診断の記録を作った後に、簡易診断で枯れ枝の本数を入れた → 詳しい診断の画面で知らせ、「写す」で写す
+// 詳しい診断の記録を作った後に、簡易診断で枯れ枝の本数を入れた → 詳しい診断の詳細も自動で同じになる
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import { makeInitialBook } from '../test/helpers/makeInitialBook.js';
@@ -11,7 +11,7 @@ const tmp = (name, bytes) => {
   return p;
 };
 
-test('記録を作った後に簡易診断で足した寸法（枯れ枝の本数）を、詳しい診断の画面で写せる', async ({ page }) => {
+test('記録を作った後に簡易診断で足した寸法（枯れ枝の本数）は、詳しい診断で直していなければ自動で入る', async ({ page }) => {
   await page.goto('./');
   await page.fill('#s-date', '2099-05-06');
   await page.fill('#s-insp', '試験 二郎(資格)');
@@ -31,7 +31,6 @@ test('記録を作った後に簡易診断で足した寸法（枯れ枝の本�
   await page.click('text=未入力のまま保存する');
   await page.click('[data-testid=initial-prompt-go]');
   await expect(page.locator('[data-testid=initial-tree]')).toContainText('AB002');
-  await expect(page.locator('[data-testid=measures-pending]')).toHaveCount(0);
 
   // 簡易診断に戻って、枯れ枝「有」・本数を入れる
   await page.click('[data-testid=back-to-simple]');
@@ -40,9 +39,17 @@ test('記録を作った後に簡易診断で足した寸法（枯れ枝の本�
   await page.click('[data-testid=save-stay]');
   await page.click('[data-testid=open-initial]');
 
-  // 知らせ → 写す
-  await expect(page.locator('[data-testid=measures-pending]')).toContainText('枯れ枝');
-  await page.click('[data-testid=measures-apply]');
-  await expect(page.locator('[data-testid=measures-pending]')).toHaveCount(0);
+  // 「写す」は押さなくてよい（自動で入る）
   await expect(page.locator('#i-b4Detail')).toHaveValue('3本');
+  await expect(page.locator('[data-item=b4] [data-mstat=follow]')).toHaveText('簡易の寸法から');
+
+  // 詳しい診断で直す → 簡易で本数を変えてもついてこず、違いを知らせる → 「簡易に合わせる」で戻す
+  await page.locator('[data-item=b4] [data-v="有（小）"]').click();
+  await page.locator('[data-item=b4] [data-part=count]').fill('5');
+  await expect(page.locator('#i-b4Detail')).toHaveValue('5本');
+  await expect(page.locator('[data-item=b4] [data-mstat=manual]')).toBeVisible();
+  await expect(page.locator('[data-differs=b4Detail]')).toContainText('簡易：3本');
+  await page.click('[data-match=b4Detail]');
+  await expect(page.locator('#i-b4Detail')).toHaveValue('3本');
+  await expect(page.locator('[data-differs=b4Detail]')).toHaveCount(0);
 });

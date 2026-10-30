@@ -307,3 +307,76 @@ describe('寸法から写した2つの数の比（詳しい診断の pair の ra
     expect(r.values.b4Detail).toBe('100×120cm、周囲長比≧1/3');
   });
 });
+
+describe('寸法を特記事項の文字から分ける（measuresV 2）', () => {
+  const mc = structuredClone(cfgJson);
+  mc.noteMeasures.merge = true;
+  mc.noteMeasures.parts.memo = { type: 'text', label: '備考' };
+  mc.noteMeasures.kinds.find((k) => k.key === 'decay').parts.push('memo');
+  const rec = (kind, place, values) => ({ kind, place, values });
+
+  it('新しい形：特記事項の文字には寸法の1行を入れず、野帳の全文では文字の後に並べる（同じ部位・種類は①②）', async () => {
+    const { putMeasure, fullNotesOf, measureLinesOf, freeNotesOf, removeMeasure } = await import('../src/core/noteMeasures.js');
+    let t = { notes: '・枝の偏り' };
+    t = putMeasure(t, mc, rec('decay', '幹', { height: { a: '1' }, size: [{ w: '10', h: '5' }], memo: '北側' }));
+    t = putMeasure(t, mc, rec('decay', '幹', { height: { a: '2' } }));
+    t = putMeasure(t, mc, rec('rod', '根株', { rod: { a: '21', b: '70' } }));
+    expect(t.measuresV).toBe(2);
+    expect(t.notes).toBe('・枝の偏り');
+    expect(freeNotesOf(t, mc)).toBe('・枝の偏り');
+    expect(measureLinesOf(t, mc)).toEqual(['幹の腐朽：①地上1m、10cm×5cm、北側 ②地上2m', '根株の鋼棒貫入：21cm/70cm']);
+    expect(fullNotesOf(t, mc)).toBe('・枝の偏り\n・幹の腐朽：①地上1m、10cm×5cm、北側 ②地上2m\n・根株の鋼棒貫入：21cm/70cm');
+    // 直す（番号で）・消す
+    t = putMeasure(t, mc, rec('decay', '幹', { height: { a: '3' } }), 1);
+    expect(measureLinesOf(t, mc)[0]).toBe('幹の腐朽：①地上1m、10cm×5cm、北側 ②地上3m');
+    t = removeMeasure(t, mc, 0);
+    expect(measureLinesOf(t, mc)).toEqual(['幹の腐朽：地上3m', '根株の鋼棒貫入：21cm/70cm']);
+  });
+
+  it('新しい形の寸法も、一覧表用の特記（db）・写真・規則・初期への写しに使う', async () => {
+    const { putMeasure, measuresToInitial } = await import('../src/core/noteMeasures.js');
+    const { alertsOf } = await import('../src/core/rules.js');
+    const t = putMeasure({ notes: '・枝の偏り', vigor: cfg.options.vigor[0], deadBranch: '無' }, mc, rec('overhang', '右', { height: { a: '2.5' }, len: '1.2' }));
+    expect(dbNoteOf(t, mc)).toBe('枝の偏り、はみ出し(右側)あり。');
+    expect(photoPlan(t, mc).shoot.map((x) => x.name)).toContain('はみ出し枝');
+    const d = putMeasure(t, mc, rec('deadBranch', '', { count: '2', height: { a: '3' } }));
+    expect(alertsOf(d, mc).map((a) => a.id)).toContain('measureCheck'); // 寸法があるのに③が「無」
+    expect(measuresToInitial(d, mc).values.b4Detail).toBe('2本、地上3m');
+  });
+
+  it('【移し替え】前の形の木：1行そのままは一覧へ、後ろに言葉を足した行は備考へ、途中を直した行は文字に残す', async () => {
+    const { toMeasuresV2, activeMeasures, fullNotesOf } = await import('../src/core/noteMeasures.js');
+    const l1 = measureLine(mc, 'decay', '幹', { height: { a: '1' } });
+    const l2 = measureLine(mc, 'rod', '根株', { rod: { a: '21', b: '70' } });
+    const l3 = measureLine(mc, 'tap', '幹', { height: { a: '2' } });
+    const old = {
+      notes: `・枝の偏り\n・${l1}、北側に開口\n・${l2}\n・南側の${l3}\n・自由な文`,
+      measures: [measureRecord('decay', '幹', { height: { a: '1' } }, l1), measureRecord('rod', '根株', { rod: { a: '21', b: '70' } }, l2), measureRecord('tap', '幹', { height: { a: '2' } }, l3), measureRecord('tap', '幹', { height: { a: '9' } }, '消した行')],
+    };
+    expect(activeMeasures(old)).toHaveLength(3); // 前と同じく、文字の中に1行が残っているものだけ
+    const v2 = toMeasuresV2(old, mc);
+    expect(v2.notes).toBe(`・枝の偏り\n・南側の${l3}\n・自由な文`);
+    expect(v2.measures).toEqual([
+      { kind: 'decay', place: '幹', values: { height: { a: '1' }, memo: '北側に開口' } },
+      { kind: 'rod', place: '根株', values: { rod: { a: '21', b: '70' } } },
+      { kind: 'tap', place: '幹', values: { height: { a: '2' } } }, // 途中を直した行は、文字にも寸法にも残す（消さない）
+    ]);
+    expect(fullNotesOf(v2, mc)).toContain(`・${l1}、北側に開口`);
+    // 前の形のままの木は、特記事項の文字をそのまま使う（出力は変わらない）
+    expect(fullNotesOf(old, mc)).toBe(old.notes);
+  });
+
+  it('【移し替え】①②でまとめた1行は、記録ごとに一覧へ分ける', async () => {
+    const { toMeasuresV2, measureLinesOf } = await import('../src/core/noteMeasures.js');
+    let t = { notes: '' , measures: [] };
+    for (const a of ['1', '2']) {
+      const v = { height: { a } };
+      t = { ...t, ...addMeasure(t, mc, measureRecord('decay', '幹', v, measureLine(mc, 'decay', '幹', v))) };
+    }
+    expect(t.notes).toBe('・幹の腐朽：①地上1m ②地上2m');
+    const v2 = toMeasuresV2(t, mc);
+    expect(v2.notes).toBe('');
+    expect(v2.measures).toHaveLength(2);
+    expect(measureLinesOf(v2, mc)).toEqual(['幹の腐朽：①地上1m ②地上2m']);
+  });
+});

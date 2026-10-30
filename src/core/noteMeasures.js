@@ -45,6 +45,104 @@ export function measurePrefill(kindKey, tree, cfg) {
   return out;
 }
 
+// ---------- 寸法の記録の置き場所 ----------
+//  新しい形（木の measuresV が 2）：寸法は木の measures の一覧だけに置き、特記事項（notes）の文字には入れない。
+//    1行の文は数字から毎回作る（野帳・一覧表用の特記・写真などで使うときに足す）。直すときは数字の画面で直す
+//  前の形（measuresV なし）：寸法の1行を特記事項の文字に足していた。文字に残っている1行の寸法だけを使う
+//    （手で直した・消した1行は、ふつうの文として扱う）。木を直したときに新しい形に移す（toMeasuresV2）
+export const isMeasuresV2 = (tree) => tree?.measuresV === 2;
+const bareLine = (l) => String(l).replace(/^[・･\-\s]+/, '').trim();
+
+// 使う寸法の記録（新しい形はすべて、前の形は特記事項に1行が残っているものだけ）
+export function activeMeasures(tree) {
+  const ms = (tree?.measures || []).filter((m) => m && m.kind);
+  if (isMeasuresV2(tree)) return ms;
+  const notes = String(tree?.notes || '');
+  return ms.filter((m) => m.line && notes.includes(m.line)); // 前と同じ見分け方（1行が文字の中に残っていれば使う）
+}
+
+// 使う寸法の記録に、野帳などに出す1行（line）を付けたもの
+//  新しい形は数字から作る。merge なら同じ部位・種類を「①…②…」の1行にまとめ、その中の記録すべてに同じ line を付ける
+export function measuresWithLines(tree, cfg) {
+  const ms = activeMeasures(tree);
+  if (!isMeasuresV2(tree)) return ms;
+  const one = (m) => ({ ...m, line: measureLine(cfg, m.kind, m.place, m.values) });
+  if (!cfg.noteMeasures?.merge) return ms.map(one).filter((m) => m.line);
+  const groups = new Map();
+  for (const m of ms) {
+    const k = `${m.kind}|${m.place || ''}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(m);
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    const kind = kindOf(g[0].kind, cfg);
+    const texts = g.map((m) => measureText(cfg, m.kind, m.values)).filter(Boolean);
+    if (!kind || !texts.length) continue;
+    const line = lineOf(cfg, kind, measurePlaces(g[0].kind, cfg).length ? g[0].place || '' : '', texts.length > 1 ? texts.map((t, i) => circled(i) + t).join(' ') : texts[0]);
+    for (const m of g) out.push({ ...m, line });
+  }
+  return out;
+}
+
+// 寸法の1行（野帳の特記事項の最後に並べる。まとめた1行は1回だけ）
+export const measureLinesOf = (tree, cfg) => [...new Set(measuresWithLines(tree, cfg).map((m) => m.line))];
+
+// 特記事項の文字欄に出す文（定型文と自由に書く文。前の形の木は、新しい形に移したときの文）
+export const freeNotesOf = (tree, cfg) => String(toMeasuresV2(tree, cfg).notes || '');
+
+// 野帳などに出す特記事項の全文（文字欄の文＋寸法の1行）
+export function fullNotesOf(tree, cfg) {
+  if (!isMeasuresV2(tree)) return String(tree?.notes || '');
+  const base = String(tree?.notes || '').replace(/\s+$/, '');
+  const add = measureLinesOf(tree, cfg).map((l) => `・${l}`);
+  return [base, ...add].filter(Boolean).join('\n');
+}
+
+// 新しい形に移した木（特記事項から寸法の1行を外し、手で直した・消した1行の記録は捨てる）。すでに新しい形ならそのまま
+//  1行そのままの行 → 文字から外す。1行の後ろに言葉を足した行（例「…、北側」）→ 種類に備考（memo）の欄があれば、
+//  足した言葉を備考にして文字から外す。それ以外（1行の前や途中を直した行）→ 文字はそのまま残し、寸法の記録も残す
+//  （どちらも消さない。野帳に2行出るので、見て片方を消してもらう）
+export function toMeasuresV2(tree, cfg) {
+  if (isMeasuresV2(tree)) return tree;
+  const lines = String(tree?.notes || '').split('\n');
+  const drop = new Set();
+  const ms = [];
+  for (const m of activeMeasures(tree)) {
+    const rec = { kind: m.kind, place: m.place || '', values: { ...(m.values || {}) } };
+    const at = lines.findIndex((l, i) => !drop.has(i) && bareLine(l).includes(m.line));
+    if (at >= 0) {
+      const body = bareLine(lines[at]);
+      const rest = body.startsWith(m.line) ? body.slice(m.line.length).replace(/^[、,，\s]+/, '').trim() : null;
+      const hasMemo = (kindOf(m.kind, cfg)?.parts || []).includes('memo') && cfg.noteMeasures?.parts?.memo;
+      if (rest === '') drop.add(at);
+      else if (rest != null && hasMemo) {
+        rec.values.memo = [rec.values.memo, rest].filter(Boolean).join('、');
+        drop.add(at);
+      }
+      // まとめた1行（①②）は、同じ行の記録がいくつもある。2つ目からは同じ行を見つけて外す
+      for (let i = 0; i < lines.length; i++) if (!drop.has(i) && bareLine(lines[i]) === m.line) drop.add(i);
+    }
+    ms.push(rec);
+  }
+  const notes = lines.filter((_, i) => !drop.has(i)).join('\n').replace(/\s+$/, '');
+  return { ...tree, notes, measures: ms, measuresV: 2 };
+}
+
+// 寸法を足す・直す・消す（新しい形の木を返す）。i：直す・消す記録の番号（measures の並び）
+export const putMeasure = (tree, cfg, rec, i = -1) => {
+  const t = toMeasuresV2(tree, cfg);
+  const m = { kind: rec.kind, place: rec.place || '', values: rec.values };
+  const ms = [...t.measures];
+  if (i >= 0 && i < ms.length) ms[i] = m;
+  else ms.push(m);
+  return { ...t, measures: ms };
+};
+export const removeMeasure = (tree, cfg, i) => {
+  const t = toMeasuresV2(tree, cfg);
+  return { ...t, measures: t.measures.filter((_, j) => j !== i) };
+};
+
 // 1行を作る。種類・（部位を選ぶ種類なら）部位が選ばれていない、または数字が何もなければ空
 export function measureLine(cfg, kindKey, place, values) {
   const kind = kindOf(kindKey, cfg);
@@ -104,9 +202,7 @@ export function addMeasure(tree, cfg, rec) {
 //  返す形：{ weak: [弱点写真の名前…], fullOnly: 全景だけ要る1行があるか }
 export function measurePhotos(tree, cfg) {
   const out = { weak: [], fullOnly: false };
-  const notes = String(tree?.notes || '');
-  for (const m of tree?.measures || []) {
-    if (!m?.line || !notes.includes(m.line)) continue; // 手で消した・書き換えた行は使わない
+  for (const m of activeMeasures(tree)) {
     const kind = kindOf(m.kind, cfg);
     if (!kind) continue;
     if (kind.photo) {
@@ -122,10 +218,8 @@ export function measurePhotos(tree, cfg) {
 //  （特記事項に書いたものは撮る。名前は「部位の種類」。例「根株の鋼棒貫入」「打診音異常」）
 //  返す形：[{ line: その1行, name: 写真の名前 }]
 export function measureNoteNames(tree, cfg) {
-  const notes = String(tree?.notes || '');
   const out = [];
-  for (const m of tree?.measures || []) {
-    if (!m?.line || !notes.includes(m.line)) continue;
+  for (const m of measuresWithLines(tree, cfg)) {
     const kind = kindOf(m.kind, cfg);
     if (!kind) continue;
     out.push({ line: m.line, name: kind.photo ? kind.photo.replace('{place}', m.place || '') : `${m.place ? `${m.place}の` : ''}${kind.label}`, hasPhoto: !!kind.photo });
@@ -205,9 +299,8 @@ export function measuresToInitial(tree, cfg) {
   const rules = cfg.initialSurvey?.fromMeasures || [];
   const out = { values: {}, keys: [] };
   if (!rules.length) return out;
-  const notes = String(tree?.notes || '');
   const byItem = new Map();
-  const used = (tree?.measures || []).filter((m) => m?.line && notes.includes(m.line));
+  const used = [...activeMeasures(tree)];
   // 寸法の1行がない種類でも、簡易診断の入力から入れておける値（種類の prefill。例 枯れ枝の本数 ← 簡易の枯れ枝の本数）は写す
   for (const kind of measureKinds(cfg)) {
     if (!kind.prefill || used.some((m) => m.kind === kind.key)) continue;

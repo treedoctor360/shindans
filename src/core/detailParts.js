@@ -162,10 +162,17 @@ export function withAuto(values, parts, changed) {
 // 確認用に出す、入力した数（文に出さない欄の数・直径を出すのに入れた周囲長・文に出さない奥行）。返す形：[文…]
 //  例 ["110cm/2.1m", "貫入部の周囲長141cm", "奥行10cm"]。提出用の文には入れない（確認用カルテにだけ足す）
 //  奥行：簡易診断の寸法で入れた奥行が、奥行を出さない大きさの欄（depth のない size）に写ったとき
+//  言葉：文に出さない text の欄（noText。例 簡易診断の寸法の備考）
 export function checkNumbers(values, parts) {
   const out = [];
   for (const p of parts) {
     const v = values?.[p.name];
+    // 文に出さない言葉（例 簡易診断の寸法の備考）：prefix を付けてそのまま
+    if (p.type === 'text' && p.noText) {
+      const t = String(v ?? '').trim();
+      if (t) out.push(`${p.prefix || ''}${t}`);
+      continue;
+    }
     if (p.type === 'size' && !p.depth && Array.isArray(v)) {
       const ds = v.map((x) => clean(x?.d)).filter(Boolean);
       if (ds.length) out.push(`奥行${ds.join('・')}${p.unit ?? 'cm'}`);

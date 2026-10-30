@@ -9,6 +9,7 @@
 //
 // 図形の名前には「樹木番号|列|選択肢|選んだか」を入れておき、照合で使う。
 
+import { fullNotesOf } from '../core/noteMeasures.js';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { girthOf } from '../core/calc.js';
@@ -383,7 +384,7 @@ export async function exportFieldSheet(templateBuffer, pages, cfg, { title = '' 
         write(c[field], text, f.size, true);
         if (!f.fits) tooLong.push({ page: ws.name, treeNo: half(t.treeNo), field: label });
       };
-      writeText('note', '特記事項', noteLines(toHalf(t.notes)).map((x) => '・' + x).join('\n'));
+      writeText('note', '特記事項', noteLines(toHalf(fullNotesOf(t, cfg))).map((x) => '・' + x).join('\n'));
       write(c.initial, t.initialNeeded || '', 14);
       writeText('treat', '処置', toHalf(composeTreat(t, cfg)));
       writeText('reason', '伐採理由', t.fellingReason || '');
@@ -462,7 +463,7 @@ export async function verifyFieldSheet(outBuffer, templateBuffer, pages, cfg) {
       const g = girthCell(t, cfg);
       if (g != null && String(v(c.girth)) !== String(g)) errs.push(`${label} ${no}：幹周が「${v(c.girth)}」（正しくは「${g}」）`);
       if (String(v(c.initial)) !== String(t.initialNeeded || '')) errs.push(`${label} ${no}：初期診断の欄が一致しません`);
-      const note = noteLines(toHalf(t.notes)).map((x) => '・' + x).join('\n');
+      const note = noteLines(toHalf(fullNotesOf(t, cfg))).map((x) => '・' + x).join('\n');
       if (String(v(c.note)) !== note) errs.push(`${label} ${no}：特記事項が一致しません`);
       if (String(v(c.treat)) !== toHalf(composeTreat(t, cfg))) errs.push(`${label} ${no}：処置が一致しません`);
     });
