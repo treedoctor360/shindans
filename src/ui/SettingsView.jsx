@@ -69,7 +69,11 @@ export default function SettingsView({ state, update, config, setConfig, toast }
       toast(
         `${st.all}本を読み込みました（台帳で入力済み${st.done}本）` +
           (st.conflicts ? `。うち${st.conflicts}本はアプリでも入力済みだったため、台帳を正としました` : '') +
-          (st.duplicates.length ? `。番号の重複：${st.duplicates.join('・')}` : ''),
+          (st.duplicates.length ? `。番号の重複：${st.duplicates.join('・')}` : '') +
+          // 現場で追加した木：同じ番号・同じ場所の台帳の行に結び付けたもの、結び付かなかったもの
+          (st.addedBound?.length ? `。追加した木${st.addedBound.length}本を台帳の行に結び付けました（${st.addedBound.slice(0, 5).join('・')}${st.addedBound.length > 5 ? 'ほか' : ''}）` : '') +
+          (st.speciesDiff?.length ? `。そのうち樹種が台帳と違う木：${st.speciesDiff.slice(0, 5).join('・')}` : '') +
+          (st.addedLeft?.length ? `。台帳の行と結び付かなかった追加の木${st.addedLeft.length}本（${st.addedLeft.slice(0, 5).join('・')}${st.addedLeft.length > 5 ? 'ほか' : ''}）は、一覧表の最後に足します` : ''),
       );
     } catch (e) {
       toast(e.message || '台帳を読み込めませんでした');

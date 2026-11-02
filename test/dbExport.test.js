@@ -402,3 +402,61 @@ describe('【再現】読み込み直した台帳で番号が変わった木（R
     expect(r.stats.appended).toBe(0);
   });
 });
+
+describe('【再現】現場で追加した木の行を、事務が一覧表に差し込んでから読み込み直す（指示どおりの順に並べる）', () => {
+  // 台帳にない木 AB050 を現場で追加した。事務が一覧表の「架空公園」の先頭に AB050 の行を差し込み、通しNo.に「現存」と書いた
+  const added = { ...entry, id: 'new:5', uid: 'dev-5', siteType: 'park', treeNo: 'AB050', dupIndex: 1, source: 'app', status: '現存', parkCode: 'K01', parkName: '架空公園', species: 'ミホンカエデ' };
+  async function withRow(species = 'ミホンカエデ') {
+    const wb = await load(await makeLedger());
+    const ws = wb.getWorksheet('公園');
+    ws.spliceRows(3, 0, ['現存', 'K01', '架空公園', 'AB050', species]);
+    return wb.xlsx.writeBuffer();
+  }
+
+  it('追加した木を差し込んだ行に結び付け、一覧表の順（公園の先頭）に並ぶ。追加の印（uid）は変わらない', async () => {
+    const { trees } = await setup();
+    const buf2 = await withRow();
+    const { rows } = await readLedger(buf2, cfg);
+    const { trees: again, stats } = mergeLedger([...trees, added], rows, cfg);
+    const a = again.filter((t) => t.treeNo === 'AB050');
+    expect(a).toHaveLength(1); // 二重にならない
+    expect(a[0]).toMatchObject({ uid: 'dev-5', done: true, source: 'app' });
+    expect(a[0].ledgerRow).toBeTruthy();
+    expect(again.findIndex((t) => t.treeNo === 'AB050')).toBe(0); // 公園の先頭
+    expect(stats.addedBound).toEqual(['AB050']);
+    expect(stats.addedLeft).toEqual([]);
+    // 一覧表には差し込んだ行に書き、末尾に足さない。通しNo.（現存）は事務が書いたまま
+    const r = await exportDb(buf2, again, cfg);
+    expect(r.errors).toEqual([]);
+    expect(r.stats).toMatchObject({ written: 1, appended: 0 });
+    const out = await load(r.buffer);
+    expect(['A3', 'D3', 'L3'].map((x) => val(out, '公園', x))).toEqual(['現存', 'AB050', '並']);
+  });
+
+  it('樹種が台帳と違えば知らせる。行を差し込む前は「結び付かなかった追加の木」として知らせる', async () => {
+    const { trees } = await setup();
+    const { rows } = await readLedger(await withRow('ベツノキ'), cfg);
+    expect(mergeLedger([...trees, added], rows, cfg).stats.speciesDiff).toEqual(['AB050（アプリ「ミホンカエデ」／台帳「ベツノキ」）']);
+    const { rows: before } = await readLedger(await makeLedger(), cfg);
+    expect(mergeLedger([...trees, added], before, cfg).stats.addedLeft).toEqual(['AB050']);
+  });
+
+  it('差し込んだ台帳を先に読み込んだ端末が、後から追加した木を受け取っても二重にならない', async () => {
+    const { applyPull } = await import('../src/store/sync.js');
+    const { rows } = await readLedger(await withRow(), cfg);
+    const onB = mergeLedger([], rows, cfg).trees; // この端末は追加した木をまだ知らない → 空の AB050 がある
+    expect(onB.filter((t) => t.treeNo === 'AB050')).toHaveLength(1);
+    // 別の端末で結び付けた追加の木（台帳の行の情報つき）を受け取る
+    const bound = mergeLedger([added], rows, cfg).trees.find((t) => t.uid === 'dev-5');
+    const { simpleKey } = await import('../src/store/surveys.js');
+    const st = { trees: onB, initials: [], stickies: {}, confirms: {}, server: { lastSeq: 0 } };
+    const { id, ...data } = bound;
+    const got = applyPull(st, [{ kind: 'tree', treeId: simpleKey(bound, cfg), rev: 3, data }], 1, cfg).state;
+    const a = got.trees.filter((t) => t.treeNo === 'AB050');
+    expect(a).toHaveLength(1);
+    expect(a[0]).toMatchObject({ uid: 'dev-5', done: true });
+    // 台帳を読み込み直しても二重にならない（受け取る前に空の木と両方あった場合も）
+    const both = [...onB, { ...bound, id: 'srv:x' }];
+    expect(mergeLedger(both, rows, cfg).trees.filter((t) => t.treeNo === 'AB050')).toHaveLength(1);
+  });
+});
