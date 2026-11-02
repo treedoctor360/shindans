@@ -67,11 +67,24 @@ function splitParen(v, strip) {
 //  台帳の中で同じ番号が重複している場合は、上から何本目か（dupIndex）で見分ける
 export const treeKey = (sheetType, treeNo, dupIndex = 1) => `${sheetType}|${toHalf(treeNo).trim()}|${dupIndex || 1}`;
 
+// 台帳から作っただけで、まだ何も入力していない木か（送ったこともなく、追加した印 uid もない）
+export const isBlankLedgerTree = (t) =>
+  !!t.ledgerRow && !t.uid && !t.done && !(t.rev > 0) && !t.deleted && !t.vigor && !String(t.notes || '').trim() && !(t.measures || []).length;
+
+// 同じ台帳の行（シートの種類・番号・何本目か）に結び付いた木が2本あり、片方が空の木なら、空の木を除く
+export function dropBlankTwins(trees) {
+  const k = (t) => treeKey(t.siteType, t.treeNo, t.dupIndex);
+  const filled = new Set(trees.filter((t) => t.ledgerRow && !isBlankLedgerTree(t)).map(k));
+  return trees.filter((t) => !(isBlankLedgerTree(t) && filled.has(k(t))));
+}
+
 // 台帳の行をアプリの木のデータに取り込む。元の配列・木は書き換えず、新しい配列を返す
 // 返す形：{ trees, stats: { all, done, conflicts, duplicates: [番号…] } }
 export function mergeLedger(trees, rows, cfg) {
   const f = cfg.dbFormat;
-  const out = trees.map((t) => ({ ...t }));
+  // 同じ台帳の行に、現場で追加した木と、台帳から作った空の木の両方が結び付いていれば、空の木を除く
+  //  （別の端末で追加した木を、新しい行の入った台帳を先に読み込んだ端末が後から受け取ったとき）
+  const out = dropBlankTwins(trees.map((t) => ({ ...t })));
   // 台帳の行と結び付いている木は「番号＋何本目か」で探す
   const byKey = new Map(out.filter((t) => t.ledgerRow).map((t) => [treeKey(t.siteType, t.treeNo, t.dupIndex), t]));
   // 追加した木（台帳の行と結び付いていない木）は、番号に加えて場所の名前も合うときだけ台帳の行と結び付ける
@@ -98,7 +111,9 @@ export function mergeLedger(trees, rows, cfg) {
   const usedIds = new Set(out.map((t) => t.id));
   const seen = new Set();
   const countByNo = new Map(); // 番号ごとに、これまでに何行出てきたか
-  const stats = { all: 0, done: 0, conflicts: 0, duplicates: [] };
+  // addedBound：現場で追加した木を台帳の行に結び付けた（番号・場所が同じ）。speciesDiff：そのうち樹種が台帳と違う木
+  //  addedLeft：台帳の行と結び付かなかった、入力済みの追加した木
+  const stats = { all: 0, done: 0, conflicts: 0, duplicates: [], addedBound: [], speciesDiff: [], addedLeft: [] };
   let order = 0;
 
   for (const row of rows) {
@@ -114,7 +129,15 @@ export function mergeLedger(trees, rows, cfg) {
     seen.add(key);
     stats.all++;
 
-    let t = byKey.get(key) || takeAdded(key, row);
+    let t = byKey.get(key);
+    if (!t) {
+      t = takeAdded(key, row);
+      if (t) {
+        stats.addedBound.push(no);
+        const sp = toHalf(str('species'));
+        if (t.species && sp && toHalf(t.species).trim() !== sp) stats.speciesDiff.push(`${no}（アプリ「${t.species}」／台帳「${sp}」）`);
+      }
+    }
     if (!t) {
       // 印（id）は、ほかの木と重ならないようにする（台帳の木の番号が書き換えられて、同じ印の木が残っていることがある）
       let id = `ledger:${key}`;
@@ -186,6 +209,7 @@ export function mergeLedger(trees, rows, cfg) {
     if (seen.has(treeKey(t.siteType, t.treeNo, t.dupIndex))) delete t.ledgerGone;
     else t.ledgerGone = true;
   }
+  for (const t of out) if (!t.ledgerRow && t.done && !t.deleted && t.source === 'app') stats.addedLeft.push(toHalf(t.treeNo).trim() || '(番号なし)');
   // 台帳の並び順にそろえる（台帳にない木は元の順のまま後ろへ）
   const rank = (t, i) => (t.order && seen.has(treeKey(t.siteType, t.treeNo, t.dupIndex)) ? t.order : 1e6 + i);
   const sorted = out.map((t, i) => [rank(t, i), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);

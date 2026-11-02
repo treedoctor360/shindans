@@ -29,7 +29,7 @@ describe('台帳の取り込み', () => {
   it('入力済みの木は台帳の値で読み取り専用にし、未入力の木は情報だけ入れる', async () => {
     const { rows } = await readLedger(await makeLedger(), cfg);
     const { trees, stats } = mergeLedger([], rows, cfg);
-    expect(stats).toEqual({ all: 5, done: 1, conflicts: 0, duplicates: ['AB001'] });
+    expect(stats).toEqual({ all: 5, done: 1, conflicts: 0, duplicates: ['AB001'], addedBound: [], speciesDiff: [], addedLeft: [] });
 
     const t1 = trees.find((t) => t.siteType === 'park' && t.treeNo === 'AB001');
     expect(t1).toMatchObject({
