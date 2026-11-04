@@ -308,7 +308,7 @@ describe('列の幅・余白・枝長/枝径の比（fieldSheet.colWidths・side
     expect(cellValue(ws.getCell('D6'))).toBe('300/8\n30倍以上');
     expect(cellValue(ws.getCell('D8'))).toBe(12.5);
     expect(ws.getCell('D4').font.size).toBe(8);
-    expect(ws.getCell('D4').alignment.wrapText).toBe(true);
+    expect(ws.getCell('D4').alignment).toMatchObject({ wrapText: true, vertical: 'middle', horizontal: 'center' });
   });
 
   it('設定がなければ今までどおり（10pt・比なし・列の幅と余白はそのまま）', async () => {
@@ -347,5 +347,24 @@ describe('列の幅・余白・枝長/枝径の比（fieldSheet.colWidths・side
     const colPt = Math.trunc(w(ws, 'E') * narrow.fieldSheet.charPx + 5) * 0.75;
     expect(sz).toBeLessThan(12);
     expect(sz * 1.1 + 8).toBeLessThanOrEqual(colPt + 1e-6);
+  });
+});
+
+describe('【再現】同じ用紙に同じ番号の木が2本ある', () => {
+  // 不具合：番号が同じ木（例 台帳の木と、現場で追加した同じ番号の木）が同じ用紙にあると、
+  //  図形の名前（樹木番号）で木を見分けていたため、照合で「図形が別の場所にあります」「○が2つ」になり、保存できなかった
+  it('2本目の図形には「番号~2」の印を付け、照合に通る', async () => {
+    const tpl = await makeTemplate();
+    const pages = buildPages([doneTree('AB001'), doneTree('AB001', { id: 'x2', vigor: '良' })], cfg);
+    const r = await exportFieldSheet(tpl, pages, cfg);
+    expect(r.errors).toEqual([]);
+    const tags = (await shapeTags(r.buffer))[0];
+    expect(tags.filter((t) => t.startsWith('AB001|4|') && t.endsWith('|1'))).toEqual(['AB001|4|並|1']);
+    expect(tags.filter((t) => t.startsWith('AB001~2|4|') && t.endsWith('|1'))).toEqual(['AB001~2|4|良|1']);
+    // 1本目と2本目の図形を入れ替えたら見つける
+    const zip = await JSZip.loadAsync(r.buffer);
+    const x = await zip.file('xl/drawings/drawing1.xml').async('string');
+    zip.file('xl/drawings/drawing1.xml', x.replace('name="AB001|4|並|1"', 'name="AB001|4|良|1"'));
+    expect((await verifyFieldSheet(await zip.generateAsync({ type: 'uint8array' }), tpl, pages, cfg)).join('\n')).toMatch(/AB001：vigor の○が「良」/);
   });
 });
