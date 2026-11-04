@@ -12,7 +12,7 @@
 import { fullNotesOf } from '../core/noteMeasures.js';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
-import { girthOf } from '../core/calc.js';
+import { branchRatioText, girthOf } from '../core/calc.js';
 import { noteLines } from '../core/notes.js';
 import { photoFlag } from '../core/photo.js';
 import { fill, monthDay, num, toHalf } from '../core/text.js';
@@ -132,22 +132,56 @@ export function templateGeometry(ws, cfg) {
   return { colW, rowH };
 }
 
-// 選んだものだけを書くとき、選択肢の列を細くして、その分を widenCol の列に足す（用紙の幅は変えない）
+// 列の幅を変える。細くした分・太くした分は widenCol の列で受ける。返す値：細くした列の文字（例 ["E", "F"]）
+//  - 選んだものだけを書くとき：選択肢の列を optionWidth 倍に細くする
+//  - colWidths（例 { "D": 8 }）：その列を指定の幅（Excel の列幅の数）にする。選択肢の列でも、こちらが優先
+//  - sideMarginMm（例 7.5）：印刷の左右の余白（mm）をこの値にし、狭めた分だけ用紙の枠を広げる（広げた分は widenCol へ）
 export function narrowOptionColumns(ws, cfg) {
   const fs = cfg.fieldSheet;
-  const k = fs.optionWidth ?? 1;
-  if (k >= 1) return;
+  const k = selectedOnly(cfg) ? (fs.optionWidth ?? 1) : 1;
+  const fixed = fs.colWidths || {};
+  const narrowed = [];
   let freed = 0;
-  for (const oc of fs.optionCols) {
-    const col = ws.getColumn(colIndex(oc.col) + 1);
-    const w = col.width ?? fs.defaultColWidth;
-    col.width = Math.round(w * k * 100) / 100;
-    freed += w - col.width;
+  const setWidth = (letter, w) => {
+    const col = ws.getColumn(colIndex(letter) + 1);
+    const before = col.width ?? fs.defaultColWidth;
+    col.width = Math.round(w * 100) / 100;
+    freed += before - col.width;
+    if (col.width < before) narrowed.push(letter);
+  };
+  if (k < 1) for (const oc of fs.optionCols) if (!(oc.col in fixed)) setWidth(oc.col, (ws.getColumn(colIndex(oc.col) + 1).width ?? fs.defaultColWidth) * k);
+  for (const [letter, w] of Object.entries(fixed)) if (letter !== fs.widenCol) setWidth(letter, w);
+  if (fs.sideMarginMm != null) {
+    // 余白を狭めた分（mm）を、印刷の縮小率で割ってシートの幅に直す（mm → pt → px → 列幅の数）
+    const m = ws.pageSetup.margins || {};
+    const oldMm = ((m.left ?? 0.7) + (m.right ?? 0.7)) * 25.4;
+    const gainMm = oldMm - fs.sideMarginMm * 2;
+    const scale = (ws.pageSetup.scale || 100) / 100;
+    if (gainMm > 0) freed += ((gainMm / 25.4) * 72) / scale / 0.75 / fs.charPx;
+    ws.pageSetup.margins = { ...m, left: fs.sideMarginMm / 25.4, right: fs.sideMarginMm / 25.4 };
   }
-  if (fs.widenCol) {
+  if (fs.widenCol && Math.abs(freed) > 1e-9) {
     const col = ws.getColumn(colIndex(fs.widenCol) + 1);
     col.width = Math.round(((col.width ?? fs.defaultColWidth) + freed) * 100) / 100;
   }
+  return narrowed;
+}
+
+// 細くした列の原本の文字（見出しや、未入力の木の選択肢）を、枠に収まる大きさにする（最小 6pt）
+export function fitNarrowedText(ws, letters, boxOf, cfg) {
+  const fs = cfg.fieldSheet;
+  for (const L of letters)
+    for (let r = 1; r <= fs.templateRows; r++) {
+      const cell = ws.getCell(`${L}${r}`);
+      if (cell.isMerged && cell.master !== cell) continue; // 結合の2つ目以降のセル（文字は最初のセルにある）
+      const text = cellValue(cell);
+      if (typeof text !== 'string' || !text.trim()) continue;
+      const size = cell.font?.size ?? 11;
+      // 原本の文字は行の間が広めのことがあるので、枠は1割小さく見積もる
+      const box = boxOf(L, r);
+      const f = fitSize(text.replace(/^\s+|\s+$/g, ''), { width: box.width * 0.9, height: box.height * 0.9 }, size, 6);
+      if (f.size < size) own(cell).font = { ...(cell.font || {}), size: f.size };
+    }
 }
 
 // 文字の幅の目安（pt）。半角は全角の 0.55 倍
@@ -168,8 +202,9 @@ export function treeShapes(t, row0, geo, cfg) {
       const o = oc.opts.find((x) => oc.val && x.v === oc.val);
       if (!o) continue;
       // 列の幅・木の行の高さに収まるよう、字を小さくする（最小 6pt）
-      const widest = Math.max(...o.lines.map((l) => textWidth(l, 1)));
-      const pt = Math.max(6, Math.min(fs.selectedFontPt ?? 12, (cw - 4) / widest, (H - 6) / (o.lines.length * 1.25)));
+      // 太字は字の幅が広いので、字の幅は1割多めに見積もり、左右に4ptずつ空ける
+      const widest = Math.max(...o.lines.map((l) => textWidth(l, 1))) * 1.1;
+      const pt = Math.max(6, Math.min(fs.selectedFontPt ?? 12, (cw - 8) / widest, (H - 6) / (o.lines.length * 1.25)));
       const w = Math.min(cw - 2, widest * pt + 4);
       const h = o.lines.length * pt * 1.25 + 4;
       shapes.push({ x: left + (cw - w) / 2, y: top + (H - h) / 2, w, h, lines: o.lines, sel: true, pt, plain: true, tag: `${half(t.treeNo)}|${oc.col}|${o.v}|1` });
@@ -293,8 +328,13 @@ function girthCell(t, cfg) {
 }
 
 // 枝長/枝径の欄：アプリで測った木は「枝長/枝径」、台帳の木は台帳の値
-function branchCell(t) {
-  if (num(t.branchLen)) return `${half(t.branchLen)}/${half(t.branchDia)}`;
+//  設定 fieldSheet.branchRatioLine が true なら、アプリで測った木はその下の行に比（一覧表と同じ書き方。例 25・40≦倍）を足す
+export function branchCell(t, cfg) {
+  if (num(t.branchLen)) {
+    const head = `${half(t.branchLen)}/${half(t.branchDia)}`;
+    const ratio = cfg?.fieldSheet?.branchRatioLine ? branchRatioText(t, cfg) : '';
+    return ratio === '' ? head : `${head}\n${ratio}`;
+  }
   const v = t.ledgerBranchRatio || '';
   return /^[\d.]+$/.test(v) ? parseFloat(v) : v;
 }
@@ -306,9 +346,10 @@ export async function exportFieldSheet(templateBuffer, pages, cfg, { title = '' 
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(templateBuffer);
   const src = wb.worksheets[0];
-  if (selectedOnly(cfg)) narrowOptionColumns(src, cfg); // 複製の前に（複製は原本の列幅を写す）
+  const narrowed = narrowOptionColumns(src, cfg); // 列の幅を変える。複製の前に（複製は原本の列幅・書式を写す）
   const geo = templateGeometry(src, cfg);
   const boxOf = cellBox(src.model.merges || [], geo); // 欄の枠（結合の範囲）の大きさ
+  fitNarrowedText(src, narrowed, boxOf, cfg);
   const minFont = fs.minFontSize ?? 6; // 長い文を小さくするときの最小の大きさ（pt）
   const tooLong = []; // 最小の大きさでも枠に収まらない欄 [{ page, treeNo, field }]
 
@@ -375,7 +416,10 @@ export async function exportFieldSheet(templateBuffer, pages, cfg, { title = '' 
       const g = girthCell(t, cfg);
       if (typeof g === 'number') write(c.girth, g, 11, false, '0.00');
       else if (g) write(c.girth, g, 9, true);
-      write(c.branch, branchCell(t), 10);
+      // 枝長/枝径：字の大きさは設定 branchFontPt（既定 10pt）。比の行を足すときは折り返す
+      const b = branchCell(t, cfg);
+      write(c.branch, b, fs.branchFontPt ?? 10, typeof b === 'string' && b.includes('\n'));
+      if (typeof b === 'string' && b.includes('\n')) own(ws.getCell(`${c.branch}${r}`)).alignment = { vertical: 'bottom', horizontal: 'center', wrapText: true };
       for (const L of optLetters) ws.getCell(`${L}${r}`).value = null; // 選択肢は図形で描く
       perSheet[pi].push(...treeShapes(t, r - 1, geo, cfg));
       // 文の欄：枠に収まらなければ文字を小さくする（最小 minFont まで）
@@ -421,7 +465,7 @@ export function cellBox(merges, geo) {
 
 // 野帳を読み直して照合する。食い違いの一覧を返す（空なら合格）
 //  1. 用紙の枚数
-//  2. 各用紙の樹木番号・樹種の並び、入力済みの木の主な値（樹高・幹周・初期・特記・処置）
+//  2. 各用紙の樹木番号・樹種の並び、入力済みの木の主な値（樹高・幹周・枝長/枝径・初期・特記・処置）
 //  3. 未入力の木の選択肢の欄が原本のまま
 //  4. ○の図形：数、この用紙の木のものか、その木の行・正しい列にあるか、選んだ選択肢と一致するか
 export async function verifyFieldSheet(outBuffer, templateBuffer, pages, cfg) {
@@ -462,6 +506,7 @@ export async function verifyFieldSheet(outBuffer, templateBuffer, pages, cfg) {
       if (h && Math.abs(Number(v(c.height)) - h) > 1e-9) errs.push(`${label} ${no}：樹高が${v(c.height)}（正しくは${h}）`);
       const g = girthCell(t, cfg);
       if (g != null && String(v(c.girth)) !== String(g)) errs.push(`${label} ${no}：幹周が「${v(c.girth)}」（正しくは「${g}」）`);
+      if (String(v(c.branch) ?? '') !== String(branchCell(t, cfg) ?? '')) errs.push(`${label} ${no}：枝長/枝径が「${v(c.branch)}」（正しくは「${branchCell(t, cfg)}」）`);
       if (String(v(c.initial)) !== String(t.initialNeeded || '')) errs.push(`${label} ${no}：初期診断の欄が一致しません`);
       const note = noteLines(toHalf(fullNotesOf(t, cfg))).map((x) => '・' + x).join('\n');
       if (String(v(c.note)) !== note) errs.push(`${label} ${no}：特記事項が一致しません`);

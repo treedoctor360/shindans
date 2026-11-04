@@ -365,6 +365,10 @@ function validateFieldSheet(fs, need) {
   need(fs.optionStyle == null || ['circle', 'selected'].includes(fs.optionStyle), 'fieldSheet.optionStyle は circle（○で囲む）か selected（選んだものだけ）にしてください');
   need(fs.optionWidth == null || (isNum(fs.optionWidth) && fs.optionWidth > 0 && fs.optionWidth <= 1), 'fieldSheet.optionWidth（選択肢の列の幅の割合）は 0 より大きく 1 以下の数にしてください');
   need(fs.widenCol == null || isCol(fs.widenCol), 'fieldSheet.widenCol（細くした分を足す列）は列の文字（例 M）にしてください');
+  need(fs.colWidths == null || (isObj(fs.colWidths) && Object.entries(fs.colWidths).every(([k, v]) => isCol(k) && isNum(v) && v > 0)), 'fieldSheet.colWidths（列の幅）は { "D": 8 } の形にしてください');
+  need(fs.sideMarginMm == null || (isNum(fs.sideMarginMm) && fs.sideMarginMm >= 0 && fs.sideMarginMm <= 30), 'fieldSheet.sideMarginMm（印刷の左右の余白）は 0〜30 の数（mm）にしてください');
+  need(fs.branchFontPt == null || (isNum(fs.branchFontPt) && fs.branchFontPt >= 6 && fs.branchFontPt <= 14), 'fieldSheet.branchFontPt（枝長/枝径の字の大きさ）は 6〜14 の数にしてください');
+  need(fs.branchRatioLine == null || typeof fs.branchRatioLine === 'boolean', 'fieldSheet.branchRatioLine は true か false にしてください');
   need(fs.selectedFontPt == null || (isNum(fs.selectedFontPt) && fs.selectedFontPt >= 6 && fs.selectedFontPt <= 20), 'fieldSheet.selectedFontPt は 6〜20 の数にしてください');
   const h = fs.header;
   need(isObj(h) && isAddr(h.title) && isAddr(h.inspector) && isAddr(h.date) && isStr(h.dateTemplate) && isNum(h.eraOffset) && isStr(h.multiLabel), 'fieldSheet.header の形が違います');
