@@ -188,8 +188,20 @@ export function fitNarrowedText(ws, letters, boxOf, cfg) {
 const textWidth = (s, pt) => [...s].reduce((a, ch) => a + (/[\x20-\x7e]/.test(ch) ? 0.55 : 1) * pt, 0);
 const sum = (arr, n) => arr.slice(0, n).reduce((a, b) => a + b, 0);
 
-// 木1本（rowsPerTree 行）の図形。row0 = その木の1行目（0始まり）
-export function treeShapes(t, row0, geo, cfg) {
+// 用紙の中の木の印（図形の名前の最初に入れる）：ふつうは樹木番号。同じ用紙に同じ番号の木が2本以上あれば、
+//  2本目から「番号~2」「番号~3」とする（番号が同じでも、どの木の図形かを取り違えないように）
+export function pageTreeIds(trees) {
+  const count = new Map();
+  return trees.map((t) => {
+    const no = half(t.treeNo);
+    const n = (count.get(no) || 0) + 1;
+    count.set(no, n);
+    return n === 1 ? no : `${no}~${n}`;
+  });
+}
+
+// 木1本（rowsPerTree 行）の図形。row0 = その木の1行目（0始まり）。id = 用紙の中の木の印（pageTreeIds。省略時は樹木番号）
+export function treeShapes(t, row0, geo, cfg, id = half(t.treeNo)) {
   const fs = cfg.fieldSheet;
   const H = sum(geo.rowH.slice(row0), fs.rowsPerTree);
   const top = sum(geo.rowH, row0);
@@ -207,7 +219,7 @@ export function treeShapes(t, row0, geo, cfg) {
       const pt = Math.max(6, Math.min(fs.selectedFontPt ?? 12, (cw - 8) / widest, (H - 6) / (o.lines.length * 1.25)));
       const w = Math.min(cw - 2, widest * pt + 4);
       const h = o.lines.length * pt * 1.25 + 4;
-      shapes.push({ x: left + (cw - w) / 2, y: top + (H - h) / 2, w, h, lines: o.lines, sel: true, pt, plain: true, tag: `${half(t.treeNo)}|${oc.col}|${o.v}|1` });
+      shapes.push({ x: left + (cw - w) / 2, y: top + (H - h) / 2, w, h, lines: o.lines, sel: true, pt, plain: true, tag: `${id}|${oc.col}|${o.v}|1` });
       continue;
     }
     oc.opts.forEach((o, k) => {
@@ -215,7 +227,7 @@ export function treeShapes(t, row0, geo, cfg) {
       const w = Math.min(cw - 2, Math.max(...o.lines.map((l) => textWidth(l, fs.optionFontPt))) + 9);
       const h = o.lines.length * fs.optionLinePt + 5;
       const cy = (H * (k + 0.5)) / oc.opts.length;
-      shapes.push({ x: left + (cw - w) / 2, y: top + cy - h / 2, w, h, lines: o.lines, sel, tag: `${half(t.treeNo)}|${oc.col}|${o.v}|${sel ? 1 : 0}` });
+      shapes.push({ x: left + (cw - w) / 2, y: top + cy - h / 2, w, h, lines: o.lines, sel, tag: `${id}|${oc.col}|${o.v}|${sel ? 1 : 0}` });
     });
   }
   return shapes;
@@ -380,6 +392,7 @@ export async function exportFieldSheet(templateBuffer, pages, cfg, { title = '' 
     ws.getCell(h.inspector).font = { name: fs.font, size: 9 };
     ws.getCell(h.date).value = meta.date;
 
+    const ids = pageTreeIds(page.trees);
     page.trees.forEach((t, k) => {
       const r = fs.firstRow + k * fs.rowsPerTree;
       const c = fs.cells;
@@ -416,12 +429,12 @@ export async function exportFieldSheet(templateBuffer, pages, cfg, { title = '' 
       const g = girthCell(t, cfg);
       if (typeof g === 'number') write(c.girth, g, 11, false, '0.00');
       else if (g) write(c.girth, g, 9, true);
-      // 枝長/枝径：字の大きさは設定 branchFontPt（既定 10pt）。比の行を足すときは折り返す
+      // 枝長/枝径：字の大きさは設定 branchFontPt（既定 10pt）。比の行を足すときは折り返し、欄の真ん中に書く
       const b = branchCell(t, cfg);
       write(c.branch, b, fs.branchFontPt ?? 10, typeof b === 'string' && b.includes('\n'));
-      if (typeof b === 'string' && b.includes('\n')) own(ws.getCell(`${c.branch}${r}`)).alignment = { vertical: 'bottom', horizontal: 'center', wrapText: true };
+      if (typeof b === 'string' && b.includes('\n')) own(ws.getCell(`${c.branch}${r}`)).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       for (const L of optLetters) ws.getCell(`${L}${r}`).value = null; // 選択肢は図形で描く
-      perSheet[pi].push(...treeShapes(t, r - 1, geo, cfg));
+      perSheet[pi].push(...treeShapes(t, r - 1, geo, cfg, ids[k]));
       // 文の欄：枠に収まらなければ文字を小さくする（最小 minFont まで）
       const writeText = (field, label, text) => {
         const f = fitSize(text, boxOf(c[field], r), 9, minFont);
@@ -520,7 +533,8 @@ export async function verifyFieldSheet(outBuffer, templateBuffer, pages, cfg) {
     const shapesOf = (oc) => (selectedOnly(cfg) ? (oc.val && oc.opts.some((o) => o.v === oc.val) ? 1 : 0) : oc.opts.length);
     const expectN = done.reduce((a, t) => a + optionColumns(t, cfg).reduce((b, oc) => b + shapesOf(oc), 0), 0);
     if (shapes.length !== expectN) errs.push(`${label}：選択肢の図形の数が合いません（${shapes.length}個・予定${expectN}個）`);
-    const rowOf = new Map(page.trees.map((t, k) => [half(t.treeNo), fs.firstRow - 1 + k * fs.rowsPerTree])); // 0始まり
+    const ids = pageTreeIds(page.trees);
+    const rowOf = new Map(page.trees.map((t, k) => [ids[k], fs.firstRow - 1 + k * fs.rowsPerTree])); // 用紙の中の木の印 → 1行目（0始まり）
     for (const sp of shapes) {
       const [no, col] = sp.tag.split('|');
       if (!rowOf.has(no)) {
@@ -531,8 +545,9 @@ export async function verifyFieldSheet(outBuffer, templateBuffer, pages, cfg) {
       if (sp.row < r0 || sp.row > r0 + fs.rowsPerTree - 1 || +col !== sp.col)
         errs.push(`${label} ${no}：選択肢の図形が別の場所（${sp.row + 1}行目・${sp.col + 1}列目）にあります`);
     }
-    for (const t of done) {
-      const no = half(t.treeNo);
+    for (const [k, t] of page.trees.entries()) {
+      if (!t.done) continue;
+      const no = ids[k];
       for (const oc of optionColumns(t, cfg)) {
         const sel = shapes.filter((sp) => sp.no === no && sp.colTag === oc.col && sp.sel).map((sp) => sp.v);
         const want = oc.val && oc.opts.some((o) => o.v === oc.val) ? [oc.val] : [];
