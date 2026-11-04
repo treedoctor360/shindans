@@ -273,3 +273,79 @@ describe('選んだものだけを書く書き方（fieldSheet.optionStyle: sele
     expect((await verifyFieldSheet(await zip.generateAsync({ type: 'uint8array' }), tpl, pages, sel)).join('\n')).toMatch(/A1：\w+ の○が「なし」（正しくは「有」）/);
   });
 });
+
+describe('列の幅・余白・枝長/枝径の比（fieldSheet.colWidths・sideMarginMm・branchFontPt・branchRatioLine）', () => {
+  const wcfg = structuredClone(cfgJson);
+  Object.assign(wcfg.fieldSheet, { optionStyle: 'selected', optionWidth: 0.8, widenCol: 'I', colWidths: { D: 8, M: 8 }, sideMarginMm: 7.5, branchFontPt: 8, branchRatioLine: true });
+  const w = (ws, L) => ws.getColumn(L).width ?? wcfg.fieldSheet.defaultColWidth;
+
+  it('決めた列の幅にし、余白を狭めた分も含めて差を特記事項の列で受ける。照合に通る', async () => {
+    expect(validateConfig(wcfg).errors).toEqual([]);
+    const tpl = await makeTemplate();
+    const r = await exportFieldSheet(tpl, buildPages([doneTree('AB001')], wcfg), wcfg);
+    expect(r.errors).toEqual([]);
+    const before = (await load(tpl)).worksheets[0];
+    const after = (await load(r.buffer)).worksheets[0];
+    expect(w(after, 'D')).toBe(8);
+    expect(w(after, 'M')).toBe(8);
+    expect(w(after, 'L')).toBe(w(before, 'L')); // 決めていない列（処置）は変えない
+    // 余白：左右 0.7in → 7.5mm。狭めた分（mm）を列の幅の数に直して足す（縮小率 100%）
+    expect(after.pageSetup.margins.left).toBeCloseTo(7.5 / 25.4, 5);
+    expect(after.pageSetup.margins.right).toBeCloseTo(7.5 / 25.4, 5);
+    const gain = ((0.7 * 2 * 25.4 - 15) / 25.4) * 72 / 0.75 / wcfg.fieldSheet.charPx;
+    const cols = 'ABCDEFGHIJKLMN'.split('');
+    const total = (ws) => cols.reduce((a, L) => a + w(ws, L), 0);
+    expect(total(after)).toBeCloseTo(total(before) + gain, 1);
+  });
+
+  it('枝長/枝径は決めた大きさで書き、下の行に比を足す（上限以上は表記の文字）。台帳の木は台帳の値のまま', async () => {
+    const tpl = await makeTemplate();
+    const ledger = doneTree('AB003', { source: 'ledger', branchLen: '', branchDia: '', ledgerBranchRatio: '12.5' });
+    const r = await exportFieldSheet(tpl, buildPages([doneTree('AB001'), doneTree('AB002', { branchLen: '300', branchDia: '8' }), ledger], wcfg), wcfg);
+    expect(r.errors).toEqual([]);
+    const ws = (await load(r.buffer)).worksheets[0];
+    expect(cellValue(ws.getCell('D4'))).toBe('200/8\n25');
+    expect(cellValue(ws.getCell('D6'))).toBe('300/8\n30倍以上');
+    expect(cellValue(ws.getCell('D8'))).toBe(12.5);
+    expect(ws.getCell('D4').font.size).toBe(8);
+    expect(ws.getCell('D4').alignment.wrapText).toBe(true);
+  });
+
+  it('設定がなければ今までどおり（10pt・比なし・列の幅と余白はそのまま）', async () => {
+    const tpl = await makeTemplate();
+    const r = await exportFieldSheet(tpl, buildPages([doneTree('AB001')], cfg), cfg);
+    const ws = (await load(r.buffer)).worksheets[0];
+    expect(cellValue(ws.getCell('D4'))).toBe('200/8');
+    expect(ws.getCell('D4').font.size).toBe(10);
+    expect(w(ws, 'D')).toBe(6);
+  });
+
+  it('枝長/枝径の値が違えば照合で見つける', async () => {
+    const tpl = await makeTemplate();
+    const pages = buildPages([doneTree('AB001')], wcfg);
+    const r = await exportFieldSheet(tpl, pages, wcfg);
+    const wb = await load(r.buffer);
+    wb.worksheets[0].getCell('D4').value = '200/8';
+    expect((await verifyFieldSheet(await wb.xlsx.writeBuffer(), tpl, pages, wcfg)).join('\n')).toMatch(/AB001：枝長\/枝径が「200\/8」/);
+  });
+
+  it('【再現】細くした列で、選んだ選択肢の字と原本の見出しの字が枠からはみ出さない', async () => {
+    // 不具合：選択肢の列を細くすると、選んだ選択肢の字（12pt）と原本の見出しの字が枠からはみ出していた
+    const narrow = structuredClone(wcfg);
+    narrow.fieldSheet.optionWidth = 0.5;
+    const twb = await load(await makeTemplate());
+    twb.worksheets[0].getCell('E2').value = '樹勢の良し悪しを見る';
+    const tpl = await twb.xlsx.writeBuffer();
+    const r = await exportFieldSheet(tpl, buildPages([doneTree('AB001')], narrow), narrow);
+    expect(r.errors).toEqual([]);
+    const ws = (await load(r.buffer)).worksheets[0];
+    expect(ws.getCell('E2').font?.size ?? 11).toBeLessThan(11); // 見出しを小さくした
+    expect(ws.getCell('I2').font?.size ?? 11).toBe(11); // 広げた列の見出しはそのまま
+    // 選んだ選択肢（樹勢「並」）の字：幅を1割多めに見積もり、左右 4pt ずつ空けて列に収める
+    const xml = await (await JSZip.loadAsync(r.buffer)).file('xl/drawings/drawing1.xml').async('string');
+    const sz = Number(xml.match(/name="AB001\|4\|並\|1"[\s\S]*?sz="(\d+)"/)[1]) / 100;
+    const colPt = Math.trunc(w(ws, 'E') * narrow.fieldSheet.charPx + 5) * 0.75;
+    expect(sz).toBeLessThan(12);
+    expect(sz * 1.1 + 8).toBeLessThanOrEqual(colPt + 1e-6);
+  });
+});
