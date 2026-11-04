@@ -17,6 +17,8 @@
 //   pair   … { a: '35', b: '100' }            → 「35cm/100cm」（unit・sep 省略時「/」。片方だけなら「35cm/」）
 //   flag   … true（押してあるか）               → text（例「（芯達）」）。「、」でつながず、前の文のすぐ後ろに付ける
 //              attach: false なら、ほかの部品と同じく「、」でつなぐ（例「長さ1.5m、芯達」）
+//              required：簡易診断の寸法を入れるとき、付けるか付けないか（offLabel。例「芯未達」）を必ず選ぶ。
+//                true（いつも）か、部位の並び（例 ["幹", "根株"]。その部位のときだけ）。付けないを選ぶと false を入れる（文には出さない）
 
 import { toHalf } from './text.js';
 
@@ -142,6 +144,30 @@ export function ratioChoice(pair, r) {
   return a * r.den >= b * r.num ? r.ge : r.lt;
 }
 
+// 簡易診断の寸法で、必ず選ぶ印（flag の required）の名前。place：寸法の部位
+export function requiredFlags(parts, place) {
+  return parts.filter((p) => p.type === 'flag' && (p.required === true || (Array.isArray(p.required) && p.required.includes(place)))).map((p) => p.name);
+}
+
+// まだ選んでいない、必ず選ぶ印の欄（ラベルの並び）。空なら選び終わっている
+export function unchosenFlags(values, parts, place) {
+  const names = new Set(requiredFlags(parts, place));
+  return parts.filter((p) => names.has(p.name) && typeof values?.[p.name] !== 'boolean').map((p) => p.label);
+}
+
+// 弱点の項目の有無（選択肢）を、詳細の数値から決める（項目の valueFrom。例 開口空洞の「有（芯到達・周囲≧1/3）」）
+//  valueFrom：{ ratio: 比を出す pair の名前, core: 芯達の印（flag）の名前, values: { lt, ge, coreLt, coreGe } }
+//  比が出せなければ ''（決めない）
+export function itemValueOf(item, values, cfg) {
+  const vf = item?.valueFrom;
+  if (!vf) return '';
+  const pair = (cfg.initialSurvey?.detailParts || {})[vf.ratio];
+  const r = pair?.ratio ? ratioChoice(values?.[vf.ratio], pair.ratio) : '';
+  if (!r) return '';
+  const ge = r === pair.ratio.ge;
+  return values?.[vf.core] === true ? (ge ? vf.values.coreGe : vf.values.coreLt) : ge ? vf.values.ge : vf.values.lt;
+}
+
 // 部品を1つ変えたあとの値（自動で決まる印・選択肢を決め直す）
 //  flag の coreFrom：芯達の印。pair の ratio.to：比から選んだ選択肢を、その choice の部品に入れる
 export function withAuto(values, parts, changed) {
@@ -196,6 +222,9 @@ export function setPart(record, item, detailKey, name, value, cfg) {
   const pk = partsKeyOf(detailKey);
   const values = withAuto({ ...(record[pk] || {}), [name]: value }, partsOf(item, cfg), name);
   const next = { ...record, [pk]: values };
+  // 有無の選択肢を数値から決める項目（valueFrom）なら、決まったときに入れる
+  const iv = itemValueOf(item, values, cfg);
+  if (iv) next[item.key] = iv;
   // 数値をまだ使っていないのに詳細の文がある（数値の欄ができる前に手で書いた・ブックから写した）なら、その文を消さない
   const handWritten = !record[pk] && String(record[detailKey] ?? '').trim() !== '';
   if (handWritten) next[manualKeyOf(detailKey)] = true;
@@ -224,7 +253,9 @@ export function validatePartDefs(defs, at0, need) {
     if (!need(isObj(p) && PART_TYPES.includes(p.type) && typeof p.label === 'string' && p.label, `${at} は { type（${PART_TYPES.join('・')}）, label } の形にしてください`)) continue;
     if (p.type === 'choice') need(Array.isArray(p.options) && p.options.length > 0 && p.options.every((o) => typeof o === 'string'), `${at}：choice には options が必要です`);
     if (p.type === 'flag') need(typeof p.text === 'string' && p.text.length > 0, `${at}：flag には text（押したときに付ける文字）が必要です`);
-    for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
+    if (p.required != null)
+      need(p.type === 'flag' && (p.required === true || (Array.isArray(p.required) && p.required.every((x) => typeof x === 'string'))), `${at}.required は flag に付け、true か部位の並びにしてください`);
+    for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom', 'offLabel']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
     if (p.circ != null) need(p.type === 'pair', `${at}.circ（周囲長の欄）は pair だけに付けられます`);
     if (p.slant != null)
       need(
@@ -263,6 +294,17 @@ export function validateDetailParts(s, need) {
         if (it?.parts == null) return;
         need(it.type === 'weak', `initialSurvey.forms.${form}.sections[${i}].items[${j}]：parts は弱点の項目（weak）にだけ付けられます`);
         check(it.parts, `initialSurvey.forms.${form}.sections[${i}].items[${j}].parts`);
+        const vf = it.valueFrom;
+        if (vf != null) {
+          const at = `initialSurvey.forms.${form}.sections[${i}].items[${j}].valueFrom`;
+          const v = vf?.values;
+          need(
+            vf && typeof vf === 'object' && it.parts.includes(vf.ratio) && s.detailParts[vf.ratio]?.type === 'pair' && !!s.detailParts[vf.ratio].ratio &&
+              it.parts.includes(vf.core) && s.detailParts[vf.core]?.type === 'flag' &&
+              v && ['lt', 'ge', 'coreLt', 'coreGe'].every((k) => typeof v[k] === 'string' && v[k]),
+            `${at} は { ratio: 比のある pair, core: flag（どちらも項目の parts にあるもの）, values: { lt, ge, coreLt, coreGe } } の形にしてください`,
+          );
+        }
       }),
     );
   need(s.detailJoin == null || typeof s.detailJoin === 'string', 'initialSurvey.detailJoin は文字にしてください');

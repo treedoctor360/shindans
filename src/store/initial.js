@@ -213,6 +213,8 @@ export function applyMeasures(rec, tree, cfg, keys) {
     next.measureSig[dk] = sigOf(ms.values[pk]);
     next[dk] = ms.values[dk];
     next[pk] = structuredClone(ms.values[pk]);
+    const ch = ms.choices?.[dk]; // 有無の選択肢も数値から決まる項目（例 開口空洞）
+    if (ch) next[ch.key] = ch.value;
     next.inherited = [...new Set([...(rec.inherited || []), dk])];
   }
   return next;
@@ -252,7 +254,11 @@ export function startInitial(state, tree, cfg, { now = new Date().toISOString(),
   const ms = measuresToInitial(tree, cfg);
   const measureKeys = ms.keys.filter((dk) => !(dk in fromBook));
   const fromMeasures = {};
-  for (const dk of measureKeys) Object.assign(fromMeasures, { [dk]: ms.values[dk], [partsKeyOf(dk)]: ms.values[partsKeyOf(dk)] });
+  for (const dk of measureKeys) {
+    Object.assign(fromMeasures, { [dk]: ms.values[dk], [partsKeyOf(dk)]: ms.values[partsKeyOf(dk)] });
+    const ch = ms.choices?.[dk]; // 有無の選択肢も数値から決まる項目（例 開口空洞の芯到達・周囲長比）。ブックに値があればブック
+    if (ch && !(ch.key in fromBook)) fromMeasures[ch.key] = ch.value;
+  }
   if (measureKeys.length) fromMeasures.measureSig = Object.fromEntries(measureKeys.map((dk) => [dk, sigOf(ms.values[partsKeyOf(dk)])]));
   const record = {
     id: `ini:${tree.id}`,

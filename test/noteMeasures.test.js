@@ -5,6 +5,7 @@ import { validateConfig } from '../src/core/config.js';
 import { autoDbNote, dbNoteOf } from '../src/core/notes.js';
 import { photoPlan } from '../src/core/photo.js';
 import { addMeasure, appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord, measuresToInitial } from '../src/core/noteMeasures.js';
+import { requiredFlags, setPart, unchosenFlags, withAuto } from '../src/core/detailParts.js';
 
 const cfg = structuredClone(cfgJson);
 
@@ -378,5 +379,74 @@ describe('寸法を特記事項の文字から分ける（measuresV 2）', () =>
     expect(v2.notes).toBe('');
     expect(v2.measures).toHaveLength(2);
     expect(measureLinesOf(v2, mc)).toEqual(['幹の腐朽：①地上1m ②地上2m']);
+  });
+});
+
+describe('芯達か芯未達かを必ず選ぶ（flag の required）・開口空洞の有無を数値から決める（項目の valueFrom）', () => {
+  // 見本の設定に、開口空洞（周囲長と芯達の印）と、詳しい診断の開口空洞（有無の選択肢を数値から決める）を足したもの
+  const withCavity = () => {
+    const c = structuredClone(cfgJson);
+    Object.assign(c.noteMeasures.parts.core, { required: ['幹', '根株'], offLabel: '芯未達' });
+    c.noteMeasures.kinds.push({ key: 'cavity', label: '開口空洞', parts: ['height', 'size3', 'circ', 'core'] });
+    const dp = c.initialSurvey.detailParts;
+    dp.size3 = { type: 'size', label: '縦×横×奥行', depth: true };
+    dp.circ = { type: 'pair', label: '周囲長', noText: true, ratio: { num: 1, den: 3, lt: '＜1/3', ge: '≧1/3' } };
+    dp.coreReach = { type: 'flag', label: '芯達', text: '（芯達）', noText: true };
+    c.initialSurvey.forms.initial.sections[1].items.push({
+      key: 't1',
+      label: '開口空洞',
+      type: 'weak',
+      parts: ['height', 'size3', 'circ', 'coreReach'],
+      valueFrom: { ratio: 'circ', core: 'coreReach', values: { lt: '有（周囲＜1/3）', ge: '有（周囲≧1/3）', coreLt: '有（芯到達・周囲＜1/3）', coreGe: '有（芯到達・周囲≧1/3）' } },
+    });
+    c.initialSurvey.fromMeasures.push({ kind: 'cavity', item: 't1', parts: { height: 'height', size3: 'size3', circ: 'circ', core: 'coreReach' } });
+    return c;
+  };
+  const cav = (c, place, values) => measureRecord('cavity', place, values, measureLine(c, 'cavity', place, values));
+  const tree = (ms) => ({ notes: ms.map((m) => `・${m.line}`).join('\n'), measures: ms });
+
+  it('設定の形を確かめる', () => {
+    expect(validateConfig(withCavity()).errors).toEqual([]);
+    const c = withCavity();
+    c.noteMeasures.parts.core.required = '幹';
+    expect(validateConfig(c).errors.join()).toContain('required');
+    const c2 = withCavity();
+    c2.initialSurvey.forms.initial.sections[1].items.at(-1).valueFrom.core = 'height';
+    expect(validateConfig(c2).errors.join()).toContain('valueFrom');
+  });
+
+  it('必ず選ぶ印：決めた部位では、芯達（true）か芯未達（false）を選ぶまで「選んでいない」。芯未達は文に出さない', () => {
+    const c = withCavity();
+    const parts = measureParts('decay', c);
+    expect(requiredFlags(parts, '幹')).toEqual(['core']);
+    expect(requiredFlags(parts, '枝')).toEqual([]);
+    expect(unchosenFlags({}, parts, '幹')).toEqual(['芯達']);
+    expect(unchosenFlags({ core: false }, parts, '幹')).toEqual([]);
+    expect(unchosenFlags({}, parts, '枝')).toEqual([]);
+    expect(measureLine(c, 'decay', '幹', { height: { a: '1' }, core: false })).toBe('幹の腐朽：地上1m');
+    // 鋼棒は数から自動で決まる（貫入深が直径の半分以上なら芯達、未満なら芯未達）
+    const rod = measureParts('rod', c);
+    expect(unchosenFlags(withAuto({ rod: { a: '10', b: '50' } }, rod, 'rod'), rod, '根株')).toEqual([]);
+  });
+
+  it('開口空洞：周囲長比と芯達から、詳しい診断の有無の選択肢を決めて写す（文には芯達・周囲長を出さない）', () => {
+    const c = withCavity();
+    const r = measuresToInitial(tree([cav(c, '幹', { height: { a: '1' }, size3: [{ w: '20', h: '10', d: '5' }], circ: { a: '60', b: '150' }, core: true })]), c);
+    expect(r.values.t1Detail).toBe('地上1m、20×10×5cm');
+    expect(r.choices.t1Detail).toEqual({ key: 't1', value: '有（芯到達・周囲≧1/3）' });
+    const v = (circ, core) => measuresToInitial(tree([cav(c, '幹', { circ, core })]), c).choices?.t1Detail?.value;
+    expect(v({ a: '40', b: '150' }, true)).toBe('有（芯到達・周囲＜1/3）');
+    expect(v({ a: '60', b: '150' }, false)).toBe('有（周囲≧1/3）');
+    expect(v({ a: '40', b: '150' }, false)).toBe('有（周囲＜1/3）');
+    expect(v({ a: '', b: '' }, true)).toBeUndefined(); // 周囲長がなければ決めない
+  });
+
+  it('詳しい診断の画面で数値を直したときも、有無の選択肢を決め直す', () => {
+    const c = withCavity();
+    const item = c.initialSurvey.forms.initial.sections[1].items.at(-1);
+    let rec = setPart({}, item, 't1Detail', 'circ', { a: '60', b: '150' }, c);
+    expect(rec.t1).toBe('有（周囲≧1/3）');
+    rec = setPart(rec, item, 't1Detail', 'coreReach', true, c);
+    expect(rec.t1).toBe('有（芯到達・周囲≧1/3）');
   });
 });

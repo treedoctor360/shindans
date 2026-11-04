@@ -2,9 +2,10 @@
 //  parts：欄の定義（detailParts.js の PART_TYPES）、values：入れた値、onPut(名前, 値)：値が変わったとき
 //  Choice：選択肢のボタンの部品（呼ぶ側の見た目に合わせる）
 //  pi：周囲長から直径を出すときの円周率（設定の calc.pi）
+//  required：必ず選ぶ印の名前の並び（簡易診断の寸法。detailParts.js の requiredFlags）。その印は「芯達」「芯未達」の2つのボタンで選ぶ
 import { coreReached, diameterOf, horizontalOf, ratioChoice } from '../core/detailParts.js';
 
-export default function PartsInputs({ parts, values, onPut, testId, Choice, pi = Math.PI }) {
+export default function PartsInputs({ parts, values, onPut, testId, Choice, pi = Math.PI, required = [] }) {
   const put = onPut;
   const dk = testId;
   const num = (name, v, onChange, ph) => (
@@ -89,11 +90,24 @@ export default function PartsInputs({ parts, values, onPut, testId, Choice, pi =
         } else if (p.type === 'flag') {
           // 印（芯達など）：押すたびに付ける／外す
           const auto = p.coreFrom ? coreReached(values[p.coreFrom]) : null;
+          const must = required.includes(p.name);
           input = (
             <>
-              <button type="button" className={`seg-b${v ? ' on' : ''}`} aria-pressed={!!v} onClick={() => put(p.name, !v)} data-part={p.name}>
-                {p.label}
-              </button>
+              {must ? (
+                // 必ず選ぶ印：付ける（true）か付けない（false）かを選ぶ。どちらも押していなければ未選択
+                <span className="seg" role="group" aria-label={p.label}>
+                  <button type="button" className={`seg-b${v === true ? ' on' : ''}`} aria-pressed={v === true} onClick={() => put(p.name, true)} data-part={p.name} data-v="1">
+                    {p.label}
+                  </button>
+                  <button type="button" className={`seg-b${v === false ? ' on' : ''}`} aria-pressed={v === false} onClick={() => put(p.name, false)} data-part={p.name} data-v="0">
+                    {p.offLabel || `${p.label}でない`}
+                  </button>
+                </span>
+              ) : (
+                <button type="button" className={`seg-b${v ? ' on' : ''}`} aria-pressed={!!v} onClick={() => put(p.name, !v)} data-part={p.name}>
+                  {p.label}
+                </button>
+              )}
               {/* 自動で決めた結果（数を変えると決め直す。手で押して変えてもよい） */}
               {auto != null && (
                 <small className="auto" data-auto={p.name}>
@@ -116,7 +130,7 @@ export default function PartsInputs({ parts, values, onPut, testId, Choice, pi =
         }
         return (
           <label className="part" key={p.name}>
-            <small>{p.type === 'flag' ? '\u00a0' : p.label}</small>
+            <small>{p.type === 'flag' ? (required.includes(p.name) ? `${p.label}か（必ず選ぶ）` : '\u00a0') : p.label}</small>
             {input}
           </label>
         );
