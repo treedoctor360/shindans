@@ -14,7 +14,7 @@
 // 足した1行の元の数字は木の measures に残し、詳しい診断の記録を作るときに弱点の詳細へ写す
 // （設定 initialSurvey.fromMeasures。measuresToInitial）。
 
-import { buildDetail, detailKeyOfItem, partsKeyOf, partsOf, buildText, ratioChoice, validatePartDefs } from './detailParts.js';
+import { buildDetail, detailKeyOfItem, itemValueOf, partsKeyOf, partsOf, buildText, ratioChoice, validatePartDefs } from './detailParts.js';
 import { toHalf } from './text.js';
 
 export const measureKinds = (cfg) => cfg.noteMeasures?.kinds || [];
@@ -333,6 +333,9 @@ export function measuresToInitial(tree, cfg) {
     out.values[partsKeyOf(dk)] = vals;
     out.values[dk] = buildDetail(vals, partsOf(item, cfg), cfg);
     out.keys.push(dk);
+    // 有無の選択肢を数値から決める項目（valueFrom。例 開口空洞の芯到達・周囲長比）
+    const iv = itemValueOf(item, vals, cfg);
+    if (iv) (out.choices ||= {})[dk] = { key: item.key, value: iv };
   }
   return out;
 }

@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import { measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, putMeasure, removeMeasure, toMeasuresV2 } from '../core/noteMeasures.js';
 import PartsInputs from './PartsInputs.jsx';
-import { withAuto } from '../core/detailParts.js';
+import { requiredFlags, unchosenFlags, withAuto } from '../core/detailParts.js';
 
 // 選択肢のボタン（数字の欄の中の選択肢用）
 function Choice({ k, opts, value, onPress }) {
@@ -36,6 +36,9 @@ export default function NoteMeasures({ cfg, tree, onChange, readOnly = false }) 
   };
   const line = edit ? measureLine(cfg, edit.kind, edit.place, edit.values) : '';
   const needPlace = edit?.kind ? measurePlaces(edit.kind, cfg).length > 0 : false;
+  // 必ず選ぶ印（例 芯達か芯未達か）。まだ選んでいなければ追加・直すを押せない
+  const partsNow = edit?.kind ? measureParts(edit.kind, cfg) : [];
+  const unchosen = edit?.kind ? unchosenFlags(edit.values, partsNow, needPlace ? edit.place : '') : [];
   const done = () => {
     onChange((t) => putMeasure(t, cfg, { kind: edit.kind, place: needPlace ? edit.place : '', values: edit.values }, edit.i));
     // 直したら閉じる。新しく入れたときは、続けて別の所を入れられるように開いたまま数字だけ空に戻す
@@ -129,13 +132,15 @@ export default function NoteMeasures({ cfg, tree, onChange, readOnly = false }) 
               testId="measure"
               Choice={Choice}
               pi={cfg.calc?.pi}
+              required={requiredFlags(partsNow, needPlace ? edit.place : '')}
             />
           )}
           <div className="hint" data-testid="measure-preview">
             {line || (!edit.kind ? '種類を選んでください' : edit.place || !needPlace ? '数字を入れると、ここに1行が出ます' : '部位を選んでください')}
+            {line && unchosen.length > 0 && <b style={{ color: "var(--warn)" }} data-testid="measure-unchosen">{`　${unchosen.join('・')}かどうかを選んでください`}</b>}
           </div>
           <div className="sub">
-            <button type="button" className="btn fill" disabled={!line} onClick={done} data-testid="measure-add">
+            <button type="button" className="btn fill" disabled={!line || unchosen.length > 0} onClick={done} data-testid="measure-add">
               {edit.i >= 0 ? '直す' : '追加'}
             </button>
             <button type="button" className="btn" onClick={() => setEdit(null)} data-testid="measure-close">

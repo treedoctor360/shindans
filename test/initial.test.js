@@ -535,3 +535,27 @@ describe('空欄のときに入れる値（blank）', () => {
     expect(validateConfig(c).errors.join()).toContain('blank');
   });
 });
+
+describe('開口空洞の有無の選択肢を、簡易診断の寸法から決める（項目の valueFrom）', () => {
+  it('記録を作るとき・簡易の寸法に合わせるときに、有無の選択肢も入れる', () => {
+    const c = structuredClone(cfgJson);
+    c.noteMeasures.kinds.push({ key: 'cavity', label: '開口空洞', parts: ['height', 'circ', 'core'] });
+    const dp = c.initialSurvey.detailParts;
+    dp.circ = { type: 'pair', label: '周囲長', noText: true, ratio: { num: 1, den: 3, lt: '＜1/3', ge: '≧1/3' } };
+    dp.coreReach = { type: 'flag', label: '芯達', text: '（芯達）', noText: true };
+    c.initialSurvey.forms.initial.sections[1].items.push({
+      key: 't1', label: '開口空洞', type: 'weak', parts: ['height', 'circ', 'coreReach'],
+      valueFrom: { ratio: 'circ', core: 'coreReach', values: { lt: '有（周囲＜1/3）', ge: '有（周囲≧1/3）', coreLt: '有（芯到達・周囲＜1/3）', coreGe: '有（芯到達・周囲≧1/3）' } },
+    });
+    c.initialSurvey.fromMeasures.push({ kind: 'cavity', item: 't1', parts: { height: 'height', circ: 'circ', core: 'coreReach' } });
+    expect(validateConfig(c).errors).toEqual([]);
+    const m = (values) => measureRecord('cavity', '幹', values, measureLine(c, 'cavity', '幹', values));
+    const tree = need('AB001', { measuresV: 2, measures: [m({ height: { a: '1' }, circ: { a: '40', b: '150' }, core: true })] });
+    const s = startInitial(S([tree]), tree, c).state;
+    expect(s.initials[0].t1).toBe('有（芯到達・周囲＜1/3）');
+    expect(s.initials[0].t1Detail).toBe('地上1m');
+    // 簡易で周囲長を直す → 合わせると選択肢も変わる
+    const tree2 = { ...tree, measures: [m({ height: { a: '1' }, circ: { a: '60', b: '150' }, core: false })] };
+    expect(syncMeasures(s.initials[0], tree2, c).record.t1).toBe('有（周囲≧1/3）');
+  });
+});
