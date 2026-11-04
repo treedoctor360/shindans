@@ -294,6 +294,20 @@ describe('入力画面の部品（並び・選択肢・すべて無・未入力�
     c.initialSurvey.crossCheck = [{ field: 'deadBranch', eq: '有', items: ['nokey'] }];
     expect(validateConfig(c).errors.join()).toContain('crossCheck[0].items');
   });
+  it('組になる項目（linked）：どれかが決まった値（例「支柱なし」）なのに、ほかが別の値なら注意する（推奨。保存は止めない）', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.linked = [{ items: ['stake', 'weather'], value: '支柱なし' }];
+    expect(validateConfig(c).errors).toEqual([]);
+    const label = (k) => c.initialSurvey.forms.environment.sections.flatMap((x) => x.items).find((it) => it.key === k).label;
+    expect(initialWarnings({ stake: '支柱なし', weather: '有' }, null, c)).toEqual([`${label('stake')}が「支柱なし」ですが、${label('weather')}は「有」です`]);
+    expect(initialWarnings({ stake: '支柱なし', weather: '支柱なし' }, null, c)).toEqual([]);
+    expect(initialWarnings({ stake: '支柱なし' }, null, c)).toEqual([]); // 未選択は「未入力の項目」で知らせる
+    expect(initialWarnings({ stake: '有', weather: '有' }, null, c)).toEqual([]);
+    c.initialSurvey.linked = [{ items: ['stake', 'nokey'], value: '支柱なし' }];
+    expect(validateConfig(c).errors.join()).toContain('linked[0].items');
+    c.initialSurvey.linked = [{ items: ['stake'], value: '支柱なし' }];
+    expect(validateConfig(c).errors.join()).toContain('linked[0]');
+  });
   it('食い違いがあれば、保存の前に確かめる（このまま保存もできる）', () => {
     const c = structuredClone(cfgJson);
     c.initialSurvey.crossCheck = [{ field: 'deadBranch', eq: '有', items: ['b4'] }];
