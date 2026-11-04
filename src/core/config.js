@@ -237,6 +237,16 @@ function validateInitialSurvey(s, cfg, need) {
         need(r.items.every((k) => weakKeys.has(k)), `${at}.items に、弱点（weak）の項目にないものがあります`);
       });
   }
+  if (s.linked != null) {
+    // 組になる選択肢の項目（省略可）：[{ items: [項目…], value: "支柱なし" }] どれかが value なのに、ほかが別の値なら注意する
+    const keys = new Set(Object.values(s.forms || {}).flatMap((f) => (f?.sections || []).flatMap((sec) => (sec?.items || []).map((it) => it?.key))));
+    if (need(Array.isArray(s.linked), 'initialSurvey.linked は並び（[…]）にしてください'))
+      s.linked.forEach((r, i) => {
+        const at = `initialSurvey.linked[${i}]`;
+        if (!need(r && Array.isArray(r.items) && r.items.length >= 2 && r.items.every(isStr) && isStr(r.value), `${at} は { items: [項目, 項目…], value: "値" } の形にしてください`)) return;
+        need(r.items.every((k) => keys.has(k)), `${at}.items に、入力画面にない項目があります`);
+      });
+  }
   // 一覧表の健全度への書き戻し（省略可）：{ from: "詳しい診断の項目", values: [書く値…], treatFrom?: "処置の項目" }
   if (s.gradeWriteBack != null)
     need(

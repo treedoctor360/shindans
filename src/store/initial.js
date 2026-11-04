@@ -336,6 +336,16 @@ export function initialWarnings(record, tree, cfg) {
     if (isEmpty(record[detailKeyOf(it)]) || isYes(it, record[it.key])) continue;
     out.push(`${name}：詳細が入っていますが「${isEmpty(record[it.key]) ? '未選択' : record[it.key]}」です`);
   }
+  // 組になる項目（例 支柱の2項目）：どれかが決まった値（例「支柱なし」）なのに、ほかが別の値
+  const labelOf = new Map();
+  for (const form of Object.values(cfg.initialSurvey?.forms || {})) for (const sec of form.sections || []) for (const it of sec.items || []) labelOf.set(it.key, it.label);
+  for (const rule of cfg.initialSurvey?.linked || []) {
+    const hit = rule.items.find((k) => record[k] === rule.value);
+    if (!hit) continue;
+    for (const k of rule.items)
+      if (k !== hit && !isEmpty(record[k]) && record[k] !== rule.value)
+        out.push(`${labelOf.get(hit) || hit}が「${rule.value}」ですが、${labelOf.get(k) || k}は「${record[k]}」です`);
+  }
   for (const rule of cfg.initialSurvey?.crossCheck || []) {
     const v = tree?.[rule.field];
     if (!tree || isEmpty(v) || ![].concat(rule.eq).includes(v)) continue;
