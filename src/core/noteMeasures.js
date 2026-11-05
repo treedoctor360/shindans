@@ -353,6 +353,23 @@ export function measuresToInitial(tree, cfg) {
       if (blankPart(v)) continue;
       vals[sp.to] = structuredClone(v);
     }
+    // 大きさの奥行を文字の欄へ移す（rule の depthTo。例 腐朽の大きさは縦×横だけ書き、奥行は備考に「奥行10cm」と残す）
+    if (rule.depthTo) {
+      const ds = [];
+      for (const [k, v] of Object.entries(vals)) {
+        if (k === rule.depthTo || !Array.isArray(v)) continue;
+        vals[k] = v.map((y) => {
+          const d = toHalf(String(y?.d ?? '')).trim();
+          if (d) ds.push(d);
+          const { d: _drop, ...rest } = y || {};
+          return rest;
+        });
+      }
+      if (ds.length) {
+        const memo = String(vals[rule.depthTo] ?? '').trim();
+        vals[rule.depthTo] = [`奥行${ds.join('・')}cm`, memo].filter(Boolean).join('、');
+      }
+    }
     // 簡易診断の入力から写す値（rule の fromTree。例 子実体の種名 ← 簡易の子実体の種名）
     for (const [to, field] of Object.entries(rule.fromTree || {})) {
       // 「有」のときだけ入れる項目（設定 details の when）は、その条件のときだけ写す
@@ -428,6 +445,7 @@ export function validateFromMeasures(list, cfg, need) {
       else need(typeof v === 'string' || typeof v === 'number', `${at}.set.${to} は文字か数にしてください`);
     }
     need(r.merge == null || typeof r.merge === 'boolean', `${at}.merge は true か false にしてください`);
+    if (r.depthTo != null) need(targets.get(r.depthTo)?.type === 'text', `${at}.depthTo：「${r.depthTo}」が項目「${r.item}」の文字（text）の欄にありません`);
     if (r.fromTree != null && need(isObj(r.fromTree), `${at}.fromTree は { 写し先: 簡易診断の項目 } の形にしてください`))
       for (const [to, field] of Object.entries(r.fromTree)) need(targets.has(to) && isStr(field), `${at}.fromTree.${to}：写し先が項目「${r.item}」の数値にないか、簡易診断の項目の名前がありません`);
     for (const [from, spec] of Object.entries(r.parts)) {
