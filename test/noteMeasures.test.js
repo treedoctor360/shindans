@@ -587,6 +587,56 @@ describe('子実体の寸法（発生高さ・範囲）：詳しい診断では�
   });
 });
 
+describe('【再現】子実体の種名は、その子実体の寸法の部位の項目にだけ写す', () => {
+  // 不具合：根株に子実体の寸法（ベッコウタケ）を入れると、toTree で簡易の種名に入った名前を、幹の腐朽の規則が fromTree で写していた
+  const cfgOf = () => {
+    const c = structuredClone(cfgJson);
+    c.noteMeasures.parts.fungusName = { type: 'text', label: '子実体の種名' };
+    c.noteMeasures.kinds.push({ key: 'fungus', label: '子実体', places: ['幹', '根株'], parts: ['fungusName', 'height'], toTree: { fungus: '有', fungusName: { from: 'fungusName' } } });
+    c.initialSurvey.detailParts.name.whole = true;
+    const items = c.initialSurvey.forms.initial.sections[1].items;
+    items.push({ key: 't2', label: '幹の腐朽', type: 'weak', parts: ['height', 'size', 'name'] }, { key: 'r1', label: '根株の腐朽', type: 'weak', parts: ['height', 'size', 'name'] });
+    for (const [place, item] of [['幹', 't2'], ['根株', 'r1']])
+      c.initialSurvey.fromMeasures.push(
+        { kind: 'decay', place, item, parts: { height: 'height', size: 'size' }, fromTree: { name: 'fungusName' } },
+        { kind: 'fungus', place, item, parts: { fungusName: 'name' }, merge: true },
+      );
+    return c;
+  };
+  const put = (c, t, kind, place, values) => putMeasure(t, c, { kind, place, values });
+
+  it('根株の子実体は根株の腐朽にだけ。幹の腐朽には写さない', () => {
+    const c = cfgOf();
+    expect(validateConfig(c).errors).toEqual([]);
+    let t = { notes: '', measuresV: 2, measures: [], fungus: '無' };
+    t = put(c, t, 'decay', '幹', { height: { a: '1' } });
+    t = put(c, t, 'fungus', '根株', { fungusName: 'ベッコウタケ' });
+    expect(t.fungusName).toBe('ベッコウタケ');
+    const r = measuresToInitial(t, c);
+    expect(r.values.t2Detail).toBe('地上1m');
+    expect(r.values.r1Detail).toBe('ベッコウタケ');
+  });
+
+  it('寸法にない名前（⑦に手で書いた名前）は、今までどおり腐朽の項目に写す', () => {
+    const c = cfgOf();
+    let t = { notes: '', measuresV: 2, measures: [], fungus: '有', fungusName: 'コフキタケ' };
+    t = put(c, t, 'decay', '幹', { height: { a: '1' } });
+    t = put(c, t, 'fungus', '根株', { fungusName: 'ベッコウタケ' });
+    expect(t.fungusName).toBe('コフキタケ、ベッコウタケ');
+    const r = measuresToInitial(t, c);
+    expect(r.values.t2Detail).toBe('地上1m、コフキタケ');
+    expect(r.values.r1Detail).toBe('ベッコウタケ');
+  });
+
+  it('子実体の寸法がなければ、⑦の名前を腐朽の項目に写す（種類の prefill があっても）', () => {
+    const c = cfgOf();
+    c.noteMeasures.kinds.at(-1).prefill = { fungusName: 'fungusName' };
+    let t = { notes: '', measuresV: 2, measures: [], fungus: '有', fungusName: 'コフキタケ' };
+    t = put(c, t, 'decay', '幹', { height: { a: '1' } });
+    expect(measuresToInitial(t, c).values.t2Detail).toBe('地上1m、コフキタケ');
+  });
+});
+
 describe('子実体の寸法を入れたら、簡易診断の子実体も「有」にして種名を足す（種類の toTree）', () => {
   const c = structuredClone(cfgJson);
   c.noteMeasures.parts.fungusName = { type: 'text', label: '子実体の種名' };
