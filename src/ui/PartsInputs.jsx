@@ -5,14 +5,16 @@
 //  required：必ず選ぶ印の名前の並び（簡易診断の寸法。detailParts.js の requiredFlags）。その印は「芯達」「芯未達」の2つのボタンで選ぶ
 import { coreReached, diameterOf, horizontalOf, ratioChoice } from '../core/detailParts.js';
 
-export default function PartsInputs({ parts, values, onPut, testId, Choice, pi = Math.PI, required = [] }) {
+//  rows：1つの欄を1行に（左に短い名前、右に入力）。詳しい診断の画面用。短い名前は部品の short か、名前の「（」より前
+//  noAddSize：大きさの「＋ 大きさを足す」を出さない（詳しい診断では、箇所は「別の箇所を足す」で増やすため）
+export default function PartsInputs({ parts, values, onPut, testId, Choice, pi = Math.PI, required = [], rows = false, noAddSize = false }) {
   const put = onPut;
   const dk = testId;
   const num = (name, v, onChange, ph) => (
     <input type="text" inputMode="decimal" value={v ?? ''} placeholder={ph} onChange={(e) => onChange(e.target.value)} data-part={name} />
   );
   return (
-    <div className="parts" data-parts={dk}>
+    <div className={`parts${rows ? ' rows' : ''}`} data-parts={dk}>
       {parts.map((p) => {
         const v = values[p.name];
         let input;
@@ -82,9 +84,11 @@ export default function PartsInputs({ parts, values, onPut, testId, Choice, pi =
                   <span>{p.unit ?? 'cm'}</span>
                 </span>
               ))}
-              <button type="button" className="btn" onClick={() => put(p.name, [...list, {}])} data-add-size={p.name}>
-                ＋ もう1か所
-              </button>
+              {!noAddSize && (
+                <button type="button" className="btn" onClick={() => put(p.name, [...list, {}])} data-add-size={p.name}>
+                  ＋ 大きさを足す
+                </button>
+              )}
             </span>
           );
         } else if (p.type === 'flag') {
@@ -130,7 +134,15 @@ export default function PartsInputs({ parts, values, onPut, testId, Choice, pi =
         }
         return (
           <label className="part" key={p.name}>
-            <small>{p.type === 'flag' ? (required.includes(p.name) ? `${p.label}か（必ず選ぶ）` : '\u00a0') : p.label}</small>
+            <small>
+              {p.type === 'flag'
+                ? required.includes(p.name)
+                  ? `${p.label}か（必ず選ぶ）`
+                  : '\u00a0'
+                : rows
+                  ? p.short || String(p.label).split(/[（(]/)[0] || p.label
+                  : p.label}
+            </small>
             {input}
           </label>
         );
