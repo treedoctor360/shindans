@@ -29,7 +29,7 @@ import {
   updateInitial,
   withdrawInitial,
 } from '../../store/initial.js';
-import { checkNumbers, manualKeyOf, partsKeyOf, partsOf, rebuildDetail, setDetailText, setPart } from '../../core/detailParts.js';
+import { addEntry, checkNumbers, circled, entriesOf, manualKeyOf, partsKeyOf, partsOf, rebuildDetail, removeEntry, setDetailText, setPart } from '../../core/detailParts.js';
 import PartsInputs from '../../ui/PartsInputs.jsx';
 import PrevPanel from '../../ui/PrevPanel.jsx';
 import SessionStamp from '../../ui/SessionStamp.jsx';
@@ -52,16 +52,38 @@ function Choice({ k, opts, value, onPress }) {
 }
 
 // 弱点の詳細の数値（本数・高さ・大きさなど）。入れると、下の詳細の文を組み立てる
+//  箇所が2つ以上なら（例 幹の腐朽が3か所。簡易診断の寸法から写したとき・「もう1か所」を押したとき）、①②…ごとに数値の欄を並べる。
+//  項目全体の部品（whole。例 子実体の種名）は①の欄にだけ出す
 function DetailParts({ it, dk, rec, cfg, edit }) {
+  const parts = partsOf(it, cfg);
+  const es = entriesOf(rec[partsKeyOf(dk)]);
+  const many = es.length > 1;
   return (
-    <PartsInputs
-      parts={partsOf(it, cfg)}
-      values={rec[partsKeyOf(dk)] || {}}
-      onPut={(name, v) => edit((r) => setPart(r, it, dk, name, v, cfg))}
-      testId={dk}
-      Choice={Choice}
-      pi={cfg.calc?.pi}
-    />
+    <div className="entries" data-entries={dk}>
+      {es.map((e, i) => (
+        <div className="entry" key={i} data-entry={i}>
+          {many && (
+            <div className="entry-head">
+              <b>{circled(i)}</b>
+              <button type="button" className="btn" onClick={() => edit((r) => removeEntry(r, it, dk, i, cfg))} data-remove-entry={i}>
+                この箇所を消す
+              </button>
+            </div>
+          )}
+          <PartsInputs
+            parts={i === 0 ? parts : parts.filter((p) => !p.whole)}
+            values={e}
+            onPut={(name, v) => edit((r) => setPart(r, it, dk, name, v, cfg, i))}
+            testId={i === 0 ? dk : `${dk}.${i}`}
+            Choice={Choice}
+            pi={cfg.calc?.pi}
+          />
+        </div>
+      ))}
+      <button type="button" className="more" onClick={() => edit((r) => addEntry(r, it, dk, cfg))} data-add-entry={dk}>
+        ＋ 別の箇所を足す（{circled(es.length)}）
+      </button>
+    </div>
   );
 }
 

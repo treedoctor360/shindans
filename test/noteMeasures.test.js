@@ -5,7 +5,7 @@ import { validateConfig } from '../src/core/config.js';
 import { autoDbNote, dbNoteOf } from '../src/core/notes.js';
 import { photoPlan } from '../src/core/photo.js';
 import { addMeasure, appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord, measuresToInitial } from '../src/core/noteMeasures.js';
-import { requiredFlags, setPart, unchosenFlags, withAuto } from '../src/core/detailParts.js';
+import { addEntry, checkNumbers, entriesOf, partsOf, removeEntry, requiredFlags, setPart, unchosenFlags, withAuto } from '../src/core/detailParts.js';
 
 const cfg = structuredClone(cfgJson);
 
@@ -104,7 +104,7 @@ describe('詳しい診断への引き継ぎ（initialSurvey.fromMeasures）', ()
     expect(measuresToInitial(tree([decay('枝', { height: { a: '3' } })]), c).keys).toEqual([]);
   });
 
-  it('同じ項目に2つ来たら、大きさはつなげ、高さは低い所から高い所まで、比は大きい方', () => {
+  it('同じ項目に2つ来たら、1件ずつ別の箇所にし、文は①②で並べる（高さ・周囲長などの数を混ぜない）', () => {
     const c = withTrunk();
     const r = measuresToInitial(
       tree([
@@ -113,7 +113,13 @@ describe('詳しい診断への引き継ぎ（initialSurvey.fromMeasures）', ()
       ]),
       c,
     );
-    expect(r.values.t2DetailParts).toEqual({ height: { a: '0.5', b: '2' }, size: [{ w: '10', h: '5' }, { w: '7', h: '7' }], ratio: '≧1/3' });
+    expect(r.values.t2DetailParts).toEqual({
+      height: { a: '2' },
+      size: [{ w: '10', h: '5' }],
+      ratio: '＜1/3',
+      more: [{ height: { a: '0.5', b: '1' }, size: [{ w: '7', h: '7' }], ratio: '≧1/3' }],
+    });
+    expect(r.values.t2Detail).toBe('①地上2m、10×5cm、周囲長比＜1/3 ②地上0.5～1m、7×7cm、周囲長比≧1/3');
   });
 
   it('特記事項から消した・書き換えた1行の数字は使わない', () => {
@@ -236,8 +242,10 @@ describe('同じ部位・種類の寸法を1行にまとめる（noteMeasures.me
     // まとめた寸法は、どれも特記事項に残っている扱い → 詳しい診断に全部写す（大きさは並べ、高さは一番低い所から高い所まで）
     expect(t.measures.filter((m) => m.place === '根株').every((m) => t.notes.includes(m.line))).toBe(true);
     const r = measuresToInitial(t, c);
-    expect(r.values.t2DetailParts.size).toHaveLength(3);
-    expect(r.values.t2DetailParts.height).toEqual({ a: '0', b: '0.5' });
+    // 詳しい診断では、まとめた1行ではなく元の寸法1件ずつを箇所にする
+    expect(r.values.t2DetailParts.size).toHaveLength(1);
+    expect(r.values.t2DetailParts.more).toHaveLength(2);
+    expect(r.values.t2DetailParts.height).toEqual({ a: '0', b: '0.4' });
   });
 
   it('手で書き直した1行はまとめない（新しい1行として足す）。merge がなければ今までどおり別の行', () => {
@@ -448,5 +456,74 @@ describe('芯達か芯未達かを必ず選ぶ（flag の required）・開口�
     expect(rec.t1).toBe('有（周囲≧1/3）');
     rec = setPart(rec, item, 't1Detail', 'coreReach', true, c);
     expect(rec.t1).toBe('有（芯到達・周囲≧1/3）');
+  });
+});
+
+describe('【再現】同じ項目に寸法が2件以上あるとき、詳しい診断で数値が消えない（箇所ごとに①②）', () => {
+  // 不具合：同じ項目（例 幹の腐朽）に寸法が何件かあると、1か所にまとめて写していたため、
+  //  周囲長が混ざって別の組になり（10/236 と 20/160 → 10/236）、高さは1つの範囲に、2件目からの備考は消えていた
+  const withTrunk = () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.detailParts.circ = { type: 'pair', label: '周囲長', noText: true, ratio: { num: 1, den: 3, lt: '＜1/3', ge: '≧1/3', to: 'ratio' } };
+    c.initialSurvey.detailParts.note = { type: 'text', label: '備考', noText: true, prefix: '備考：' };
+    c.initialSurvey.detailParts.name.whole = true;
+    c.initialSurvey.forms.initial.sections[1].items.push({ key: 't2', label: '腐朽', type: 'weak', parts: ['height', 'size', 'name', 'circ', 'ratio', 'core', 'note'] });
+    c.noteMeasures.parts.memo = { type: 'text', label: '備考' };
+    c.noteMeasures.kinds[0].parts.push('memo');
+    c.initialSurvey.fromMeasures.push({ kind: 'decay', place: '幹', item: 't2', parts: { height: 'height', size: 'size', circ: 'circ', core: 'core', memo: 'note' }, fromTree: { name: 'fungusName' } });
+    return c;
+  };
+  const tree = (c, list, o = {}) => {
+    const ms = list.map((v) => measureRecord('decay', '幹', v, measureLine(c, 'decay', '幹', v)));
+    return { notes: ms.map((m) => `・${m.line}`).join('\n'), measures: ms, ...o };
+  };
+
+  it('箇所ごとに数値を残し、文は①②③。項目全体の部品（種名）は最後に1回。確認用の数も箇所ごと', () => {
+    const c = withTrunk();
+    expect(validateConfig(c).errors).toEqual([]);
+    const t = tree(
+      c,
+      [
+        { height: { a: '5', b: '6.5' }, size: [{ w: '150', h: '30' }], memo: '北側' },
+        { height: { a: '0.2', b: '1.2' }, size: [{ w: '100', h: '10' }], circ: { a: '10', b: '236' }, memo: '南側' },
+        { height: { a: '2', b: '3.5' }, size: [{ w: '150', h: '20' }], circ: { a: '20', b: '160' }, core: true },
+      ],
+      { fungus: '有', fungusName: '不明種' },
+    );
+    const r = measuresToInitial(t, c);
+    const p = r.values.t2DetailParts;
+    expect(entriesOf(p).map((e) => e.circ)).toEqual([undefined, { a: '10', b: '236' }, { a: '20', b: '160' }]);
+    expect(entriesOf(p).map((e) => e.note)).toEqual(['北側', '南側', undefined]);
+    expect(r.values.t2Detail).toBe('①地上5～6.5m、150×30cm ②地上0.2～1.2m、100×10cm、周囲長比＜1/3 ③地上2～3.5m、150×20cm、周囲長比＜1/3（芯達）、不明種');
+    const parts = partsOf(c.initialSurvey.forms.initial.sections[1].items.at(-1), c);
+    expect(checkNumbers(p, parts)).toEqual(['①備考：北側', '②10/236', '②備考：南側', '③20/160']);
+  });
+
+  it('子実体の種名は、簡易診断で子実体が「有」のときだけ写す', () => {
+    const c = withTrunk();
+    const v = [{ height: { a: '1' } }];
+    expect(measuresToInitial(tree(c, v, { fungus: '有', fungusName: 'コフキタケ' }), c).values.t2Detail).toBe('地上1m、コフキタケ');
+    expect(measuresToInitial(tree(c, v, { fungus: '無', fungusName: 'コフキタケ' }), c).values.t2Detail).toBe('地上1m');
+  });
+
+  it('merge: true の規則は今までどおり1か所にまとめる', () => {
+    const c = withTrunk();
+    c.initialSurvey.fromMeasures.at(-1).merge = true;
+    const r = measuresToInitial(tree(c, [{ height: { a: '2' }, size: [{ w: '10', h: '5' }] }, { height: { a: '0.5' }, size: [{ w: '7', h: '7' }] }]), c);
+    expect(r.values.t2DetailParts.more).toBeUndefined();
+    expect(r.values.t2DetailParts.height).toEqual({ a: '0.5', b: '2' });
+  });
+
+  it('詳しい診断の画面：箇所ごとに直す・足す・消す（項目全体の部品は1か所目に残す）', () => {
+    const c = withTrunk();
+    const item = c.initialSurvey.forms.initial.sections[1].items.at(-1);
+    let rec = setPart({}, item, 't2Detail', 'height', { a: '1' }, c);
+    rec = setPart(rec, item, 't2Detail', 'name', 'コフキタケ', c);
+    rec = addEntry(rec, item, 't2Detail', c);
+    rec = setPart(rec, item, 't2Detail', 'height', { a: '3' }, c, 1);
+    expect(rec.t2Detail).toBe('①地上1m ②地上3m、コフキタケ');
+    rec = removeEntry(rec, item, 't2Detail', 0, c);
+    expect(rec.t2DetailParts).toEqual({ height: { a: '3' }, name: 'コフキタケ' });
+    expect(rec.t2Detail).toBe('地上3m、コフキタケ');
   });
 });

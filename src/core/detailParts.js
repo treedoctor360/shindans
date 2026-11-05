@@ -19,6 +19,10 @@
 //              attach: false なら、ほかの部品と同じく「、」でつなぐ（例「長さ1.5m、芯達」）
 //              required：簡易診断の寸法を入れるとき、付けるか付けないか（offLabel。例「芯未達」）を必ず選ぶ。
 //                true（いつも）か、部位の並び（例 ["幹", "根株"]。その部位のときだけ）。付けないを選ぶと false を入れる（文には出さない）
+//   どの種類も whole: true なら「項目全体で1つ」の部品（例 子実体の種名）。箇所が2つ以上あっても最後に1回だけ書く
+//
+// 箇所が2つ以上あるとき（例 幹の腐朽が3か所）：1か所目は今までどおり部品の値に、2か所目からは more（[{…}, …]）に入れる。
+//   文は「①地上1m、20×50cm ②地上2m、10×30cm、（項目全体の部品）」のように箇所ごとに①②…を付けて並べる
 
 import { toHalf } from './text.js';
 
@@ -94,9 +98,36 @@ export function buildText(values, parts, join = '、') {
   return out;
 }
 
-// 部品の値から、詳細の文を作る
+// ---------- 箇所が2つ以上のとき ----------
+const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+export const circled = (i) => CIRCLED[i] || `(${i + 1})`;
+
+// 箇所ごとの値の並び（1か所目＋more）。1か所目からは more を除く
+export function entriesOf(values) {
+  const { more, ...first } = values || {};
+  return [first, ...(Array.isArray(more) ? more : [])];
+}
+
+// 箇所ごとの値の並びから、部品の値（1か所目＋more）に戻す。項目全体の部品（whole）は1か所目に残す
+export function fromEntries(entries) {
+  const [first = {}, ...rest] = entries;
+  return rest.length ? { ...first, more: rest } : { ...first };
+}
+
+// 部品の値から、詳細の文を作る（箇所が2つ以上なら①②…で並べ、項目全体の部品は最後に1回）
 export function buildDetail(values, parts, cfg) {
-  return buildText(values, parts, cfg.initialSurvey?.detailJoin ?? '、');
+  const join = cfg.initialSurvey?.detailJoin ?? '、';
+  const es = entriesOf(values);
+  if (es.length < 2) return buildText(values, parts, join);
+  const each = parts.filter((p) => !p.whole);
+  const whole = parts.filter((p) => p.whole);
+  const body = es
+    .map((e) => buildText(e, each, join))
+    .map((t, i) => (t ? circled(i) + t : ''))
+    .filter(Boolean)
+    .join(' ');
+  const tail = buildText(es[0], whole, join);
+  return [body, tail].filter(Boolean).join(join);
 }
 
 // ---------- 自動で決まる値 ----------
@@ -161,6 +192,13 @@ export function unchosenFlags(values, parts, place) {
 export function itemValueOf(item, values, cfg) {
   const vf = item?.valueFrom;
   if (!vf) return '';
+  const es = entriesOf(values);
+  if (es.length > 1) {
+    // 箇所が2つ以上なら、いちばん重いもの（芯到達・周囲≧1/3 → 芯到達・周囲＜1/3 → 周囲≧1/3 → 周囲＜1/3）
+    const order = [vf.values.coreGe, vf.values.coreLt, vf.values.ge, vf.values.lt];
+    const got = es.map((e) => itemValueOf(item, e, cfg)).filter(Boolean);
+    return order.find((v) => got.includes(v)) || '';
+  }
   const pair = (cfg.initialSurvey?.detailParts || {})[vf.ratio];
   const r = pair?.ratio ? ratioChoice(values?.[vf.ratio], pair.ratio) : '';
   if (!r) return '';
@@ -190,6 +228,14 @@ export function withAuto(values, parts, changed) {
 //  奥行：簡易診断の寸法で入れた奥行が、奥行を出さない大きさの欄（depth のない size）に写ったとき
 //  言葉：文に出さない text の欄（noText。例 簡易診断の寸法の備考）
 export function checkNumbers(values, parts) {
+  const es = entriesOf(values);
+  if (es.length > 1)
+    return es.flatMap((e, i) =>
+      checkNumbers(
+        e,
+        parts.filter((p) => i === 0 || !p.whole),
+      ).map((t) => circled(i) + t),
+    );
   const out = [];
   for (const p of parts) {
     const v = values?.[p.name];
@@ -218,9 +264,32 @@ export function checkNumbers(values, parts) {
 }
 
 // 部品を1つ変えた記録を返す。手で直していなければ、詳細の文も作り直す
-export function setPart(record, item, detailKey, name, value, cfg) {
+export function setPart(record, item, detailKey, name, value, cfg, at = 0) {
   const pk = partsKeyOf(detailKey);
-  const values = withAuto({ ...(record[pk] || {}), [name]: value }, partsOf(item, cfg), name);
+  const es = entriesOf(record[pk]);
+  while (es.length <= at) es.push({});
+  es[at] = withAuto({ ...es[at], [name]: value }, partsOf(item, cfg), name);
+  return withParts(record, item, detailKey, fromEntries(es), cfg);
+}
+
+// 箇所を1つ足す（空の箇所を最後に）・消す（at：0始まり。1か所目を消すと2か所目が1か所目になる。項目全体の部品は残す）
+export function addEntry(record, item, detailKey, cfg) {
+  const es = entriesOf(record[partsKeyOf(detailKey)]);
+  return withParts(record, item, detailKey, fromEntries([...es, {}]), cfg);
+}
+export function removeEntry(record, item, detailKey, at, cfg) {
+  const es = entriesOf(record[partsKeyOf(detailKey)]);
+  if (es.length < 2) return record;
+  const wholeNames = partsOf(item, cfg).filter((p) => p.whole).map((p) => p.name);
+  const keep = Object.fromEntries(wholeNames.filter((n) => es[0][n] !== undefined).map((n) => [n, es[0][n]]));
+  const rest = es.filter((_, i) => i !== at);
+  rest[0] = { ...rest[0], ...keep };
+  return withParts(record, item, detailKey, fromEntries(rest), cfg);
+}
+
+// 部品の値を入れ替えた記録（有無の選択肢・詳細の文も決め直す）
+function withParts(record, item, detailKey, values, cfg) {
+  const pk = partsKeyOf(detailKey);
   const next = { ...record, [pk]: values };
   // 有無の選択肢を数値から決める項目（valueFrom）なら、決まったときに入れる
   const iv = itemValueOf(item, values, cfg);
@@ -255,6 +324,7 @@ export function validatePartDefs(defs, at0, need) {
     if (p.type === 'flag') need(typeof p.text === 'string' && p.text.length > 0, `${at}：flag には text（押したときに付ける文字）が必要です`);
     if (p.required != null)
       need(p.type === 'flag' && (p.required === true || (Array.isArray(p.required) && p.required.every((x) => typeof x === 'string'))), `${at}.required は flag に付け、true か部位の並びにしてください`);
+    need(p.whole == null || typeof p.whole === 'boolean', `${at}.whole は true か false にしてください`);
     for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom', 'offLabel']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
     if (p.circ != null) need(p.type === 'pair', `${at}.circ（周囲長の欄）は pair だけに付けられます`);
     if (p.slant != null)

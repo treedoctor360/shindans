@@ -14,7 +14,7 @@
 // 足した1行の元の数字は木の measures に残し、詳しい診断の記録を作るときに弱点の詳細へ写す
 // （設定 initialSurvey.fromMeasures。measuresToInitial）。
 
-import { buildDetail, detailKeyOfItem, itemValueOf, partsKeyOf, partsOf, buildText, ratioChoice, validatePartDefs } from './detailParts.js';
+import { buildDetail, detailKeyOfItem, fromEntries, itemValueOf, partsKeyOf, partsOf, buildText, ratioChoice, validatePartDefs } from './detailParts.js';
 import { toHalf } from './text.js';
 
 export const measureKinds = (cfg) => cfg.noteMeasures?.kinds || [];
@@ -268,6 +268,9 @@ export function validateNoteMeasures(m, need) {
 //    kind・place：どの寸法の1行か（place を省くと部位を問わない）。item：詳しい診断の弱点の項目
 //    set：{ 詳しい診断の数値の名前: 値 } 決まった値を入れる（例 根株の空洞を幹の空洞の欄に書くとき、部位に「根株」）
 //    ratio：{ num, den, lt, ge } 2つの数（a/b）の比が num/den 未満なら lt、以上なら ge の選択肢にする（例 周囲長比）
+//    fromTree：{ 詳しい診断の数値の名前: 簡易診断の項目 } 簡易診断の入力の値を写す（例 子実体の種名 ← 簡易の子実体の種名）
+//    merge：true なら、同じ項目に寸法が2件以上あっても1か所にまとめる（高さは範囲・大きさは並べる）。
+//      省略時は寸法1件を1か所とし、2か所以上なら文を①②…で並べる（detailParts.js の more）
 
 // 木に残す寸法の記録（特記事項に足した1行と、その元の数字）
 export const measureRecord = (kind, place, values, line) => ({ kind, place: place || '', values, line });
@@ -299,6 +302,7 @@ export function measuresToInitial(tree, cfg) {
   const rules = cfg.initialSurvey?.fromMeasures || [];
   const out = { values: {}, keys: [] };
   if (!rules.length) return out;
+  // 項目ごとに、箇所の並び（寸法1件＝1か所）と、項目全体の部品（whole。例 子実体の種名）を集める
   const byItem = new Map();
   const used = [...activeMeasures(tree)];
   // 寸法の1行がない種類でも、簡易診断の入力から入れておける値（種類の prefill。例 枯れ枝の本数 ← 簡易の枯れ枝の本数）は写す
@@ -307,28 +311,60 @@ export function measuresToInitial(tree, cfg) {
     const values = measurePrefill(kind.key, tree, cfg);
     if (Object.keys(values).length) used.push({ kind: kind.key, place: '', values, line: '' });
   }
-  for (const m of used) {
-    const rule = rules.find((x) => x.kind === m.kind && (x.place == null || x.place === m.place));
+  const defs = cfg.initialSurvey?.detailParts || {};
+  const isWhole = (name) => !!defs[name]?.whole;
+  const ruleOf = (m) => rules.find((x) => x.kind === m.kind && (x.place == null || x.place === m.place));
+  // まとめる規則（merge）の寸法は後に回す（先に箇所を作ってから、1か所目にまとめる）
+  const ordered = [...used.filter((m) => !ruleOf(m)?.merge), ...used.filter((m) => ruleOf(m)?.merge)];
+  for (const m of ordered) {
+    const rule = ruleOf(m);
     if (!rule) continue;
-    const vals = byItem.get(rule.item) || {};
-    for (const [to, v] of Object.entries(rule.set || {})) if (vals[to] === undefined) vals[to] = v;
+    const g = byItem.get(rule.item) || { entries: [], whole: {} };
+    const vals = {};
+    for (const [to, v] of Object.entries(rule.set || {})) vals[to] = v;
     for (const [from, spec] of Object.entries(rule.parts)) {
       const sp = typeof spec === 'string' ? { to: spec } : spec;
       const v = sp.ratio ? ratioChoice(m.values?.[from], sp.ratio) : m.values?.[from];
       if (blankPart(v)) continue;
-      vals[sp.to] = mergePart(vals[sp.to], structuredClone(v), sp.ratio);
+      vals[sp.to] = structuredClone(v);
     }
-    byItem.set(rule.item, vals);
+    // 簡易診断の入力から写す値（rule の fromTree。例 子実体の種名 ← 簡易の子実体の種名）
+    for (const [to, field] of Object.entries(rule.fromTree || {})) {
+      // 「有」のときだけ入れる項目（設定 details の when）は、その条件のときだけ写す
+      const d = (cfg.details || []).find((x) => x.field === field);
+      if (d?.when && tree[d.when.field] !== d.when.eq) continue;
+      const v = String(tree[field] ?? '').trim();
+      if (v && vals[to] === undefined) vals[to] = v;
+    }
+    // 項目全体の部品は箇所に入れず、まとめて1つ（先に入ったものを使う）
+    for (const [k, v] of Object.entries(vals))
+      if (isWhole(k)) {
+        if (g.whole[k] === undefined) g.whole[k] = v;
+        delete vals[k];
+      }
+    const hasEach = Object.keys(vals).some((k) => !(k in (rule.set || {})));
+    if (hasEach) {
+      // 1件ずつ箇所にする。merge: true の規則（例 本数と最大のものを書く項目）は、今までどおり1か所にまとめる
+      if (rule.merge && g.entries.length) {
+        const cur = g.entries[0];
+        for (const [k, v] of Object.entries(vals)) cur[k] = mergePart(cur[k], v, (Object.values(rule.parts).find((sp) => typeof sp === 'object' && sp.to === k) || {}).ratio);
+      } else g.entries.push(vals);
+    }
+    byItem.set(rule.item, g);
   }
-  for (const [key, vals] of byItem) {
+  for (const [key, g] of byItem) {
     const item = itemOf(cfg, key);
-    if (!item || !Object.keys(vals).length) continue;
-    // 写した2つの数（例 周囲長／幹周）に比の設定（ratio.to）があれば、その選択肢も入れる（入力画面で数を入れたときと同じ）
-    for (const p of partsOf(item, cfg)) {
-      if (p.type !== 'pair' || !p.ratio?.to || vals[p.name] === undefined || vals[p.ratio.to] !== undefined) continue;
-      const r = ratioChoice(vals[p.name], p.ratio);
-      if (r) vals[p.ratio.to] = r;
-    }
+    if (!item || (!g.entries.length && !Object.keys(g.whole).length)) continue;
+    const es = g.entries.length ? g.entries : [{}];
+    // 写した2つの数（例 周囲長／幹周）に比の設定（ratio.to）があれば、その選択肢も入れる（入力画面で数を入れたときと同じ）。箇所ごとに
+    for (const vals of es)
+      for (const p of partsOf(item, cfg)) {
+        if (p.type !== 'pair' || !p.ratio?.to || vals[p.name] === undefined || vals[p.ratio.to] !== undefined) continue;
+        const r = ratioChoice(vals[p.name], p.ratio);
+        if (r) vals[p.ratio.to] = r;
+      }
+    es[0] = { ...es[0], ...g.whole };
+    const vals = fromEntries(es);
     const dk = detailKeyOfItem(item);
     out.values[partsKeyOf(dk)] = vals;
     out.values[dk] = buildDetail(vals, partsOf(item, cfg), cfg);
@@ -366,6 +402,9 @@ export function validateFromMeasures(list, cfg, need) {
       if (t.type === 'choice') need(t.options.includes(v), `${at}.set.${to}：「${v}」は選択肢にありません`);
       else need(typeof v === 'string' || typeof v === 'number', `${at}.set.${to} は文字か数にしてください`);
     }
+    need(r.merge == null || typeof r.merge === 'boolean', `${at}.merge は true か false にしてください`);
+    if (r.fromTree != null && need(isObj(r.fromTree), `${at}.fromTree は { 写し先: 簡易診断の項目 } の形にしてください`))
+      for (const [to, field] of Object.entries(r.fromTree)) need(targets.has(to) && isStr(field), `${at}.fromTree.${to}：写し先が項目「${r.item}」の数値にないか、簡易診断の項目の名前がありません`);
     for (const [from, spec] of Object.entries(r.parts)) {
       const sp = typeof spec === 'string' ? { to: spec } : spec;
       need(kind.parts.includes(from), `${at}.parts：「${from}」は寸法「${r.kind}」の欄にありません`);
