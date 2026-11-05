@@ -318,3 +318,7 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .measure-row{display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .measure-row .measure-line{flex:1;min-width:0;overflow-wrap:anywhere;font-size:14px;line-height:1.45}
 .measure-row .acts{display:flex;gap:6px;flex-shrink:0}
+/* 弱点の詳細の箇所（①②…） */
+.entries{display:flex;flex-direction:column;gap:8px}
+.entry + .entry{border-top:1px dashed var(--line);padding-top:8px}
+.entry-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
