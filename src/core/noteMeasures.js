@@ -142,6 +142,9 @@ export const putMeasure = (tree, cfg, rec, i = -1) => {
 // 寸法を入れたときに、簡易診断の項目にも入れる（種類の toTree。例 子実体の寸法 → ⑦子実体を「有」、種名を足す）
 //  toTree：{ 木の項目: 決まった値 か { from: その種類の欄の名前 } }。from の値は、まだ入っていなければ「、」でつないで足す
 //  寸法を消しても、木の項目は戻さない（ほかの寸法や手で入れた値かもしれないため）
+// 「、」などで区切った名前の並び（空は除く）
+const splitNames = (v) => String(v ?? '').split(/[、,，]/).map((x) => toHalf(x).trim()).filter(Boolean);
+
 function applyToTree(tree, m, cfg) {
   const kind = kindOf(m.kind, cfg);
   if (!kind?.toTree) return tree;
@@ -155,7 +158,7 @@ function applyToTree(tree, m, cfg) {
     if (!v) continue;
     const cur = String(next[field] ?? '').trim();
     if (!cur) next[field] = v;
-    else if (!cur.split(/[、,，]/).map((x) => x.trim()).includes(v)) next[field] = `${cur}、${v}`;
+    else if (!splitNames(cur).includes(v)) next[field] = `${cur}、${v}`;
   }
   return next;
 }
@@ -339,6 +342,18 @@ export function measuresToInitial(tree, cfg) {
   const defs = cfg.initialSurvey?.detailParts || {};
   const isWhole = (name) => !!defs[name]?.whole;
   const ruleOf = (m) => rules.find((x) => x.kind === m.kind && (x.place == null || x.place === m.place));
+  // 寸法の種類の toTree（{ from }）で、木の項目に入る名前（例 子実体の寸法の種名 → ⑦子実体の種名）
+  const namesFromMeasures = (field) => {
+    const set = new Set();
+    for (const m of activeMeasures(tree)) {
+      // 寸法がなくて簡易診断の入力から補った分（prefill）は数えない（その名前は⑦に書いた名前そのもの）
+      const spec = kindOf(m.kind, cfg)?.toTree?.[field];
+      if (!spec || typeof spec !== 'object') continue;
+      const v = toHalf(String(m.values?.[spec.from] ?? '')).trim();
+      if (v) set.add(v);
+    }
+    return set;
+  };
   // まとめる規則（merge）の寸法は後に回す（先に箇所を作ってから、1か所目にまとめる）
   const ordered = [...used.filter((m) => !ruleOf(m)?.merge), ...used.filter((m) => ruleOf(m)?.merge)];
   for (const m of ordered) {
@@ -375,7 +390,11 @@ export function measuresToInitial(tree, cfg) {
       // 「有」のときだけ入れる項目（設定 details の when）は、その条件のときだけ写す
       const d = (cfg.details || []).find((x) => x.field === field);
       if (d?.when && tree[d.when.field] !== d.when.eq) continue;
-      const v = String(tree[field] ?? '').trim();
+      // 寸法（種類の toTree）から木の項目に入った名前は、その寸法の部位の項目にだけ写るので、ここでは除く
+      //  例 根株の子実体の寸法の種名は根株の腐朽にだけ。幹の腐朽には⑦に手で書いた名前だけを写す
+      const taken = namesFromMeasures(field);
+      let v = String(tree[field] ?? '').trim();
+      if (taken.size) v = splitNames(v).filter((x) => !taken.has(x)).join('、');
       if (v && vals[to] === undefined) vals[to] = v;
     }
     // 項目全体の部品は箇所に入れず、まとめて1つ（先に入ったものを使う）
