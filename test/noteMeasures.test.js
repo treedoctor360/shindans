@@ -499,6 +499,27 @@ describe('【再現】同じ項目に寸法が2件以上あるとき、詳しい
     expect(checkNumbers(p, parts)).toEqual(['①備考：北側', '②10/236', '②備考：南側', '③20/160']);
   });
 
+  it('奥行は大きさに入れず備考へ（rule の depthTo）。備考があれば前に足す', () => {
+    const c = withTrunk();
+    c.noteMeasures.parts.size.depth = true;
+    c.initialSurvey.fromMeasures.at(-1).depthTo = 'note';
+    expect(validateConfig(c).errors).toEqual([]);
+    const r = measuresToInitial(tree(c, [{ size: [{ w: '30', h: '10', d: '５' }], memo: '北側' }, { size: [{ w: '20', h: '8', d: '3' }, { w: '5', h: '5', d: '2' }] }, { size: [{ w: '9', h: '9' }] }]), c);
+    const es = entriesOf(r.values.t2DetailParts);
+    expect(es.map((e) => e.size)).toEqual([[{ w: '30', h: '10' }], [{ w: '20', h: '8' }, { w: '5', h: '5' }], [{ w: '9', h: '9' }]]);
+    expect(es.map((e) => e.note)).toEqual(['奥行5cm、北側', '奥行3・2cm', undefined]);
+    // 提出用の文には出さず、確認用の数（備考）に出す。奥行を別に重ねて出さない
+    expect(r.values.t2Detail).not.toContain('奥行');
+    const parts = partsOf(c.initialSurvey.forms.initial.sections[1].items.at(-1), c);
+    expect(checkNumbers(r.values.t2DetailParts, parts)).toEqual(['①備考：奥行5cm、北側', '②備考：奥行3・2cm']);
+  });
+
+  it('depthTo の写し先は文字の欄でないといけない', () => {
+    const c = withTrunk();
+    c.initialSurvey.fromMeasures.at(-1).depthTo = 'size';
+    expect(validateConfig(c).errors.join()).toContain('depthTo');
+  });
+
   it('子実体の種名は、簡易診断で子実体が「有」のときだけ写す', () => {
     const c = withTrunk();
     const v = [{ height: { a: '1' } }];
