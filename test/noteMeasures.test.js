@@ -4,7 +4,7 @@ import cfgJson from './fixtures/sample-config.json';
 import { validateConfig } from '../src/core/config.js';
 import { autoDbNote, dbNoteOf } from '../src/core/notes.js';
 import { photoPlan } from '../src/core/photo.js';
-import { addMeasure, appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord, measuresToInitial } from '../src/core/noteMeasures.js';
+import { addMeasure, appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord, measuresToInitial, putMeasure, removeMeasure } from '../src/core/noteMeasures.js';
 import { addEntry, checkNumbers, entriesOf, partsOf, removeEntry, requiredFlags, setPart, unchosenFlags, withAuto } from '../src/core/detailParts.js';
 
 const cfg = structuredClone(cfgJson);
@@ -563,5 +563,25 @@ describe('子実体の寸法（発生高さ・範囲）：詳しい診断では�
     const r = measuresToInitial(tree([rec(c, 'fungus', { fungusName: 'コフキタケ', height: { a: '1.5' } }), rec(c, 'decay', { height: { a: '1' }, size: [{ w: '30', h: '20' }] })]), c);
     expect(r.values.t2Detail).toBe('地上1m、30×20cm、コフキタケ');
     expect(r.values.t2DetailParts.more).toBeUndefined();
+  });
+});
+
+describe('子実体の寸法を入れたら、簡易診断の子実体も「有」にして種名を足す（種類の toTree）', () => {
+  const c = structuredClone(cfgJson);
+  c.noteMeasures.parts.fungusName = { type: 'text', label: '子実体の種名' };
+  c.noteMeasures.kinds.push({ key: 'fungus', label: '子実体', places: ['幹', '根株'], parts: ['fungusName', 'height'], toTree: { fungus: '有', fungusName: { from: 'fungusName' } } });
+  it('入れていなければ入れ、入っていれば「、」で足す。同じ名前は足さない', () => {
+    expect(validateConfig(c).errors).toEqual([]);
+    let t = putMeasure({ notes: '', measuresV: 2, measures: [], fungus: '無' }, c, { kind: 'fungus', place: '幹', values: { fungusName: 'コフキタケ' } });
+    expect([t.fungus, t.fungusName]).toEqual(['有', 'コフキタケ']);
+    t = putMeasure(t, c, { kind: 'fungus', place: '根株', values: { fungusName: 'ナラタケ' } });
+    expect(t.fungusName).toBe('コフキタケ、ナラタケ');
+    t = putMeasure(t, c, { kind: 'fungus', place: '根株', values: { fungusName: 'ナラタケ', height: { a: '0.2' } } }, 1);
+    expect(t.fungusName).toBe('コフキタケ、ナラタケ');
+    // 消しても戻さない
+    expect(removeMeasure(t, c, 0).fungusName).toBe('コフキタケ、ナラタケ');
+    const bad = structuredClone(c);
+    bad.noteMeasures.kinds.at(-1).toTree.fungusName.from = 'nokey';
+    expect(validateConfig(bad).errors.join()).toContain('toTree');
   });
 });
