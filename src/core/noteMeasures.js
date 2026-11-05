@@ -136,8 +136,29 @@ export const putMeasure = (tree, cfg, rec, i = -1) => {
   const ms = [...t.measures];
   if (i >= 0 && i < ms.length) ms[i] = m;
   else ms.push(m);
-  return { ...t, measures: ms };
+  return applyToTree({ ...t, measures: ms }, m, cfg);
 };
+
+// 寸法を入れたときに、簡易診断の項目にも入れる（種類の toTree。例 子実体の寸法 → ⑦子実体を「有」、種名を足す）
+//  toTree：{ 木の項目: 決まった値 か { from: その種類の欄の名前 } }。from の値は、まだ入っていなければ「、」でつないで足す
+//  寸法を消しても、木の項目は戻さない（ほかの寸法や手で入れた値かもしれないため）
+function applyToTree(tree, m, cfg) {
+  const kind = kindOf(m.kind, cfg);
+  if (!kind?.toTree) return tree;
+  const next = { ...tree };
+  for (const [field, spec] of Object.entries(kind.toTree)) {
+    if (typeof spec === 'string') {
+      next[field] = spec;
+      continue;
+    }
+    const v = toHalf(String(m.values?.[spec.from] ?? '')).trim();
+    if (!v) continue;
+    const cur = String(next[field] ?? '').trim();
+    if (!cur) next[field] = v;
+    else if (!cur.split(/[、,，]/).map((x) => x.trim()).includes(v)) next[field] = `${cur}、${v}`;
+  }
+  return next;
+}
 export const removeMeasure = (tree, cfg, i) => {
   const t = toMeasuresV2(tree, cfg);
   return { ...t, measures: t.measures.filter((_, j) => j !== i) };
@@ -256,6 +277,10 @@ export function validateNoteMeasures(m, need) {
     need(k.photo == null || isStr(k.photo), `${at}.photo は写真の名前（文字）にしてください`);
     need(k.fullOnly == null || typeof k.fullOnly === 'boolean', `${at}.fullOnly は true か false にしてください`);
     need(k.db == null || isStr(k.db), `${at}.db は一覧表用の言い回し（文字）にしてください`);
+    need(
+      k.toTree == null || (isObj(k.toTree) && Object.values(k.toTree).every((v) => isStr(v) || (isObj(v) && k.parts.includes(v.from)))),
+      `${at}.toTree は { 木の項目: 値 か { from: その種類の欄の名前 } } の形にしてください`,
+    );
     need(
       k.prefill == null || (isObj(k.prefill) && Object.entries(k.prefill).every(([p, f]) => k.parts.includes(p) && isStr(f))),
       `${at}.prefill は { その種類の欄の名前: 木の項目 } の形にしてください`,
