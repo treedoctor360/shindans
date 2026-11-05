@@ -19,6 +19,7 @@
 //              attach: false なら、ほかの部品と同じく「、」でつなぐ（例「長さ1.5m、芯達」）
 //              required：簡易診断の寸法を入れるとき、付けるか付けないか（offLabel。例「芯未達」）を必ず選ぶ。
 //                true（いつも）か、部位の並び（例 ["幹", "根株"]。その部位のときだけ）。付けないを選ぶと false を入れる（文には出さない）
+//   どの種類も noText: true なら文に出さず、確認用カルテにだけ【】で足す（高さ・大きさ・数は checkPrefix を前に付ける。例「子実体 地上1.5m」）
 //   どの種類も whole: true なら「項目全体で1つ」の部品（例 子実体の種名）。箇所が2つ以上あっても最後に1回だけ書く
 //
 // 箇所が2つ以上あるとき（例 幹の腐朽が3か所）：1か所目は今までどおり部品の値に、2か所目からは more（[{…}, …]）に入れる。
@@ -239,6 +240,12 @@ export function checkNumbers(values, parts) {
   const out = [];
   for (const p of parts) {
     const v = values?.[p.name];
+    // 文に出さない高さ・大きさ・数（例 子実体の発生高さ・範囲）：checkPrefix を付けて、文にしたときの形で
+    if (p.noText && ['height', 'size', 'number', 'count'].includes(p.type)) {
+      const t = partText({ ...p, noText: false }, v);
+      if (t) out.push(`${p.checkPrefix || ''}${t}`);
+      continue;
+    }
     // 文に出さない言葉（例 簡易診断の寸法の備考）：prefix を付けてそのまま
     if (p.type === 'text' && p.noText) {
       const t = String(v ?? '').trim();
@@ -325,7 +332,7 @@ export function validatePartDefs(defs, at0, need) {
     if (p.required != null)
       need(p.type === 'flag' && (p.required === true || (Array.isArray(p.required) && p.required.every((x) => typeof x === 'string'))), `${at}.required は flag に付け、true か部位の並びにしてください`);
     need(p.whole == null || typeof p.whole === 'boolean', `${at}.whole は true か false にしてください`);
-    for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom', 'offLabel']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
+    for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom', 'offLabel', 'checkPrefix']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
     if (p.circ != null) need(p.type === 'pair', `${at}.circ（周囲長の欄）は pair だけに付けられます`);
     if (p.slant != null)
       need(

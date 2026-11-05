@@ -527,3 +527,41 @@ describe('【再現】同じ項目に寸法が2件以上あるとき、詳しい
     expect(rec.t2Detail).toBe('地上3m、コフキタケ');
   });
 });
+
+describe('子実体の寸法（発生高さ・範囲）：詳しい診断では種名だけを文にし、高さ・範囲は確認用カルテにだけ', () => {
+  const withFungus = () => {
+    const c = structuredClone(cfgJson);
+    c.noteMeasures.parts.fungusName = { type: 'text', label: '子実体の種名' };
+    c.noteMeasures.kinds.push({ key: 'fungus', label: '子実体', places: ['幹', '根株'], parts: ['fungusName', 'height', 'size'] });
+    const dp = c.initialSurvey.detailParts;
+    dp.name.whole = true;
+    dp.fungusH = { type: 'height', label: '子実体の発生高さ', noText: true, checkPrefix: '子実体 ' };
+    dp.fungusSize = { type: 'size', label: '子実体の範囲', noText: true, checkPrefix: '子実体 ' };
+    c.initialSurvey.forms.initial.sections[1].items.push({ key: 't2', label: '腐朽(子実体)', type: 'weak', parts: ['height', 'size', 'name', 'fungusH', 'fungusSize'] });
+    c.initialSurvey.fromMeasures.push(
+      { kind: 'decay', place: '幹', item: 't2', parts: { height: 'height', size: 'size' } },
+      { kind: 'fungus', place: '幹', item: 't2', parts: { fungusName: 'name', height: 'fungusH', size: 'fungusSize' }, merge: true },
+    );
+    return c;
+  };
+  const rec = (c, kind, values) => measureRecord(kind, '幹', values, measureLine(c, kind, '幹', values));
+  const tree = (ms) => ({ notes: ms.map((m) => `・${m.line}`).join('\n'), measures: ms });
+
+  it('腐朽の範囲がなく子実体だけ：文は種名だけ。発生高さ・範囲は確認用の数に', () => {
+    const c = withFungus();
+    expect(validateConfig(c).errors).toEqual([]);
+    const f = rec(c, 'fungus', { fungusName: 'コフキタケ', height: { a: '1.5' }, size: [{ w: '20', h: '10' }] });
+    expect(f.line).toBe('幹の子実体：コフキタケ、地上1.5m、20cm×10cm');
+    const r = measuresToInitial(tree([f]), c);
+    expect(r.values.t2Detail).toBe('コフキタケ');
+    const parts = partsOf(c.initialSurvey.forms.initial.sections[1].items.at(-1), c);
+    expect(checkNumbers(r.values.t2DetailParts, parts)).toEqual(['子実体 地上1.5m', '子実体 20×10cm']);
+  });
+
+  it('腐朽の寸法もあれば、腐朽の箇所に種名を足す（子実体で別の箇所を作らない）', () => {
+    const c = withFungus();
+    const r = measuresToInitial(tree([rec(c, 'fungus', { fungusName: 'コフキタケ', height: { a: '1.5' } }), rec(c, 'decay', { height: { a: '1' }, size: [{ w: '30', h: '20' }] })]), c);
+    expect(r.values.t2Detail).toBe('地上1m、30×20cm、コフキタケ');
+    expect(r.values.t2DetailParts.more).toBeUndefined();
+  });
+});
