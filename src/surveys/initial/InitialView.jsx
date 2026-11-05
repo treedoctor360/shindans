@@ -77,6 +77,8 @@ function DetailParts({ it, dk, rec, cfg, edit }) {
             testId={i === 0 ? dk : `${dk}.${i}`}
             Choice={Choice}
             pi={cfg.calc?.pi}
+            rows
+            noAddSize
           />
         </div>
       ))}

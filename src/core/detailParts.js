@@ -332,7 +332,7 @@ export function validatePartDefs(defs, at0, need) {
     if (p.required != null)
       need(p.type === 'flag' && (p.required === true || (Array.isArray(p.required) && p.required.every((x) => typeof x === 'string'))), `${at}.required は flag に付け、true か部位の並びにしてください`);
     need(p.whole == null || typeof p.whole === 'boolean', `${at}.whole は true か false にしてください`);
-    for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom', 'offLabel', 'checkPrefix']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
+    for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom', 'offLabel', 'checkPrefix', 'short']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
     if (p.circ != null) need(p.type === 'pair', `${at}.circ（周囲長の欄）は pair だけに付けられます`);
     if (p.slant != null)
       need(

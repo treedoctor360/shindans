@@ -322,4 +322,9 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .entries{display:flex;flex-direction:column;gap:8px}
 .entry + .entry{border-top:1px dashed var(--line);padding-top:8px}
 .entries .parts{border:0;padding:4px 0}
+/* 1つの欄を1行に（左に短い名前、右に入力） */
+.parts.rows{flex-direction:column;flex-wrap:nowrap;gap:6px}
+.parts.rows .part{flex-direction:row;align-items:center;gap:8px}
+.parts.rows .part>small{flex:none;width:4.8em;font-size:13px;color:var(--muted)}
+.parts.rows .part>input[type=text]{flex:1;min-width:0}
 .entry-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
