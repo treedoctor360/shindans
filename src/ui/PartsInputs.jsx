@@ -83,7 +83,7 @@ export default function PartsInputs({ parts, values, onPut, testId, Choice, pi =
                 </span>
               ))}
               <button type="button" className="btn" onClick={() => put(p.name, [...list, {}])} data-add-size={p.name}>
-                ＋ もう1か所
+                ＋ 大きさを足す
               </button>
             </span>
           );
