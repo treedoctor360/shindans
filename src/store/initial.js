@@ -9,7 +9,7 @@
 import { branchRatioCell, branchRatioRaw, girthOf, heightRatioOf } from '../core/calc.js';
 import { num, toHalf } from '../core/text.js';
 import { isDead } from '../core/tree.js';
-import { buildDetail, checkNumbers, detailKeyOfItem, manualKeyOf, partsKeyOf, partsOf } from '../core/detailParts.js';
+import { buildDetail, checkNumbers, circled, detailKeyOfItem, entriesOf, manualKeyOf, partsKeyOf, partsOf, unchosenEntries } from '../core/detailParts.js';
 import { fixWording, wordingIssues } from '../core/wording.js';
 import { measuresToInitial } from '../core/noteMeasures.js';
 import { bookKey } from '../excel/initialBook.js';
@@ -341,6 +341,16 @@ export function initialWarnings(record, tree, cfg) {
   for (const { it, name } of items.values()) {
     if (isEmpty(record[detailKeyOf(it)]) || isYes(it, record[it.key])) continue;
     out.push(`${name}：詳細が入っていますが「${isEmpty(record[it.key]) ? '未選択' : record[it.key]}」です`);
+  }
+  // 必ず選ぶ印（例 芯達か芯未達か）を選んでいない箇所（「有」の項目だけ。子実体だけの箇所は除く）
+  for (const { it, name } of items.values()) {
+    if (!isYes(it, record[it.key])) continue;
+    const parts = partsOf(it, cfg);
+    const miss = unchosenEntries(record[partsKeyOf(detailKeyOf(it))], parts);
+    if (!miss.length) continue;
+    const labels = parts.filter((p) => p.type === 'flag' && p.required === true).map((p) => `${p.label}か${p.offLabel || `${p.label}でない`}か`);
+    const where = entriesOf(record[partsKeyOf(detailKeyOf(it))]).length > 1 ? miss.map((i) => circled(i)).join('') + 'の' : '';
+    out.push(`${name}：${where}${labels.join('・')}を選んでください`);
   }
   // 組になる項目（例 支柱の2項目）：どれかが決まった値（例「支柱なし」）なのに、ほかが別の値
   const labelOf = new Map();

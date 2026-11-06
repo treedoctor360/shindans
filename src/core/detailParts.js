@@ -11,6 +11,7 @@
 //   height … { a: '0', b: '0.7' }（b は省略可）→ 「地上0～0.7m」（prefix 省略時「地上」、unit 省略時「m」、sep 省略時「～」）
 //   size   … [{ w: '20', h: '40' }, …]       → 「20×40cm、7×7cm（2箇所）」（unit 省略時「cm」。places を付けると2つ以上のとき箇所の数）
 //              depth: true で奥行も（{ w, h, d }）。unitEach: true で数ごとに単位（「20cm×50cm×15cm」）
+//              depthInput: true なら奥行も入れられるが、文には出さない（確認用カルテにだけ【奥行15cm】と足す）
 //   number … '18'                            → prefix＋値＋unit（例「枝直径18cm」）
 //   choice … '＜1/3'（options から選ぶ）       → prefix＋値（例「周囲長比＜1/3」）
 //   text   … '（種名など）'                    → そのまま
@@ -187,6 +188,24 @@ export function unchosenFlags(values, parts, place) {
   return parts.filter((p) => names.has(p.name) && typeof values?.[p.name] !== 'boolean').map((p) => p.label);
 }
 
+// 詳しい診断で、必ず選ぶ印（required: true）を選んでいない箇所（0始まりの番号の並び）
+//  部品の standalone: true の欄（例 子実体の種名）が入っていて、比を出す数（pair）も選択肢（choice）も入っていない箇所
+//  （例 子実体だけの箇所）は聞かない
+export function unchosenEntries(values, parts) {
+  const must = parts.filter((p) => p.type === 'flag' && p.required === true);
+  if (!must.length || values == null) return [];
+  const filled = (v) => v != null && v !== '' && !(typeof v === 'object' && !Object.values(v).some((x) => String(x ?? '').trim() !== ''));
+  const out = [];
+  entriesOf(values).forEach((e, i) => {
+    const hasAny = parts.some((p) => !p.whole && p.type !== 'flag' && filled(e[p.name]));
+    if (!hasAny && !must.some((p) => typeof e[p.name] === 'boolean')) return; // 何も入れていない箇所
+    const alone = parts.some((p) => p.standalone && filled(e[p.name])) && !parts.some((p) => ['pair', 'choice'].includes(p.type) && filled(e[p.name]));
+    if (alone) return;
+    if (must.some((p) => typeof e[p.name] !== 'boolean')) out.push(i);
+  });
+  return out;
+}
+
 // 弱点の項目の有無（選択肢）を、詳細の数値から決める（項目の valueFrom。例 開口空洞の「有（芯到達・周囲≧1/3）」）
 //  valueFrom：{ ratio: 比を出す pair の名前, core: 芯達の印（flag）の名前, values: { lt, ge, coreLt, coreGe } }
 //  比が出せなければ ''（決めない）
@@ -332,6 +351,7 @@ export function validatePartDefs(defs, at0, need) {
     if (p.required != null)
       need(p.type === 'flag' && (p.required === true || (Array.isArray(p.required) && p.required.every((x) => typeof x === 'string'))), `${at}.required は flag に付け、true か部位の並びにしてください`);
     need(p.whole == null || typeof p.whole === 'boolean', `${at}.whole は true か false にしてください`);
+    need(p.standalone == null || typeof p.standalone === 'boolean', `${at}.standalone は true か false にしてください`);
     for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom', 'offLabel', 'checkPrefix', 'short']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
     if (p.circ != null) need(p.type === 'pair', `${at}.circ（周囲長の欄）は pair だけに付けられます`);
     if (p.slant != null)
@@ -349,6 +369,7 @@ export function validatePartDefs(defs, at0, need) {
       if (okShape && q.to != null)
         need(defs[q.to]?.type === 'choice' && defs[q.to].options.includes(q.lt) && defs[q.to].options.includes(q.ge), `${at}.ratio.to は choice の名前にし、lt・ge をその選択肢にしてください`);
     }
+    if (p.depthInput != null) need(p.type === 'size' && typeof p.depthInput === 'boolean', `${at}.depthInput は size に付け、true か false にしてください`);
     for (const k of ['depth', 'unitEach', 'attach']) need(p[k] == null || typeof p[k] === 'boolean', `${at}.${k} は true か false にしてください`);
   }
   return true;

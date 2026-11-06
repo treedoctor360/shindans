@@ -75,10 +75,11 @@ export default function PartsInputs({ parts, values, onPut, testId, Choice, pi =
                   {num(`${p.name}.${i}.w`, y.w, (w) => setAt(i, { w }), '縦')}
                   <span>×</span>
                   {num(`${p.name}.${i}.h`, y.h, (h) => setAt(i, { h }), '横')}
-                  {p.depth && (
+                  {/* depthInput：奥行も入れられるが文には出さない（確認用カルテだけ） */}
+                  {(p.depth || p.depthInput) && (
                     <>
                       <span>×</span>
-                      {num(`${p.name}.${i}.d`, y.d, (d) => setAt(i, { d }), '奥行')}
+                      {num(`${p.name}.${i}.d`, y.d, (d) => setAt(i, { d }), p.depth ? '奥行' : '奥行(確認用)')}
                     </>
                   )}
                   <span>{p.unit ?? 'cm'}</span>

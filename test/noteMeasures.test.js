@@ -5,7 +5,7 @@ import { validateConfig } from '../src/core/config.js';
 import { autoDbNote, dbNoteOf } from '../src/core/notes.js';
 import { photoPlan } from '../src/core/photo.js';
 import { addMeasure, appendNoteLine, measureKinds, measureLine, measureParts, measurePlaces, measurePrefill, measureRecord, measuresToInitial, putMeasure, removeMeasure } from '../src/core/noteMeasures.js';
-import { addEntry, checkNumbers, entriesOf, partsOf, removeEntry, requiredFlags, setPart, unchosenFlags, withAuto } from '../src/core/detailParts.js';
+import { addEntry, buildText, checkNumbers, entriesOf, partsOf, removeEntry, requiredFlags, setPart, unchosenEntries, unchosenFlags, withAuto } from '../src/core/detailParts.js';
 
 const cfg = structuredClone(cfgJson);
 
@@ -654,5 +654,85 @@ describe('子実体の寸法を入れたら、簡易診断の子実体も「有�
     const bad = structuredClone(c);
     bad.noteMeasures.kinds.at(-1).toTree.fungusName.from = 'nokey';
     expect(validateConfig(bad).errors.join()).toContain('toTree');
+  });
+});
+
+describe('腐朽の大きさの奥行（size の depthInput）：入れられるが、文には出さず確認用カルテにだけ', () => {
+  it('文は縦×横だけ。確認用の数に奥行', () => {
+    const p = [{ name: 'size', type: 'size', label: '大きさ', depthInput: true, unitEach: true }];
+    const v = { size: [{ w: '70', h: '46', d: '15' }] };
+    expect(buildText(v, p)).toBe('70cm×46cm');
+    expect(checkNumbers(v, p)).toEqual(['奥行15cm']);
+  });
+  it('簡易の寸法の奥行は、そのまま大きさに写る（depthTo なし）', () => {
+    const c = structuredClone(cfgJson);
+    c.noteMeasures.parts.size.depth = true;
+    c.initialSurvey.detailParts.size.depthInput = true;
+    c.initialSurvey.forms.initial.sections[1].items.push({ key: 't2', label: '腐朽', type: 'weak', parts: ['height', 'size'] });
+    c.initialSurvey.fromMeasures.push({ kind: 'decay', place: '幹', item: 't2', parts: { height: 'height', size: 'size' } });
+    expect(validateConfig(c).errors).toEqual([]);
+    const v = { height: { a: '1' }, size: [{ w: '30', h: '10', d: '5' }] };
+    const m = measureRecord('decay', '幹', v, measureLine(c, 'decay', '幹', v));
+    const r = measuresToInitial({ notes: `・${m.line}`, measures: [m] }, c);
+    expect(r.values.t2DetailParts.size).toEqual([{ w: '30', h: '10', d: '5' }]);
+    expect(r.values.t2Detail).toBe('地上1m、30×10cm');
+  });
+  it('depthInput は size にだけ付けられる', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.detailParts.height.depthInput = true;
+    expect(validateConfig(c).errors.join()).toContain('depthInput');
+  });
+});
+
+describe('子実体は腐朽と結び付けず、別の箇所として写す（規則に merge を付けない）', () => {
+  const cfgOf = () => {
+    const c = structuredClone(cfgJson);
+    c.noteMeasures.parts.fungusName = { type: 'text', label: '子実体の種名' };
+    c.noteMeasures.kinds.push({ key: 'fungus', label: '子実体', places: ['幹'], parts: ['fungusName', 'height', 'size'] });
+    c.initialSurvey.forms.initial.sections[1].items.push({ key: 't2', label: '腐朽(子実体)', type: 'weak', parts: ['height', 'size', 'name', 'core'] });
+    c.initialSurvey.fromMeasures.push(
+      { kind: 'decay', place: '幹', item: 't2', parts: { height: 'height', size: 'size' }, fromTree: { name: 'fungusName' } },
+      { kind: 'fungus', place: '幹', item: 't2', parts: { fungusName: 'name', height: 'height', size: 'size' } },
+    );
+    return c;
+  };
+  const rec = (c, kind, values) => measureRecord(kind, '幹', values, measureLine(c, kind, '幹', values));
+  const tree = (ms, o = {}) => ({ notes: ms.map((m) => `・${m.line}`).join('\n'), measures: ms, ...o });
+
+  it('腐朽と別の高さの子実体：①腐朽 ②子実体（高さ・範囲・種名）', () => {
+    const c = cfgOf();
+    expect(validateConfig(c).errors).toEqual([]);
+    const r = measuresToInitial(
+      tree([rec(c, 'decay', { height: { a: '0', b: '0.7' }, size: [{ w: '70', h: '46' }] }), rec(c, 'fungus', { fungusName: 'コフキタケ', height: { a: '1.5' }, size: [{ w: '20', h: '30' }] })]),
+      c,
+    );
+    expect(r.values.t2Detail).toBe('①地上0～0.7m、70×46cm ②地上1.5m、20×30cm、コフキタケ');
+  });
+  it('腐朽がなく子実体だけ：位置・範囲・種名の1か所', () => {
+    const c = cfgOf();
+    const r = measuresToInitial(tree([rec(c, 'fungus', { fungusName: 'コフキタケ', height: { a: '1.5' } })]), c);
+    expect(r.values.t2Detail).toBe('地上1.5m、コフキタケ');
+  });
+  it('⑦に手で書いた種名（fromTree）は、腐朽が何か所あっても1回だけ（全部の箇所に付けない）', () => {
+    const c = cfgOf();
+    const r = measuresToInitial(tree([rec(c, 'decay', { height: { a: '1' } }), rec(c, 'decay', { height: { a: '3' } })], { fungus: '有', fungusName: '不明種' }), c);
+    expect(r.values.t2Detail).toBe('①地上1m、不明種 ②地上3m');
+  });
+});
+
+describe('詳しい診断の芯達／芯未達（flag の required: true）：選んでいなければ保存の前に注意', () => {
+  const parts = [
+    { name: 'height', type: 'height', label: '高さ' },
+    { name: 'circ', type: 'pair', label: '周囲長' },
+    { name: 'name', type: 'text', label: '種名', standalone: true },
+    { name: 'core', type: 'flag', label: '芯達', text: '（芯達）', required: true, offLabel: '芯未達' },
+  ];
+  it('選んでいない箇所の番号。芯未達（false）は選んだことになる。空の箇所・子実体だけの箇所は聞かない', () => {
+    expect(unchosenEntries({ height: { a: '1' } }, parts)).toEqual([0]);
+    expect(unchosenEntries({ height: { a: '1' }, core: false }, parts)).toEqual([]);
+    expect(unchosenEntries({ height: { a: '1' }, core: true, more: [{ height: { a: '2' }, name: 'コフキタケ' }, {}] }, parts)).toEqual([]);
+    expect(unchosenEntries({ core: true, more: [{ height: { a: '2' }, circ: { a: '5', b: '30' }, name: 'コフキタケ' }] }, parts)).toEqual([1]);
+    expect(unchosenEntries(undefined, parts)).toEqual([]);
+    expect(requiredFlags(parts, '')).toEqual(['core']);
   });
 });

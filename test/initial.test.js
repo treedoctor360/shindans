@@ -559,3 +559,19 @@ describe('開口空洞の有無の選択肢を、簡易診断の寸法から決�
     expect(syncMeasures(s.initials[0], tree2, c).record.t1).toBe('有（周囲≧1/3）');
   });
 });
+
+describe('詳しい診断の芯達／芯未達を選んでいない「有」の項目は、保存の前に注意する', () => {
+  it('「有」の項目だけ。箇所が2つ以上なら番号を付ける', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.detailParts.core.required = true;
+    c.initialSurvey.detailParts.core.offLabel = '芯未達';
+    const sec = c.initialSurvey.forms.initial.sections[1];
+    sec.items.push({ key: 't2', label: '腐朽', type: 'weak', parts: ['height', 'size', 'core'] });
+    expect(validateConfig(c).errors).toEqual([]);
+    const name = `${sec.title.split('・').pop()}の腐朽`;
+    expect(initialWarnings({ t2: '有（小）', t2DetailParts: { height: { a: '1' } } }, null, c)).toEqual([`${name}：芯達か芯未達かを選んでください`]);
+    expect(initialWarnings({ t2: '有（小）', t2DetailParts: { height: { a: '1' }, core: false } }, null, c)).toEqual([]);
+    expect(initialWarnings({ t2: '有（小）', t2DetailParts: { height: { a: '1' }, core: true, more: [{ height: { a: '2' } }] } }, null, c)).toEqual([`${name}：②の芯達か芯未達かを選んでください`]);
+    expect(initialWarnings({ t2: '無' }, null, c)).toEqual([]);
+  });
+});
