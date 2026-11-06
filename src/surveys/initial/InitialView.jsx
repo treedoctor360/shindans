@@ -254,7 +254,8 @@ function itemOf(cfg, key) {
   return null;
 }
 
-export default function InitialView({ state, update, config: cfg, toast, send }) {
+// pane：デスクトップ表示の右の列として出す（記録もブックの内容もない木では何も出さない）
+export default function InitialView({ state, update, config: cfg, toast, send, pane = false }) {
   const forms = Object.keys(cfg?.initialSurvey?.forms || {});
   const [form, setForm] = useState(forms[0] || 'initial');
   const [missingAsk, setMissingAsk] = useState(null);
@@ -262,7 +263,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const [showBook, setShowBook] = useState(false); // アプリの記録があるとき、ブックの内容を見るか
   const [askRemove, setAskRemove] = useState(false); // 取り消し・下書きを消すの確かめ中か
   useBarHeight(); // 樹木番号の帯の高さ（区切りの見出しを、その下に止めるため）
-  const tree = state.trees.find((t) => t.id === state.initialTreeId);
+  const tree = state.trees.find((t) => t.id === (pane ? state.currentId : state.initialTreeId)); // 並べて出すときは、簡易診断で開いている木
   const appRec = tree && cfg ? initialOf(state, tree, cfg) : null;
   const entry = tree && cfg?.initialSurvey ? bookEntry(state, tree, cfg) : null;
   const viewingBook = !!entry && (!appRec || showBook); // ブックの内容を表示している（表示だけ）
@@ -275,6 +276,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   }, [canSync, tree]);
   const back = (view = 'list') => update((s) => ({ ...s, view, ...(view === 'form' && tree ? { currentId: tree.id } : {}) }));
 
+  if (pane && (!cfg?.initialSurvey || !tree || !rec)) return null;
   if (!cfg?.initialSurvey || !tree || !rec) {
     return (
       <section className="view">

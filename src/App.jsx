@@ -1,5 +1,5 @@
 // 画面の骨組み：上の調査情報バー、中の画面、下のタブ
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { groupLabel } from './core/groups.js';
 import FormView from './ui/FormView.jsx';
 import InitialView from './surveys/initial/InitialView.jsx';
@@ -8,6 +8,7 @@ import OutView from './ui/OutView.jsx';
 import SettingsView from './ui/SettingsView.jsx';
 import { useAppState } from './ui/useAppState.js';
 import { useTopHeight } from './ui/useTopHeight.js';
+import { useDesktop } from './ui/useDesktop.js';
 import { reviewStatesOf } from './store/review.js';
 import { APP_VERSION, BUILD_TIME } from './version.js';
 
@@ -27,6 +28,15 @@ const slashDate = (ymd) => {
 export default function App() {
   const app = useAppState();
   const { state, update, ready, saveError } = app;
+  const desk = useDesktop();
+  // デスクトップ表示：一覧（左）・簡易診断（中）・詳しい診断（右）を並べる。設定・出力の画面は今までどおり
+  const split = desk.active && !!app.config && ['list', 'form', 'initial'].includes(state.view);
+  // 並べている間は、簡易診断と詳しい診断で同じ木を見る（片方で木を変えたら、もう片方も合わせる）
+  useEffect(() => {
+    if (!split) return;
+    if (state.view === 'initial' && state.initialTreeId && state.initialTreeId !== state.currentId) update((cur) => ({ ...cur, currentId: cur.initialTreeId }));
+    else if (state.view === 'form' && state.currentId && state.currentId !== state.initialTreeId) update((cur) => ({ ...cur, initialTreeId: cur.currentId }));
+  }, [split, state.view, state.currentId, state.initialTreeId]);
   useTopHeight(ready); // 上の帯の高さ（入力画面で、帯のすぐ下に樹木番号などを止めるため）
 
   // 画面下に短いお知らせを出す
@@ -47,10 +57,15 @@ export default function App() {
 
   const s = state.session;
   return (
-    <div className="app">
+    <div className={`app${split ? ' desk' : ''}`}>
       <header className="top">
         <div className="top-row">
           <h1>{app.config?.job?.title || '樹木点検 野帳'}</h1>
+          {desk.wide && app.config && (
+            <button type="button" className={`desk-btn${desk.on ? ' on' : ''}`} onClick={desk.toggle} aria-pressed={desk.on} data-testid="desktop-toggle">
+              デスクトップ表示{desk.on ? '：オン' : ''}
+            </button>
+          )}
           <span className="proto" data-testid="app-version">v{APP_VERSION}{BUILD_TIME && `（${BUILD_TIME}）`}</span>
         </div>
         <div className="meta" data-testid="top-meta">
@@ -97,6 +112,27 @@ export default function App() {
         </div>
       )}
 
+      {split ? (
+        <main className="split" data-testid="desktop-split">
+          <section className="pane-l">
+            <ListView {...app} toast={toast} />
+          </section>
+          <section className="pane-r">
+            {state.view !== 'list' && state.currentId ? (
+              <div className="pane-cols">
+                <div className="pane-col" data-testid="pane-simple">
+                  <FormView key={state.currentId} {...app} toast={toast} />
+                </div>
+                <div className="pane-col" data-testid="pane-initial">
+                  <InitialView key={state.currentId} {...app} toast={toast} pane />
+                </div>
+              </div>
+            ) : (
+              <p className="pane-empty">左の一覧から木を選んでください</p>
+            )}
+          </section>
+        </main>
+      ) : (
       <main>
         {state.view === 'settings' && <SettingsView {...app} toast={toast} />}
         {state.view === 'list' && <ListView {...app} toast={toast} />}
@@ -104,6 +140,7 @@ export default function App() {
         {state.view === 'initial' && <InitialView key={state.initialTreeId} {...app} toast={toast} />}
         {state.view === 'out' && <OutView {...app} toast={toast} />}
       </main>
+      )}
       <footer>© 2026– Koh Kitsukawa. All rights reserved.</footer>
 
       <nav className="tabs">
