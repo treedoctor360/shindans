@@ -29,7 +29,7 @@ import {
   updateInitial,
   withdrawInitial,
 } from '../../store/initial.js';
-import { addEntry, checkNumbers, circled, entriesOf, manualKeyOf, partsKeyOf, partsOf, rebuildDetail, removeEntry, setDetailText, setPart } from '../../core/detailParts.js';
+import { addEntry, checkNumbers, circled, entriesOf, manualKeyOf, partsKeyOf, partsOf, rebuildDetail, removeEntry, requiredFlags, setDetailText, setPart } from '../../core/detailParts.js';
 import PartsInputs from '../../ui/PartsInputs.jsx';
 import PrevPanel from '../../ui/PrevPanel.jsx';
 import SessionStamp from '../../ui/SessionStamp.jsx';
@@ -58,6 +58,8 @@ function DetailParts({ it, dk, rec, cfg, edit }) {
   const parts = partsOf(it, cfg);
   const es = entriesOf(rec[partsKeyOf(dk)]);
   const many = es.length > 1;
+  // 必ず選ぶ印（例 芯達か芯未達か。部品の required: true）は2つのボタンで選ぶ
+  const required = requiredFlags(parts, '');
   return (
     <div className="entries" data-entries={dk}>
       {es.map((e, i) => (
@@ -77,6 +79,7 @@ function DetailParts({ it, dk, rec, cfg, edit }) {
             testId={i === 0 ? dk : `${dk}.${i}`}
             Choice={Choice}
             pi={cfg.calc?.pi}
+            required={required}
             rows
             noAddSize
           />

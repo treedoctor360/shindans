@@ -359,7 +359,7 @@ export function measuresToInitial(tree, cfg) {
   for (const m of ordered) {
     const rule = ruleOf(m);
     if (!rule) continue;
-    const g = byItem.get(rule.item) || { entries: [], whole: {} };
+    const g = byItem.get(rule.item) || { entries: [], whole: {}, once: {} };
     const vals = {};
     for (const [to, v] of Object.entries(rule.set || {})) vals[to] = v;
     for (const [from, spec] of Object.entries(rule.parts)) {
@@ -395,7 +395,8 @@ export function measuresToInitial(tree, cfg) {
       const taken = namesFromMeasures(field);
       let v = String(tree[field] ?? '').trim();
       if (taken.size) v = splitNames(v).filter((x) => !taken.has(x)).join('、');
-      if (v && vals[to] === undefined) vals[to] = v;
+      // 項目に1回だけ（腐朽が何か所あっても、全部の箇所に同じ名前を付けない）。後で、まだその欄が空の最初の箇所に入れる
+      if (v && g.once[to] === undefined) g.once[to] = v;
     }
     // 項目全体の部品は箇所に入れず、まとめて1つ（先に入ったものを使う）
     for (const [k, v] of Object.entries(vals))
@@ -415,8 +416,12 @@ export function measuresToInitial(tree, cfg) {
   }
   for (const [key, g] of byItem) {
     const item = itemOf(cfg, key);
-    if (!item || (!g.entries.length && !Object.keys(g.whole).length)) continue;
+    if (!item || (!g.entries.length && !Object.keys(g.whole).length && !Object.keys(g.once).length)) continue;
     const es = g.entries.length ? g.entries : [{}];
+    for (const [k, v] of Object.entries(g.once)) {
+      const at = es.find((e) => e[k] === undefined);
+      if (at) at[k] = v;
+    }
     // 写した2つの数（例 周囲長／幹周）に比の設定（ratio.to）があれば、その選択肢も入れる（入力画面で数を入れたときと同じ）。箇所ごとに
     for (const vals of es)
       for (const p of partsOf(item, cfg)) {
