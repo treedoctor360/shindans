@@ -120,10 +120,10 @@ export default function App() {
           <section className="pane-r">
             {state.view !== 'list' && state.currentId ? (
               <div className="pane-cols">
-                <div className="pane-col" data-testid="pane-simple">
+                <div className="pane-col" data-testid="pane-simple" key={`s-${state.currentId}`}>
                   <FormView key={state.currentId} {...app} toast={toast} />
                 </div>
-                <div className="pane-col" data-testid="pane-initial">
+                <div className="pane-col" data-testid="pane-initial" key={`i-${state.currentId}`}>
                   <InitialView key={state.currentId} {...app} toast={toast} pane />
                 </div>
               </div>
