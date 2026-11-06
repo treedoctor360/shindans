@@ -211,11 +211,17 @@ export function unchosenEntries(values, parts) {
 
 // 弱点の項目の有無（選択肢）を、詳細の数値から決める（項目の valueFrom。例 開口空洞の「有（芯到達・周囲≧1/3）」）
 //  valueFrom：{ ratio: 比を出す pair の名前, core: 芯達の印（flag）の名前, values: { lt, ge, coreLt, coreGe } }
-//  比が出せなければ ''（決めない）
+//         か { choice: 選択肢の部品の名前, values: { 部品の選択肢: 有無の選択肢 } }（例 打診音異常の「(大)」→「有（大）」）
+//           箇所が2つ以上なら、values の先に書いたもの（重い方）を使う
+//  比が出せない・選択肢を選んでいなければ ''（決めない）
 export function itemValueOf(item, values, cfg) {
   const vf = item?.valueFrom;
   if (!vf) return '';
   const es = entriesOf(values);
+  if (vf.choice) {
+    const got = es.map((e) => vf.values[clean(e?.[vf.choice])]).filter(Boolean);
+    return Object.values(vf.values).find((v) => got.includes(v)) || '';
+  }
   if (es.length > 1) {
     // 箇所が2つ以上なら、いちばん重いもの（芯到達・周囲≧1/3 → 芯到達・周囲＜1/3 → 周囲≧1/3 → 周囲＜1/3）
     const order = [vf.values.coreGe, vf.values.coreLt, vf.values.ge, vf.values.lt];
@@ -399,6 +405,15 @@ export function validateDetailParts(s, need) {
         if (vf != null) {
           const at = `initialSurvey.forms.${form}.sections[${i}].items[${j}].valueFrom`;
           const v = vf?.values;
+          if (vf?.choice != null) {
+            const ch = s.detailParts[vf.choice];
+            need(
+              it.parts.includes(vf.choice) && ch?.type === 'choice' && v && typeof v === 'object' && Object.keys(v).length > 0 &&
+                Object.entries(v).every(([k, x]) => ch.options.map(clean).includes(clean(k)) && typeof x === 'string' && x),
+              `${at} は { choice: 選択肢の部品（項目の parts にあるもの）, values: { 部品の選択肢: 有無の選択肢 } } の形にしてください`,
+            );
+            return;
+          }
           need(
             vf && typeof vf === 'object' && it.parts.includes(vf.ratio) && s.detailParts[vf.ratio]?.type === 'pair' && !!s.detailParts[vf.ratio].ratio &&
               it.parts.includes(vf.core) && s.detailParts[vf.core]?.type === 'flag' &&
