@@ -328,3 +328,11 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .parts.rows .part>small{flex:none;width:4.8em;font-size:13px;color:var(--muted)}
 .parts.rows .part>input[type=text]{flex:1;min-width:0}
 .entry-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+/* 詳しい診断：簡易の特記事項の一覧（反映されていない行を黄、反映済みを緑、手で書いた行を灰の線で示す） */
+.simple-notes .sn-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.simple-notes .sn{display:flex;flex-direction:column;gap:2px;padding:6px 10px;border-left:4px solid var(--line);border-bottom:1px solid var(--line)}
+.simple-notes .sn small{font-size:12px;color:var(--muted)}
+.simple-notes .sn.missing,.simple-notes .sn.none{border-left-color:var(--warn);background:var(--warn-soft)}
+.simple-notes .sn.missing small,.simple-notes .sn.none small{color:var(--warn)}
+.simple-notes .sn.ok{border-left-color:var(--accent)}
+.simple-notes h2 .tag{margin-left:6px}
