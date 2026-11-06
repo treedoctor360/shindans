@@ -61,6 +61,23 @@ test.describe('広い画面', () => {
     await expect(initial.locator('[data-testid=simple-notes]')).toContainText('根元の割れ');
     await expect(initial.locator('[data-testid=tree-bar-no]')).toHaveText('AB002');
     await expect(simple.locator('#f-height')).toHaveValue('10');
+    // 簡易と詳しい診断は、それぞれの列の中でスクロールする（片方を動かしても、もう片方は動かない）
+    const scrollTop = (loc) => loc.evaluate((el) => el.scrollTop);
+    expect(await initial.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    await initial.evaluate((el) => el.scrollTo(0, 400));
+    expect(await scrollTop(initial)).toBeGreaterThan(0);
+    expect(await scrollTop(simple)).toBe(0);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    // 列の中でも、樹木番号の帯は列の上端に止まる
+    const barTop = await initial.locator('[data-testid=tree-bar]').evaluate((el) => el.getBoundingClientRect().top - el.closest('.pane-col').getBoundingClientRect().top);
+    expect(Math.abs(barTop)).toBeLessThan(3);
+    // 区切りの見出しは、帯のすぐ下に止まる（間から下の文字が見えない）
+    const gap = await initial.evaluate((el) => {
+      const bar = el.querySelector('[data-testid=tree-bar]').getBoundingClientRect();
+      const top = Math.min(...[...el.querySelectorAll('.form-body .sec>h2')].map((h) => h.getBoundingClientRect().top).filter((t) => t >= bar.top));
+      return top - bar.bottom;
+    });
+    expect(Math.abs(gap)).toBeLessThan(3);
 
     // 詳しい診断の記録がない木では、右の列を出さない
     await split.locator('.pane-l [data-tree=AB003]').click();

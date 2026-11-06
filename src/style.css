@@ -346,8 +346,10 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
   .app.desk .tabs-in{max-width:none}
   main.split{display:grid;grid-template-columns:400px minmax(0,1fr);gap:12px;padding:0 12px}
   .pane-l{position:sticky;top:var(--top-h,64px);align-self:start;max-height:calc(100vh - var(--top-h,64px) - 76px);overflow:auto;border-right:1px solid var(--line)}
-  .pane-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px;align-items:start}
-  .pane-col{min-width:0;border:1px solid var(--line);border-radius:10px}
+  /* 簡易診断・詳しい診断は、それぞれの列の中でスクロールする（片方を見たまま、もう片方を動かせる）
+     ・列の中では上の帯の高さを 0 とみなし、樹木番号の帯・区切りの見出しを列の上端に止める */
+  .pane-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px;height:calc(100vh - var(--top-h,64px) - 76px)}
+  .pane-col{min-width:0;min-height:0;overflow:auto;border:1px solid var(--line);border-radius:10px;--top-h:0px}
   .pane-col:empty{display:none}
   .pane-empty{padding:40px 16px;color:var(--muted)}
   main.split .cards{grid-template-columns:minmax(0,1fr)}
