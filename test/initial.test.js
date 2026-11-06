@@ -7,7 +7,7 @@ import { validateConfig } from '../src/core/config.js';
 import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
 import { measureLine, measureRecord, toMeasuresV2 } from '../src/core/noteMeasures.js';
-import { initialWarnings } from '../src/store/initial.js';
+import { initialWarnings, simpleNotesStatus } from '../src/store/initial.js';
 import { bookEntry, bookValues, discardInitial, karteExtras, karteRecords, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial, measureStatus, syncMeasures, applyMeasures } from '../src/store/initial.js';
 import { addSticky, answerSticky, closeSticky, fieldLabel, reviewFields, reviewState, reviewStatesOf, setConfirm, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
@@ -573,5 +573,71 @@ describe('詳しい診断の芯達／芯未達を選んでいない「有」の�
     expect(initialWarnings({ t2: '有（小）', t2DetailParts: { height: { a: '1' }, core: false } }, null, c)).toEqual([]);
     expect(initialWarnings({ t2: '有（小）', t2DetailParts: { height: { a: '1' }, core: true, more: [{ height: { a: '2' } }] } }, null, c)).toEqual([`${name}：②の芯達か芯未達かを選んでください`]);
     expect(initialWarnings({ t2: '無' }, null, c)).toEqual([]);
+  });
+});
+
+describe('簡易診断の特記事項が詳しい診断に反映されているか（noteCheck）。画面の一覧と保存の前の注意', () => {
+  const cfgOf = () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.forms.initial.sections[1].items.push({ key: 's2', label: '露出根の腐朽', type: 'weak' }, { key: 't2', label: '腐朽', type: 'weak', parts: ['height', 'size', 'name'] });
+    c.initialSurvey.noteCheck = [
+      { notes: ['根元の割れ'], items: ['s2', 'stake'] },
+      { field: 'fungusName', items: ['t2'] },
+    ];
+    return c;
+  };
+  const tree = (o = {}) => need('AB001', { notes: '・根元の割れ\n・枝の偏り\n・南側にベンチ', ...o });
+
+  it('定型文：対応する項目のどれかが「有」（選択肢の項目は「無」以外）なら反映済み。対応がない定型文・手で書いた行は判断しない', () => {
+    const c = cfgOf();
+    expect(validateConfig(c).errors).toEqual([]);
+    const r = simpleNotesStatus({ s2: '無' }, tree(), c);
+    expect(r.map((x) => [x.text, x.state])).toEqual([
+      ['根元の割れ', 'missing'],
+      ['枝の偏り', 'free'],
+      ['南側にベンチ', 'free'],
+    ]);
+    expect(simpleNotesStatus({ stake: '有' }, tree(), c)[0].state).toBe('ok');
+    expect(initialWarnings({ s2: '無' }, tree(), c).some((w) => w.includes('根元の割れ'))).toBe(true);
+    expect(initialWarnings({ s2: '有（小）' }, tree(), c).some((w) => w.includes('根元の割れ'))).toBe(false);
+  });
+
+  it('⑦の名前（寸法なし）：詳しい診断の項目の詳細の文にあれば反映済み。「有」のときだけ見る', () => {
+    const c = cfgOf();
+    const t = tree({ fungus: '有', fungusName: 'ツヨイタケ' });
+    const miss = simpleNotesStatus({}, t, c).find((x) => x.kind === 'field');
+    expect(miss).toMatchObject({ state: 'missing', text: 'キノコの名前：ツヨイタケ（寸法なし）' });
+    expect(simpleNotesStatus({ t2Detail: '地上1m、ツヨイタケ' }, t, c).find((x) => x.kind === 'field').state).toBe('ok');
+    expect(simpleNotesStatus({}, { ...t, fungus: '無' }, c).find((x) => x.kind === 'field')).toBeUndefined();
+  });
+
+  it('寸法の1行：写す規則があれば写る項目、なければ「写す項目がありません」（注意にはしない）', () => {
+    const c = cfgOf();
+    const v = { height: { a: '1' } };
+    const ms = [measureRecord('decay', '幹', v, measureLine(c, 'decay', '幹', v))];
+    const r = simpleNotesStatus({}, need('AB001', { notes: '', measuresV: 2, measures: ms }), c);
+    expect(r).toEqual([{ text: ms[0].line, kind: 'measure', state: 'none', note: `${c.initialSurvey.label}に写す項目がありません` }]);
+    expect(initialWarnings({}, need('AB001', { notes: '', measuresV: 2, measures: ms }), c).join()).not.toContain(ms[0].line);
+  });
+
+  it('形の違う設定は使わない', () => {
+    const c = cfgOf();
+    c.initialSurvey.noteCheck = [{ notes: ['ない定型文'], items: ['s2'] }];
+    expect(validateConfig(c).errors.join()).toContain('noteCheck[0].notes');
+    c.initialSurvey.noteCheck = [{ notes: ['根元の割れ'], items: ['nokey'] }];
+    expect(validateConfig(c).errors.join()).toContain('noteCheck[0].items');
+    c.initialSurvey.noteCheck = [{ notes: ['根元の割れ'], field: 'fungusName', items: ['s2'] }];
+    expect(validateConfig(c).errors.join()).toContain('noteCheck[0]');
+  });
+});
+
+describe('noteCheck の alias：表記の違う名前を同じとみなす', () => {
+  it('「不明種」は詳細の「不明」でも反映済み', () => {
+    const c = structuredClone(cfgJson);
+    c.initialSurvey.forms.initial.sections[1].items.push({ key: 't2', label: '腐朽', type: 'weak' });
+    c.initialSurvey.noteCheck = [{ field: 'fungusName', items: ['t2'], alias: { 不明種: ['不明'] } }];
+    expect(validateConfig(c).errors).toEqual([]);
+    const t = need('AB001', { fungus: '有', fungusName: '不明種' });
+    expect(simpleNotesStatus({ t2Detail: '30cm×15cm、不明' }, t, c).find((x) => x.kind === 'field').state).toBe('ok');
   });
 });

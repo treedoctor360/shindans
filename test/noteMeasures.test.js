@@ -736,3 +736,73 @@ describe('詳しい診断の芯達／芯未達（flag の required: true）：�
     expect(requiredFlags(parts, '')).toEqual(['core']);
   });
 });
+
+describe('選択肢の印を後ろの文につなぐ（部品の glue）：打診音異常の（大）（小）', () => {
+  const parts = [
+    { name: 'grade', type: 'choice', label: '程度', options: ['(大)', '(小)'], glue: true },
+    { name: 'height', type: 'height', label: '高さ', prefix: 'H' },
+    { name: 'memo', type: 'text', label: '備考' },
+  ];
+  it('（大）は高さの前に「、」なしで付く', () => {
+    expect(buildText({ grade: '(大)', height: { a: '1.5' } }, parts)).toBe('(大)H1.5m');
+    expect(buildText({ grade: '(小)', height: { a: '0', b: '2' }, memo: '南側' }, parts)).toBe('(小)H0～2m、南側');
+  });
+  it('選ばなければ今までどおり', () => {
+    expect(buildText({ height: { a: '1.5' } }, parts)).toBe('H1.5m');
+  });
+  it('高さがなく備考だけでも「、」なしでつなぐ', () => {
+    expect(buildText({ grade: '(大)', memo: '南側' }, parts)).toBe('(大)南側');
+  });
+  it('設定の確かめ：glue は true か false', () => {
+    const cfg = structuredClone(cfgJson);
+    cfg.noteMeasures.parts.height.glue = 'yes';
+    expect(validateConfig(cfg).errors.join('\n')).toMatch('glue');
+  });
+});
+
+describe('打診音異常の(大)(小)：簡易の寸法で選んだ程度を、詳しい診断の有無の選択肢に入れる（valueFrom の choice）', () => {
+  const withTap = () => {
+    const c = structuredClone(cfgJson);
+    c.noteMeasures.parts.tapGrade = { type: 'choice', label: '程度', options: ['(大)', '(小)'], glue: true };
+    c.noteMeasures.kinds.find((k) => k.key === 'tap').parts = ['tapGrade', 'height'];
+    c.initialSurvey.detailParts.tapGrade = { type: 'choice', label: '程度', options: ['(大)', '(小)'], glue: true };
+    c.initialSurvey.forms.initial.sections[1].items.push({
+      key: 't6',
+      label: '打診音異常',
+      type: 'weak',
+      parts: ['tapGrade', 'height'],
+      valueFrom: { choice: 'tapGrade', values: { '(大)': '有（大）', '(小)': '有（小）' } },
+    });
+    c.initialSurvey.fromMeasures.push({ kind: 'tap', item: 't6', parts: { tapGrade: 'tapGrade', height: 'height' } });
+    return c;
+  };
+  const tap = (c, values) => measureRecord('tap', '幹', values, measureLine(c, 'tap', '幹', values));
+  const tree = (ms) => ({ notes: ms.map((m) => `・${m.line}`).join('\n'), measures: ms, measuresV: 2 });
+
+  it('設定の形を確かめる', () => {
+    expect(validateConfig(withTap()).errors).toEqual([]);
+    const c = withTap();
+    c.initialSurvey.forms.initial.sections[1].items.at(-1).valueFrom = { choice: 'height', values: { '(大)': '有（大）' } };
+    expect(validateConfig(c).errors.join()).toContain('valueFrom');
+  });
+
+  it('簡易の1行は「幹の打診音異常：(大)地上1.5m」', () => {
+    expect(measureLine(withTap(), 'tap', '幹', { tapGrade: '(大)', height: { a: '1.5' } })).toBe('幹の打診音異常：(大)地上1.5m');
+  });
+
+  it('(大)なら「有（大）」、程度を選ばなければ有無は決めない', () => {
+    const c = withTap();
+    const big = measuresToInitial(tree([tap(c, { tapGrade: '(大)', height: { a: '0', b: '1.5' } })]), c);
+    expect(big.values.t6Detail).toBe('(大)地上0～1.5m');
+    expect(big.choices.t6Detail.value).toBe('有（大）');
+    const none = measuresToInitial(tree([tap(c, { height: { a: '1' } })]), c);
+    expect(none.choices?.t6Detail).toBeUndefined();
+  });
+
+  it('2か所で(小)と(大)なら、重い方（設定の values の先の方）の「有（大）」', () => {
+    const c = withTap();
+    const two = measuresToInitial(tree([tap(c, { tapGrade: '(小)', height: { a: '1' } }), tap(c, { tapGrade: '(大)', height: { a: '2' } })]), c);
+    expect(two.values.t6Detail).toBe('①(小)地上1m ②(大)地上2m');
+    expect(two.choices.t6Detail.value).toBe('有（大）');
+  });
+});

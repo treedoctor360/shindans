@@ -3,7 +3,7 @@
 //  選択肢は設定かデータ入力用ブックの入力規則から。簡易診断から引き継いだ項目には「簡易から」と出す。
 //  事務の端末では表示だけ（直すのは調査者）。
 //  データ入力用ブックに手で入力済みの木は、ブックの内容を表示だけする（「アプリで入力し直す」でブックの値を下書きにできる）。
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useBarHeight } from '../../ui/useTopHeight.js';
 import { toHalf } from '../../core/text.js';
 import {
@@ -28,6 +28,7 @@ import {
   startInitial,
   updateInitial,
   withdrawInitial,
+  simpleNotesStatus,
 } from '../../store/initial.js';
 import { addEntry, checkNumbers, circled, entriesOf, manualKeyOf, partsKeyOf, partsOf, rebuildDetail, removeEntry, requiredFlags, setDetailText, setPart } from '../../core/detailParts.js';
 import PartsInputs from '../../ui/PartsInputs.jsx';
@@ -88,6 +89,28 @@ function DetailParts({ it, dk, rec, cfg, edit }) {
       <button type="button" className="more" onClick={() => edit((r) => addEntry(r, it, dk, cfg))} data-add-entry={dk}>
         ＋ 別の箇所を足す（{circled(es.length)}）
       </button>
+    </div>
+  );
+}
+
+// 簡易診断の特記事項（と⑦などの入力）が、詳しい診断に反映されているか。弱点の入力の手前に1か所にまとめて出す
+//  反映されていないもの（黄）を先に、反映済み（緑）・手で書いた行（灰）を後に
+function SimpleNotes({ rows }) {
+  if (!rows.length) return null;
+  const miss = rows.filter((x) => x.state === 'missing' || x.state === 'none').length;
+  return (
+    <div className="sec simple-notes" data-testid="simple-notes">
+      <h2>
+        簡易の特記事項{miss > 0 && <small className="tag w" data-testid="simple-notes-miss">未反映 {miss}</small>}
+      </h2>
+      <ul className="sn-list">
+        {rows.map((x, i) => (
+          <li key={i} className={`sn ${x.state}`} data-sn={x.state} data-kind={x.kind}>
+            <span>{x.text}</span>
+            <small>{x.note}</small>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -231,7 +254,8 @@ function itemOf(cfg, key) {
   return null;
 }
 
-export default function InitialView({ state, update, config: cfg, toast, send }) {
+// pane：デスクトップ表示の右の列として出す（記録もブックの内容もない木では何も出さない）
+export default function InitialView({ state, update, config: cfg, toast, send, pane = false }) {
   const forms = Object.keys(cfg?.initialSurvey?.forms || {});
   const [form, setForm] = useState(forms[0] || 'initial');
   const [missingAsk, setMissingAsk] = useState(null);
@@ -239,7 +263,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   const [showBook, setShowBook] = useState(false); // アプリの記録があるとき、ブックの内容を見るか
   const [askRemove, setAskRemove] = useState(false); // 取り消し・下書きを消すの確かめ中か
   useBarHeight(); // 樹木番号の帯の高さ（区切りの見出しを、その下に止めるため）
-  const tree = state.trees.find((t) => t.id === state.initialTreeId);
+  const tree = state.trees.find((t) => t.id === (pane ? state.currentId : state.initialTreeId)); // 並べて出すときは、簡易診断で開いている木
   const appRec = tree && cfg ? initialOf(state, tree, cfg) : null;
   const entry = tree && cfg?.initialSurvey ? bookEntry(state, tree, cfg) : null;
   const viewingBook = !!entry && (!appRec || showBook); // ブックの内容を表示している（表示だけ）
@@ -252,6 +276,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
   }, [canSync, tree]);
   const back = (view = 'list') => update((s) => ({ ...s, view, ...(view === 'form' && tree ? { currentId: tree.id } : {}) }));
 
+  if (pane && (!cfg?.initialSurvey || !tree || !rec)) return null;
   if (!cfg?.initialSurvey || !tree || !rec) {
     return (
       <section className="view">
@@ -440,7 +465,10 @@ export default function InitialView({ state, update, config: cfg, toast, send })
 
       <fieldset disabled={readOnly} className="form-body">
         {f.sections.map((sec, i) => (
-          <div className="sec" key={`${form}-${i}`} data-section={i}>
+          <Fragment key={`${form}-${i}`}>
+          {/* 弱点の入力（「すべて無」のある最初の区切り）の手前に、簡易の特記事項をまとめて出す */}
+          {i === f.sections.findIndex((x) => x.none) && !viewingBook && <SimpleNotes rows={simpleNotesStatus(rec, tree, cfg)} />}
+          <div className="sec" data-section={i}>
             <h2>{sec.title}</h2>
             {sec.none && !readOnly && (
               <button type="button" className="btn" onClick={() => onNone(sec)} data-testid={`none-${i}`}>
@@ -460,6 +488,7 @@ export default function InitialView({ state, update, config: cfg, toast, send })
               ),
             )}
           </div>
+          </Fragment>
         ))}
       </fieldset>
 

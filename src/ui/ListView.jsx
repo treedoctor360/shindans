@@ -266,7 +266,7 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
           const st = treeState(t, cfg);
           const nWarn = t.done && t.source !== 'ledger' ? alertsOf(t, cfg).filter((a) => a.lv !== 'info').length : 0;
           return (
-            <button key={t.id} type="button" className="card" onClick={() => open(t.id, groupKey(t, cfg))} data-tree={toHalf(t.treeNo)}>
+            <button key={t.id} type="button" className={`card${t.id === state.currentId && state.view !== 'list' ? ' sel' : ''}`} onClick={() => open(t.id, groupKey(t, cfg))} data-tree={toHalf(t.treeNo)}>
               {st === 'todo' ? (
                 <span className="pill none">未</span>
               ) : st === 'wait' ? (
@@ -334,7 +334,7 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
           <h2>ほかの公園・路線で見つかった木（{elsewhere.length}本）</h2>
           <div className="cards">
             {elsewhere.slice(0, 30).map((t) => (
-              <button key={t.id} type="button" className="card" onClick={() => open(t.id, groupKey(t, cfg))} data-tree={toHalf(t.treeNo)}>
+              <button key={t.id} type="button" className={`card${t.id === state.currentId && state.view !== 'list' ? ' sel' : ''}`} onClick={() => open(t.id, groupKey(t, cfg))} data-tree={toHalf(t.treeNo)}>
                 <span className={`pill ${t.done ? t.grade || '' : 'none'}`}>{t.done ? t.grade || '?' : '未'}</span>
                 <span style={{ minWidth: 0 }}>
                   <span className="no">{t.treeNo || '(番号なし)'}</span>

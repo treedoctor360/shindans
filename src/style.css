@@ -328,3 +328,30 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .parts.rows .part>small{flex:none;width:4.8em;font-size:13px;color:var(--muted)}
 .parts.rows .part>input[type=text]{flex:1;min-width:0}
 .entry-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+/* 詳しい診断：簡易の特記事項の一覧（反映されていない行を黄、反映済みを緑、手で書いた行を灰の線で示す） */
+.simple-notes .sn-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.simple-notes .sn{display:flex;flex-direction:column;gap:2px;padding:6px 10px;border-left:4px solid var(--line);border-bottom:1px solid var(--line)}
+.simple-notes .sn small{font-size:12px;color:var(--muted)}
+.simple-notes .sn.missing,.simple-notes .sn.none{border-left-color:var(--warn);background:var(--warn-soft)}
+.simple-notes .sn.missing small,.simple-notes .sn.none small{color:var(--warn)}
+.simple-notes .sn.ok{border-left-color:var(--accent)}
+.simple-notes h2 .tag{margin-left:6px}
+
+/* デスクトップ表示（上の帯のボタンで切り替え。広い画面だけ）：一覧・簡易診断・詳しい診断を横に並べる
+   ・並べた列の中は、スマホと同じ1列の並びにする（広い画面用の2列・3列にしない） */
+.desk-btn{margin-left:auto;font-size:12px;padding:2px 10px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;white-space:nowrap}
+.desk-btn.on{background:var(--bg);color:var(--ink)}
+@media (min-width:1100px){
+  .app.desk{max-width:none}
+  .app.desk .tabs-in{max-width:none}
+  main.split{display:grid;grid-template-columns:400px minmax(0,1fr);gap:12px;padding:0 12px}
+  .pane-l{position:sticky;top:var(--top-h,64px);align-self:start;max-height:calc(100vh - var(--top-h,64px) - 76px);overflow:auto;border-right:1px solid var(--line)}
+  .pane-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px;align-items:start}
+  .pane-col{min-width:0;border:1px solid var(--line);border-radius:10px}
+  .pane-col:empty{display:none}
+  .pane-empty{padding:40px 16px;color:var(--muted)}
+  main.split .cards{grid-template-columns:minmax(0,1fr)}
+  main.split fieldset.form-body{grid-template-columns:minmax(0,1fr)}
+  main.split .view{padding:12px 14px 20px}
+  main.split .card.sel{outline:2px solid var(--accent)}
+}
