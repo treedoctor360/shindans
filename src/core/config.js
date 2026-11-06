@@ -247,6 +247,21 @@ function validateInitialSurvey(s, cfg, need) {
         need(r.items.every((k) => keys.has(k)), `${at}.items に、入力画面にない項目があります`);
       });
   }
+  if (s.noteCheck != null) {
+    // 簡易診断の特記事項（定型文）・項目が詳しい診断に反映されているか（省略可。src/store/initial.js の simpleNotesStatus）
+    const keys = new Set(Object.values(s.forms || {}).flatMap((f) => (f?.sections || []).flatMap((sec) => (sec?.items || []).map((it) => it?.key))));
+    const chips = new Set((cfg.noteChips || []).flatMap((c) => [c?.t, ...(c?.was || [])]));
+    if (need(Array.isArray(s.noteCheck), 'initialSurvey.noteCheck は並び（[…]）にしてください'))
+      s.noteCheck.forEach((r, i) => {
+        const at = `initialSurvey.noteCheck[${i}]`;
+        const byNotes = r && Array.isArray(r.notes) && r.notes.length > 0 && r.notes.every(isStr);
+        const byField = r && isStr(r.field);
+        if (!need(r && (byNotes !== byField) && Array.isArray(r.items) && r.items.length > 0 && r.items.every(isStr) && (r.label == null || isStr(r.label)), `${at} は { notes: [定型文…], items: [項目…] } か { field: 簡易診断の項目, items: [項目…] } の形にしてください`)) return;
+        need(r.items.every((k) => keys.has(k)), `${at}.items に、入力画面にない項目があります`);
+        if (byNotes) need(r.notes.every((t) => chips.has(t)), `${at}.notes に、定型文（noteChips）にない文があります`);
+        if (r.alias != null) need(byField && isObj(r.alias) && Object.values(r.alias).every((v) => Array.isArray(v) && v.every(isStr)), `${at}.alias は field の規則に付け、{ 名前: [同じとみなす名前…] } の形にしてください`);
+      });
+  }
   // 一覧表の健全度への書き戻し（省略可）：{ from: "詳しい診断の項目", values: [書く値…], treatFrom?: "処置の項目" }
   if (s.gradeWriteBack != null)
     need(
