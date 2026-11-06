@@ -143,7 +143,7 @@ export const putMeasure = (tree, cfg, rec, i = -1) => {
 //  toTree：{ 木の項目: 決まった値 か { from: その種類の欄の名前 } }。from の値は、まだ入っていなければ「、」でつないで足す
 //  寸法を消しても、木の項目は戻さない（ほかの寸法や手で入れた値かもしれないため）
 // 「、」などで区切った名前の並び（空は除く）
-const splitNames = (v) => String(v ?? '').split(/[、,，]/).map((x) => toHalf(x).trim()).filter(Boolean);
+export const splitNames = (v) => String(v ?? '').split(/[、,，]/).map((x) => toHalf(x).trim()).filter(Boolean);
 
 function applyToTree(tree, m, cfg) {
   const kind = kindOf(m.kind, cfg);
@@ -323,6 +323,19 @@ function mergePart(cur, v, ratio) {
   return cur;
 }
 
+// 寸法の種類の toTree（{ from }）で、木の項目に入った名前の集まり（例 子実体の寸法の種名 → ⑦子実体の種名）
+//  寸法がなくて簡易診断の入力から補った分（prefill）は数えない（その名前は⑦に書いた名前そのもの）
+export function namesFromMeasures(tree, field, cfg) {
+  const set = new Set();
+  for (const m of activeMeasures(tree)) {
+    const spec = kindOf(m.kind, cfg)?.toTree?.[field];
+    if (!spec || typeof spec !== 'object') continue;
+    const v = toHalf(String(m.values?.[spec.from] ?? '')).trim();
+    if (v) set.add(v);
+  }
+  return set;
+}
+
 // 木の寸法の記録から、詳しい診断の弱点の詳細（数値と文）を作る
 //  特記事項にその1行が残っているものだけ使う（手で消した・書き換えた行は使わない）
 //  返す形：{ values: { 詳細の項目: 文, 詳細の項目Parts: 数値 }, keys: [詳細の項目…] }
@@ -342,18 +355,6 @@ export function measuresToInitial(tree, cfg) {
   const defs = cfg.initialSurvey?.detailParts || {};
   const isWhole = (name) => !!defs[name]?.whole;
   const ruleOf = (m) => rules.find((x) => x.kind === m.kind && (x.place == null || x.place === m.place));
-  // 寸法の種類の toTree（{ from }）で、木の項目に入る名前（例 子実体の寸法の種名 → ⑦子実体の種名）
-  const namesFromMeasures = (field) => {
-    const set = new Set();
-    for (const m of activeMeasures(tree)) {
-      // 寸法がなくて簡易診断の入力から補った分（prefill）は数えない（その名前は⑦に書いた名前そのもの）
-      const spec = kindOf(m.kind, cfg)?.toTree?.[field];
-      if (!spec || typeof spec !== 'object') continue;
-      const v = toHalf(String(m.values?.[spec.from] ?? '')).trim();
-      if (v) set.add(v);
-    }
-    return set;
-  };
   // まとめる規則（merge）の寸法は後に回す（先に箇所を作ってから、1か所目にまとめる）
   const ordered = [...used.filter((m) => !ruleOf(m)?.merge), ...used.filter((m) => ruleOf(m)?.merge)];
   for (const m of ordered) {
@@ -392,7 +393,7 @@ export function measuresToInitial(tree, cfg) {
       if (d?.when && tree[d.when.field] !== d.when.eq) continue;
       // 寸法（種類の toTree）から木の項目に入った名前は、その寸法の部位の項目にだけ写るので、ここでは除く
       //  例 根株の子実体の寸法の種名は根株の腐朽にだけ。幹の腐朽には⑦に手で書いた名前だけを写す
-      const taken = namesFromMeasures(field);
+      const taken = namesFromMeasures(tree, field, cfg);
       let v = String(tree[field] ?? '').trim();
       if (taken.size) v = splitNames(v).filter((x) => !taken.has(x)).join('、');
       // 項目に1回だけ（腐朽が何か所あっても、全部の箇所に同じ名前を付けない）。後で、まだその欄が空の最初の箇所に入れる

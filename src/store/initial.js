@@ -11,7 +11,8 @@ import { num, toHalf } from '../core/text.js';
 import { isDead } from '../core/tree.js';
 import { buildDetail, checkNumbers, circled, detailKeyOfItem, entriesOf, manualKeyOf, partsKeyOf, partsOf, unchosenEntries } from '../core/detailParts.js';
 import { fixWording, wordingIssues } from '../core/wording.js';
-import { measuresToInitial } from '../core/noteMeasures.js';
+import { freeNotesOf, measureLinesOf, measuresToInitial, measuresWithLines, namesFromMeasures, splitNames } from '../core/noteMeasures.js';
+import { chipOfLine, noteLines } from '../core/notes.js';
 import { bookKey } from '../excel/initialBook.js';
 import { INITIAL, initialKey, simpleKey, updateRecord } from './surveys.js';
 import { touched } from './actions.js';
@@ -370,7 +371,85 @@ export function initialWarnings(record, tree, cfg) {
     const label = rule.label || cfg.checks?.find((c) => c.key === rule.field)?.label || rule.field;
     out.push(`簡易診断で${label}が「${v}」ですが、${targets.map((x) => x.name).join('・')}${targets.length > 1 ? 'のどれも' : 'が'}「有」になっていません`);
   }
+  // 簡易診断の特記事項（定型文）・⑦などの入力が、詳しい診断に反映されていない（設定 noteCheck）
+  for (const x of simpleNotesStatus(record, tree, cfg)) if (x.state === 'missing') out.push(`簡易診断の「${x.text}」：${x.note}`);
   return out;
+}
+
+// 簡易診断の特記事項（と⑦などの入力）が、詳しい診断に反映されているか。詳しい診断の画面の一覧と、保存の前の注意に使う
+//  返す形：[{ text, kind, state, note }]（反映されていないものを先に）
+//    kind：measure（寸法の1行）・chip（定型文）・field（簡易診断の項目。例 ⑦子実体の種名）・free（手で書いた行）
+//    state：missing（反映されていない）・none（写す項目がない）・ok（反映されている）・free（判断しない）
+//  設定 initialSurvey.noteCheck（省略可）：
+//    { notes: [定型文の文…], items: [項目…] }  その定型文があれば、items のどれかが「有」（選択肢の項目は「無」以外）なら反映済み
+//    { field: 簡易診断の項目, items: [弱点の項目…] }  その項目の名前（「、」区切り。details の when のときだけ。寸法の toTree から入った名前は除く）が、
+//      items のどれかの詳細の文にあれば反映済み。alias（{ 名前: [同じとみなす名前…] }）で表記の違いを同じとみなす
+export function simpleNotesStatus(record, tree, cfg) {
+  if (!tree) return [];
+  const items = itemNames(cfg);
+  const nameOf = (k) => items.get(k)?.name || k;
+  const isYes = (k) => {
+    const it = items.get(k)?.it;
+    const v = record?.[k];
+    return !isEmpty(v) && v !== NONE(cfg) && v !== it?.noneValue;
+  };
+  const label0 = cfg.initialSurvey?.label || '詳しい診断';
+  const checks = cfg.initialSurvey?.noteCheck || [];
+  const out = [];
+  // 寸法の1行：写す規則があれば、その項目に自動で写る
+  const rules = cfg.initialSurvey?.fromMeasures || [];
+  const seen = new Set();
+  for (const m of measuresWithLines(tree, cfg)) {
+    if (!m.line || seen.has(m.line)) continue;
+    seen.add(m.line);
+    const rule = rules.find((r) => r.kind === m.kind && (r.place == null || r.place === m.place));
+    out.push(rule ? { text: m.line, kind: 'measure', state: 'ok', note: `${nameOf(rule.item)}に写ります` } : { text: m.line, kind: 'measure', state: 'none', note: `${label0}に写す項目がありません` });
+  }
+  // 定型文と手で書いた行
+  for (const line of noteLines(freeNotesOf(tree, cfg))) {
+    if (seen.has(line)) continue;
+    const chip = chipOfLine(line, cfg);
+    const rule = chip && checks.find((r) => Array.isArray(r.notes) && r.notes.some((t) => t === chip.t || (chip.was || []).includes(t)));
+    if (!rule) {
+      out.push({ text: line, kind: chip ? 'chip' : 'free', state: 'free', note: chip ? '対応する項目なし（見て確かめる）' : '手で書いた行（見て確かめる）' });
+      continue;
+    }
+    const hit = rule.items.filter(isYes);
+    out.push(
+      hit.length
+        ? { text: line, kind: 'chip', state: 'ok', note: `${hit.map(nameOf).join('・')}が「有」` }
+        : { text: line, kind: 'chip', state: 'missing', note: `${rule.items.map(nameOf).join('・')}${rule.items.length > 1 ? 'のどれも' : 'が'}「有」になっていません` },
+    );
+  }
+  // 簡易診断の項目（例 ⑦子実体の種名）
+  for (const rule of checks) {
+    if (!rule.field) continue;
+    const d = (cfg.details || []).find((x) => x.field === rule.field);
+    if (d?.when && tree[d.when.field] !== d.when.eq) continue;
+    const taken = namesFromMeasures(tree, rule.field, cfg);
+    const label = rule.label || d?.label || rule.field;
+    for (const name of splitNames(tree[rule.field]).filter((x) => !taken.has(x))) {
+      // alias：同じとみなす名前（例 { "不明種": ["不明"] }）
+      const names = [name, ...((rule.alias || {})[name] || [])];
+      const inDetail = rule.items.filter((k) => names.some((n) => String(record?.[detailKeyOf(items.get(k)?.it || { key: k })] ?? '').includes(n)));
+      out.push(
+        inDetail.length
+          ? { text: `${label}：${name}`, kind: 'field', state: 'ok', note: `${inDetail.map(nameOf).join('・')}にあります` }
+          : { text: `${label}：${name}（寸法なし）`, kind: 'field', state: 'missing', note: `${label0}に写っていません。位置などを入れてください` },
+      );
+    }
+  }
+  const order = { missing: 0, none: 1, ok: 2, free: 3 };
+  return out.map((x, i) => ({ ...x, i })).sort((a, b) => order[a.state] - order[b.state] || a.i - b.i).map(({ i: _i, ...x }) => x);
+}
+
+// 入力画面の項目の名前（弱点は「区切りの名前の項目名」。例「根系の②露出根の腐朽」）
+function itemNames(cfg) {
+  const m = new Map();
+  for (const form of Object.values(cfg.initialSurvey?.forms || {}))
+    for (const sec of form.sections || [])
+      for (const it of sec.items || []) m.set(it.key, { it, name: it.type === 'weak' ? `${String(sec.title || '').split('・').pop()}の${it.label}` : it.label });
+  return m;
 }
 
 // 入力していない現場の項目（選択肢の項目だけ数える。「後で（机上）」の項目は数えない）。返す形：[項目名…]
