@@ -736,3 +736,26 @@ describe('詳しい診断の芯達／芯未達（flag の required: true）：�
     expect(requiredFlags(parts, '')).toEqual(['core']);
   });
 });
+
+describe('選択肢の印を後ろの文につなぐ（部品の glue）：打診音異常の（大）（小）', () => {
+  const parts = [
+    { name: 'grade', type: 'choice', label: '程度', options: ['(大)', '(小)'], glue: true },
+    { name: 'height', type: 'height', label: '高さ', prefix: 'H' },
+    { name: 'memo', type: 'text', label: '備考' },
+  ];
+  it('（大）は高さの前に「、」なしで付く', () => {
+    expect(buildText({ grade: '(大)', height: { a: '1.5' } }, parts)).toBe('(大)H1.5m');
+    expect(buildText({ grade: '(小)', height: { a: '0', b: '2' }, memo: '南側' }, parts)).toBe('(小)H0～2m、南側');
+  });
+  it('選ばなければ今までどおり', () => {
+    expect(buildText({ height: { a: '1.5' } }, parts)).toBe('H1.5m');
+  });
+  it('高さがなく備考だけでも「、」なしでつなぐ', () => {
+    expect(buildText({ grade: '(大)', memo: '南側' }, parts)).toBe('(大)南側');
+  });
+  it('設定の確かめ：glue は true か false', () => {
+    const cfg = structuredClone(cfgJson);
+    cfg.noteMeasures.parts.height.glue = 'yes';
+    expect(validateConfig(cfg).errors.join('\n')).toMatch('glue');
+  });
+});

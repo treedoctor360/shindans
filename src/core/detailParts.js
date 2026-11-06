@@ -88,14 +88,17 @@ export function partText(part, v) {
   }
 }
 
-// 部品の値から文を作る（部品の並び順に、つなぎの文字でつなぐ。印（flag）は前の文のすぐ後ろに付ける）
+// 部品の値から文を作る（部品の並び順に、つなぎの文字でつなぐ。印（flag）は前の文のすぐ後ろに付ける。
+//  glue: true の部品は、次の文をつなぎの文字なしですぐ後ろに付ける（例「（大）H1.5m」））
 export function buildText(values, parts, join = '、') {
   let out = '';
+  let glued = false; // 前の部品が glue（後ろの文につなぎの文字なしでつなぐ）
   for (const p of parts) {
     const t = partText(p, values?.[p.name]);
     if (!t) continue;
     const attach = p.type === 'flag' && p.attach !== false;
-    out += out && !attach ? join + t : t;
+    out += out && !attach && !glued ? join + t : t;
+    glued = p.glue === true;
   }
   return out;
 }
@@ -370,7 +373,7 @@ export function validatePartDefs(defs, at0, need) {
         need(defs[q.to]?.type === 'choice' && defs[q.to].options.includes(q.lt) && defs[q.to].options.includes(q.ge), `${at}.ratio.to は choice の名前にし、lt・ge をその選択肢にしてください`);
     }
     if (p.depthInput != null) need(p.type === 'size' && typeof p.depthInput === 'boolean', `${at}.depthInput は size に付け、true か false にしてください`);
-    for (const k of ['depth', 'unitEach', 'attach']) need(p[k] == null || typeof p[k] === 'boolean', `${at}.${k} は true か false にしてください`);
+    for (const k of ['depth', 'unitEach', 'attach', 'glue']) need(p[k] == null || typeof p[k] === 'boolean', `${at}.${k} は true か false にしてください`);
   }
   return true;
 }
