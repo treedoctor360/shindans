@@ -806,3 +806,35 @@ describe('打診音異常の(大)(小)：簡易の寸法で選んだ程度を、
     expect(two.choices.t6Detail.value).toBe('有（大）');
   });
 });
+
+describe('芯未達を選んだら文にも出す（flag の offText）', () => {
+  const withOff = () => {
+    const c = structuredClone(cfgJson);
+    Object.assign(c.noteMeasures.parts.core, { required: ['幹', '根株'], offLabel: '芯未達', offText: '（芯未達）' });
+    c.initialSurvey.detailParts.core = { ...(c.initialSurvey.detailParts.core || { type: 'flag', label: '芯達', text: '（芯達）' }), required: true, offLabel: '芯未達', offText: '（芯未達）' };
+    return c;
+  };
+  it('簡易の1行：芯未達（false）なら「（芯未達）」、選んでいなければ何も付けない', () => {
+    const c = withOff();
+    expect(measureLine(c, 'decay', '幹', { height: { a: '1' }, core: false })).toBe('幹の腐朽：地上1m（芯未達）');
+    expect(measureLine(c, 'decay', '幹', { height: { a: '1' }, core: true })).toBe('幹の腐朽：地上1m（芯達）');
+    expect(measureLine(c, 'decay', '枝', { height: { a: '1' } })).toBe('枝の腐朽：地上1m');
+  });
+  it('奥行などがなくても、芯未達だけで出す', () => {
+    expect(buildText({ core: false }, [{ name: 'core', type: 'flag', label: '芯達', text: '（芯達）', offText: '（芯未達）' }])).toBe('（芯未達）');
+  });
+  it('詳しい診断にも芯未達を写し、文に「（芯未達）」を出す', () => {
+    const c = withOff();
+    c.initialSurvey.forms.initial.sections[1].items.push({ key: 't2', label: '腐朽', type: 'weak', parts: ['height', 'core'] });
+    c.initialSurvey.fromMeasures.push({ kind: 'decay', place: '幹', item: 't2', parts: { height: 'height', core: 'core' } });
+    const v = { height: { a: '1' }, core: false };
+    const m = measureRecord('decay', '幹', v, measureLine(c, 'decay', '幹', v));
+    const r = measuresToInitial({ notes: `・${m.line}`, measures: [m], measuresV: 2 }, c);
+    expect(r.values.t2Detail).toBe('地上1m（芯未達）');
+  });
+  it('設定の確かめ：offText は flag の文字', () => {
+    const c = withOff();
+    c.noteMeasures.parts.height.offText = '未達';
+    expect(validateConfig(c).errors.join()).toContain('offText');
+  });
+});

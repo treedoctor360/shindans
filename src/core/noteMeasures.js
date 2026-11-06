@@ -366,7 +366,8 @@ export function measuresToInitial(tree, cfg) {
     for (const [from, spec] of Object.entries(rule.parts)) {
       const sp = typeof spec === 'string' ? { to: spec } : spec;
       const v = sp.ratio ? ratioChoice(m.values?.[from], sp.ratio) : m.values?.[from];
-      if (blankPart(v)) continue;
+      // 芯未達のように「付けない」を選んだ印（false）も写す（設定の offText があれば文に出す）
+      if (v !== false && blankPart(v)) continue;
       vals[sp.to] = structuredClone(v);
     }
     // 大きさの奥行を文字の欄へ移す（rule の depthTo。例 腐朽の大きさは縦×横だけ書き、奥行は備考に「奥行10cm」と残す）
