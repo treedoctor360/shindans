@@ -75,7 +75,8 @@ export function partText(part, v) {
     case 'text':
       return String(v ?? '').trim();
     case 'flag':
-      return v ? part.text || '' : '';
+      // offText：付けない（false）を選んだときの文（例「（芯未達）」）。選んでいない（undefined）なら何も出さない
+      return v ? part.text || '' : v === false && part.offText ? part.offText : '';
     case 'pair': {
       const a = clean(v?.a);
       const b = clean(v?.b);
@@ -361,7 +362,7 @@ export function validatePartDefs(defs, at0, need) {
       need(p.type === 'flag' && (p.required === true || (Array.isArray(p.required) && p.required.every((x) => typeof x === 'string'))), `${at}.required は flag に付け、true か部位の並びにしてください`);
     need(p.whole == null || typeof p.whole === 'boolean', `${at}.whole は true か false にしてください`);
     need(p.standalone == null || typeof p.standalone === 'boolean', `${at}.standalone は true か false にしてください`);
-    for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom', 'offLabel', 'checkPrefix', 'short']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
+    for (const k of ['prefix', 'unit', 'sep', 'places', 'text', 'circ', 'coreFrom', 'offLabel', 'offText', 'checkPrefix', 'short']) need(p[k] == null || typeof p[k] === 'string', `${at}.${k} は文字にしてください`);
     if (p.circ != null) need(p.type === 'pair', `${at}.circ（周囲長の欄）は pair だけに付けられます`);
     if (p.slant != null)
       need(
@@ -369,6 +370,7 @@ export function validatePartDefs(defs, at0, need) {
         `${at}.slant（斜めの長さの欄）は pair に付け、{ label, angle（0〜90 の角度） } の形にしてください`,
       );
     if (p.digits != null) need(Number.isInteger(p.digits) && p.digits >= 0 && p.digits <= 3, `${at}.digits は 0〜3 の整数にしてください`);
+    if (p.offText != null) need(p.type === 'flag', `${at}.offText（付けないときの文）は flag だけに付けられます`);
     if (p.coreFrom != null) need(p.type === 'flag' && defs[p.coreFrom]?.type === 'pair', `${at}.coreFrom は flag に付け、pair の名前にしてください`);
     if (p.noText != null) need(typeof p.noText === 'boolean', `${at}.noText は true か false にしてください`);
     if (p.ratio != null) {
