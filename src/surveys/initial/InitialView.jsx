@@ -254,6 +254,16 @@ function itemOf(cfg, key) {
   return null;
 }
 
+// 入力済みの記録の調査日・調査者（保存してもそのまま。SessionStamp に出す）
+function keptStamp(rec, cfg) {
+  const st = cfg.initialSurvey?.stamp || {};
+  if (!rec?.done) return null;
+  const [y, m, d] = (st.date || []).map((k) => rec[k]);
+  const date = y && m && d ? `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '';
+  const inspector = st.inspector ? rec[st.inspector] || '' : '';
+  return date || inspector ? { date, inspector } : null;
+}
+
 // pane：デスクトップ表示の右の列として出す（記録もブックの内容もない木では何も出さない）
 export default function InitialView({ state, update, config: cfg, toast, send, pane = false }) {
   const forms = Object.keys(cfg?.initialSurvey?.forms || {});
@@ -561,7 +571,7 @@ export default function InitialView({ state, update, config: cfg, toast, send, p
               </div>
             </div>
           )}
-          <SessionStamp state={state} update={update} />
+          <SessionStamp state={state} update={update} kept={keptStamp(rec, cfg)} />
           <button type="button" className="btn fill big" onClick={() => onSave(false)} data-testid="save-initial">
             保存して一覧へ
           </button>

@@ -29,7 +29,7 @@ describe('台帳の取り込み', () => {
   it('入力済みの木は台帳の値で読み取り専用にし、未入力の木は情報だけ入れる', async () => {
     const { rows } = await readLedger(await makeLedger(), cfg);
     const { trees, stats } = mergeLedger([], rows, cfg);
-    expect(stats).toEqual({ all: 5, done: 1, conflicts: 0, duplicates: ['AB001'], addedBound: [], speciesDiff: [], addedLeft: [] });
+    expect(stats).toEqual({ all: 5, done: 1, conflicts: 0, duplicates: ['AB001'], addedBound: [], speciesDiff: [], addedLeft: [], goneRemoved: [] });
 
     const t1 = trees.find((t) => t.siteType === 'park' && t.treeNo === 'AB001');
     expect(t1).toMatchObject({
@@ -120,5 +120,27 @@ describe('【再発防止】台帳の木の番号が書き換えられた後に�
     expect(isAddedTree(other)).toBe(true);
     expect(isAddedTree(again[0])).toBe(false);
     expect(again[0].ledgerGone).toBeUndefined();
+  });
+});
+
+describe('【再現】一覧表から消えた木のうち、アプリで入力していない台帳の写しは外す（PI0385 の件）', () => {
+  it('台帳で入力済みの写しは外し、台帳から作った木・アプリで入力した木・控えのある木は残して知らせる', async () => {
+    const { rows } = await readLedger(await makeLedger(), cfg);
+    const first = mergeLedger([], rows, cfg).trees;
+    // 番号が書き換わって今の台帳にない、という状態を作る（行は同じ、番号だけ別）
+    const gone = (t, extra) => ({ ...t, treeNo: `${t.treeNo}X`, ...extra });
+    const [a, b, c, d] = first;
+    const trees = [
+      gone(a, { source: 'ledger', done: true }), // 台帳で入力済みの写し → 外す
+      gone(b, {}), // 台帳から作った木（アプリで何か書いたかもしれない）→ 残す
+      gone(c, { source: 'app', done: true, vigor: '1', rev: 2 }), // アプリで入力した → 残す
+      gone(d, { source: 'ledger', done: true, appBackup: { vigor: '1' } }), // アプリの入力の控えがある → 残す
+      ...first.slice(4),
+    ];
+    const { trees: out, stats } = mergeLedger(trees, rows, cfg);
+    const ids = out.map((t) => t.id);
+    expect(ids).not.toContain(a.id);
+    for (const t of [b, c, d]) expect(out.find((x) => x.id === t.id).ledgerGone).toBe(true);
+    expect(stats.goneRemoved).toEqual([`${a.treeNo}X`]);
   });
 });

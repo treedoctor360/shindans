@@ -133,6 +133,7 @@ export default function NoteMeasures({ cfg, tree, onChange, readOnly = false }) 
               Choice={Choice}
               pi={cfg.calc?.pi}
               required={requiredFlags(partsNow, needPlace ? edit.place : '')}
+              noAddSize // 詳しい診断と同じく、大きさは1件に1つ（別の箇所は寸法を足して入れる）
             />
           )}
           <div className="hint" data-testid="measure-preview">

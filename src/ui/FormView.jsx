@@ -757,7 +757,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
             </div>
           )
         )}
-        {!readOnly && <SessionStamp state={state} update={update} />}
+        {!readOnly && <SessionStamp state={state} update={update} kept={t.done ? { date: t.date, inspector: t.inspector } : null} />}
         {/* 追加した木は台帳の並びの外にあるので、「次の木」に進まない（台帳の別の木を開いてしまわないように） */}
         {!readOnly && !isAddedTree(t) && (
           <button type="button" className="btn fill big" onClick={() => onSave(false)}>
