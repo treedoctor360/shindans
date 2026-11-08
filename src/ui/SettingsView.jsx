@@ -73,7 +73,8 @@ export default function SettingsView({ state, update, config, setConfig, toast }
           // 現場で追加した木：同じ番号・同じ場所の台帳の行に結び付けたもの、結び付かなかったもの
           (st.addedBound?.length ? `。追加した木${st.addedBound.length}本を台帳の行に結び付けました（${st.addedBound.slice(0, 5).join('・')}${st.addedBound.length > 5 ? 'ほか' : ''}）` : '') +
           (st.speciesDiff?.length ? `。そのうち樹種が台帳と違う木：${st.speciesDiff.slice(0, 5).join('・')}` : '') +
-          (st.addedLeft?.length ? `。台帳の行と結び付かなかった追加の木${st.addedLeft.length}本（${st.addedLeft.slice(0, 5).join('・')}${st.addedLeft.length > 5 ? 'ほか' : ''}）は、一覧表の最後に足します` : ''),
+          (st.addedLeft?.length ? `。台帳の行と結び付かなかった追加の木${st.addedLeft.length}本（${st.addedLeft.slice(0, 5).join('・')}${st.addedLeft.length > 5 ? 'ほか' : ''}）は、一覧表の最後に足します` : '') +
+          (st.goneRemoved?.length ? `。一覧表から消えた台帳の写し${st.goneRemoved.length}本（${st.goneRemoved.slice(0, 5).join('・')}${st.goneRemoved.length > 5 ? 'ほか' : ''}）を外しました` : ''),
       );
     } catch (e) {
       toast(e.message || '台帳を読み込めませんでした');

@@ -464,7 +464,7 @@ export function missingInitial(record, cfg) {
 // 記録を1件変える（入力済みなら送り直しの印を付ける）
 export const updateInitial = (state, id, fn) => updateRecord(state, INITIAL, id, (r) => touched(fn(r)));
 
-// 保存：入力済みにして、調査日・調査者を記録する（設定 initialSurvey.stamp の項目へ）
+// 保存：入力済みにして、調査日・調査者を記録する（設定 initialSurvey.stamp の項目へ。入力済みの記録を直したときは元のまま）
 //  返す形：{ state, missing, saved }
 export function saveInitial(state, id, cfg, { force = false, now = new Date().toISOString() } = {}) {
   const r = (state.initials || []).find((x) => x.id === id);
@@ -476,8 +476,11 @@ export function saveInitial(state, id, cfg, { force = false, now = new Date().to
   const st = cfg.initialSurvey?.stamp || {};
   const stamp = {};
   const [y, m, d] = String(state.session?.date || '').split('-').map(Number);
-  if (st.date && y) [stamp[st.date[0]], stamp[st.date[1]], stamp[st.date[2]]] = [y, m, d];
-  if (st.inspector && state.session?.inspector) stamp[st.inspector] = state.session.inspector;
+  // 調査日・調査者は初めて入力済みにしたときだけ入れる（入力済みの記録を後日直しても元のまま）
+  const hasDate = r.done && st.date && st.date.every((k) => !isEmpty(r[k]));
+  const hasInspector = r.done && st.inspector && !isEmpty(r[st.inspector]);
+  if (st.date && y && !hasDate) [stamp[st.date[0]], stamp[st.date[1]], stamp[st.date[2]]] = [y, m, d];
+  if (st.inspector && state.session?.inspector && !hasInspector) stamp[st.inspector] = state.session.inspector;
   // 空欄のときに入れる値（項目の blank。例：枝下高がなければ「-」）
   const blanks = {};
   for (const form of Object.values(cfg.initialSurvey?.forms || {}))

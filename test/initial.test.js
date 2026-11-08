@@ -319,6 +319,19 @@ describe('入力画面の部品（並び・選択肢・すべて無・未入力�
     expect(r.warnings.length).toBe(1);
     expect(saveInitial(s, id, c, { force: true }).saved).toBe(true);
   });
+  it('【再現】入力済みの記録を後日直しても、元の調査日・調査者のまま', () => {
+    const tree = need('AB001');
+    let s = startInitial(S([tree], { session: { date: '2099-05-06', inspector: '試験 二郎' } }), tree, cfg).state;
+    const id = s.initials[0].id;
+    const st = cfg.initialSurvey.stamp;
+    s = saveInitial(s, id, cfg, { force: true }).state;
+    const first = s.initials[0];
+    expect([first[st.date[0]], first[st.date[1]], first[st.date[2]], first[st.inspector]]).toEqual([2099, 5, 6, '試験 二郎']);
+    s = { ...s, session: { date: '2099-06-01', inspector: '試験 三郎' } };
+    s = saveInitial(s, id, cfg, { force: true }).state;
+    const again = s.initials[0];
+    expect([again[st.date[0]], again[st.date[1]], again[st.date[2]], again[st.inspector]]).toEqual([2099, 5, 6, '試験 二郎']);
+  });
   it('「すべて無」は、詳細（簡易診断から写した寸法など）が入っている弱点の項目を「無」にしない', () => {
     const sec = cfg.initialSurvey.forms.initial.sections.find((x) => x.items.some((it) => it.key === 'b4'));
     const r = fillNone({ b4Detail: '2本、地上3m' }, sec, cfg, () => ['無', '有（小）', '有（大）']);

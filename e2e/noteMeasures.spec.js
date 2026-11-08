@@ -25,6 +25,7 @@ test('寸法を入れる：部位・種類を選んで数字を入れ、寸法�
   await box.locator('[data-part="height.a"]').fill('２');
   await box.locator('[data-part="size.0.w"]').fill('20');
   await box.locator('[data-part="size.0.h"]').fill('50');
+  await expect(box.locator('[data-add-size]')).toHaveCount(0); // 大きさは1件に1つ（詳しい診断と同じ）
   await box.locator('[data-part="circ.a"]').fill('110');
   await box.locator('[data-part="circ.b"]').fill('150');
   await expect(box.locator('[data-auto=circ]')).toHaveText('計算では≧1/3'); // 周囲長比の目安

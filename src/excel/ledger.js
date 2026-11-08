@@ -79,7 +79,7 @@ export function dropBlankTwins(trees) {
 }
 
 // 台帳の行をアプリの木のデータに取り込む。元の配列・木は書き換えず、新しい配列を返す
-// 返す形：{ trees, stats: { all, done, conflicts, duplicates: [番号…] } }
+// 返す形：{ trees, stats: { all, done, conflicts, duplicates: [番号…], goneRemoved: [外した台帳の写しの番号…] … } }
 export function mergeLedger(trees, rows, cfg) {
   const f = cfg.dbFormat;
   // 同じ台帳の行に、現場で追加した木と、台帳から作った空の木の両方が結び付いていれば、空の木を除く
@@ -113,7 +113,7 @@ export function mergeLedger(trees, rows, cfg) {
   const countByNo = new Map(); // 番号ごとに、これまでに何行出てきたか
   // addedBound：現場で追加した木を台帳の行に結び付けた（番号・場所が同じ）。speciesDiff：そのうち樹種が台帳と違う木
   //  addedLeft：台帳の行と結び付かなかった、入力済みの追加した木
-  const stats = { all: 0, done: 0, conflicts: 0, duplicates: [], addedBound: [], speciesDiff: [], addedLeft: [] };
+  const stats = { all: 0, done: 0, conflicts: 0, duplicates: [], addedBound: [], speciesDiff: [], addedLeft: [], goneRemoved: [] };
   let order = 0;
 
   for (const row of rows) {
@@ -210,9 +210,15 @@ export function mergeLedger(trees, rows, cfg) {
     else t.ledgerGone = true;
   }
   for (const t of out) if (!t.ledgerRow && t.done && !t.deleted && t.source === 'app') stats.addedLeft.push(toHalf(t.treeNo).trim() || '(番号なし)');
+  // 今の台帳にない木のうち、台帳で入力済みの行をそのまま写しただけの木（アプリで入力していない）は外す。
+  //  アプリで入力した木・アプリの入力の控え（appBackup）がある木・台帳から作った木（アプリで書いたかもしれない）は残す
+  //  （番号を直すか削除するかを人が決める）
+  const copyOnly = (t) => t.ledgerGone && t.source === 'ledger' && !t.appBackup && !t.conflict;
+  for (const t of out) if (copyOnly(t)) stats.goneRemoved.push(toHalf(t.treeNo).trim() || '(番号なし)');
+  const kept = out.filter((t) => !copyOnly(t));
   // 台帳の並び順にそろえる（台帳にない木は元の順のまま後ろへ）
   const rank = (t, i) => (t.order && seen.has(treeKey(t.siteType, t.treeNo, t.dupIndex)) ? t.order : 1e6 + i);
-  const sorted = out.map((t, i) => [rank(t, i), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+  const sorted = kept.map((t, i) => [rank(t, i), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
   // 番号が重複している木に印を付ける（画面で注意を出す）
   for (const t of sorted) {
     const n = countByNo.get(`${t.siteType}|${toHalf(t.treeNo).trim()}`) || 0;

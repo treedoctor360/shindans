@@ -6,7 +6,7 @@
 import { coreReached, diameterOf, horizontalOf, ratioChoice } from '../core/detailParts.js';
 
 //  rows：1つの欄を1行に（左に短い名前、右に入力）。詳しい診断の画面用。短い名前は部品の short か、名前の「（」より前
-//  noAddSize：大きさの「＋ 大きさを足す」を出さない（詳しい診断では、箇所は「別の箇所を足す」で増やすため）
+//  noAddSize：大きさの「＋ 大きさを足す」を出さない（箇所は、詳しい診断では「別の箇所を足す」、簡易診断では寸法を足して増やすため）
 export default function PartsInputs({ parts, values, onPut, testId, Choice, pi = Math.PI, required = [], rows = false, noAddSize = false }) {
   const put = onPut;
   const dk = testId;
