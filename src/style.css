@@ -344,7 +344,7 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 @media (min-width:1100px){
   .app.desk{max-width:none}
   .app.desk .tabs-in{max-width:none}
-  main.split{display:grid;grid-template-columns:400px minmax(0,1fr);gap:12px;padding:0 12px}
+  main.split{display:grid;grid-template-columns:minmax(520px,40%) minmax(0,1fr);gap:12px;padding:0 12px}
   .pane-l{position:sticky;top:var(--top-h,64px);align-self:start;max-height:calc(100vh - var(--top-h,64px) - 76px);overflow:auto;border-right:1px solid var(--line)}
   /* 簡易診断・詳しい診断は、それぞれの列の中でスクロールする（片方を見たまま、もう片方を動かせる）
      ・列の中では上の帯の高さを 0 とみなし、樹木番号の帯・区切りの見出しを列の上端に止める */
@@ -356,4 +356,23 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
   main.split fieldset.form-body{grid-template-columns:minmax(0,1fr)}
   main.split .view{padding:12px 14px 20px}
   main.split .card.sel{outline:2px solid var(--accent)}
+}
+
+/* デスクトップ表示の左の一覧表（OverviewTable.jsx） */
+@media (min-width:1100px){
+  .ov{padding:8px 4px 8px 0}
+  .ov-bar{display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+  .ov-only{font-size:13px;display:flex;align-items:center;gap:4px}
+  .ov-group{width:100%;margin-bottom:8px}
+  .ov-t{border-collapse:collapse;font-size:12px;width:100%;table-layout:fixed}
+  .ov-t th{position:sticky;top:0;background:var(--accent);color:#fff;font-weight:500;padding:4px 5px;white-space:nowrap;overflow:hidden;text-align:left;z-index:1}
+  .ov-t td{border-bottom:1px solid var(--line);padding:4px 5px;vertical-align:top;cursor:pointer;white-space:normal;overflow:hidden;overflow-wrap:anywhere}
+  .ov-t td.no{font-family:monospace;white-space:nowrap}
+  .ov-t td.yes-list{color:var(--warn)}
+  .ov-t td.yes-list .blank{color:#b42318;font-weight:600}
+  .ov-t td.note .clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ov-t td.s-todo{color:var(--muted)}
+  .ov-t .flag{display:inline-block;margin:0 3px 3px 0;padding:0 6px;border-radius:9px;background:#fdecc8;color:#7a4b00;font-size:11px;white-space:nowrap}
+  .ov-t tr.sel td{background:#e6f2ec}
+  .ov-t tr:hover td{background:#f3f7f5}
 }

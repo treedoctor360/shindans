@@ -9,6 +9,7 @@ import SettingsView from './ui/SettingsView.jsx';
 import { useAppState } from './ui/useAppState.js';
 import { useTopHeight } from './ui/useTopHeight.js';
 import { useDesktop } from './ui/useDesktop.js';
+import OverviewTable from './ui/OverviewTable.jsx';
 import { reviewStatesOf } from './store/review.js';
 import { APP_VERSION, BUILD_TIME } from './version.js';
 
@@ -115,7 +116,7 @@ export default function App() {
       {split ? (
         <main className="split" data-testid="desktop-split">
           <section className="pane-l">
-            <ListView {...app} toast={toast} />
+            <OverviewTable {...app} toast={toast} />
           </section>
           <section className="pane-r">
             {state.view !== 'list' && state.currentId ? (
