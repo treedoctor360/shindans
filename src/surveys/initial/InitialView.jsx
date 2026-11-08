@@ -22,6 +22,7 @@ import {
   fixInitialWording,
   optionsOf,
   applyMeasures,
+  matchPreview,
   measureStatus,
   syncInitialOfTree,
   saveInitial,
@@ -119,8 +120,10 @@ function SimpleNotes({ rows }) {
 const isWide = (opts) => opts.length > 3 || opts.some((o) => String(o).length > 4) || opts.join('').length > 10;
 
 // mstat：その弱点の詳細と簡易診断の寸法の関係（store/initial.js の measureStatus）。onMatch：「簡易に合わせる」
-function Item({ it, rec, cfg, opts, set, press, edit, mstat, onMatch, inGrid = false }) {
+//  preview：「簡易に合わせる」を押したときに変わる文（{ before, after }）。押すと先にこれを見せ、「合わせる」で確かめてから変える
+function Item({ it, rec, cfg, opts, set, press, edit, mstat, onMatch, preview, inGrid = false }) {
   const v = rec[it.key] ?? '';
+  const [asking, setAsking] = useState(false);
   const tags = (
     <>
       {it.desk && <small className="tag">後で</small>}
@@ -181,11 +184,38 @@ function Item({ it, rec, cfg, opts, set, press, edit, mstat, onMatch, inGrid = f
         {mstat && !mstat.follow && mstat.differs && (
           <div className="alert warn" data-testid="measure-differs" data-differs={dk}>
             <span>簡易の寸法と違います（簡易：{mstat.simpleText || 'なし'}）</span>
-            {onMatch && (
+            {onMatch && !asking && (
               <div className="acts">
-                <button type="button" className="btn" onClick={() => onMatch(dk)} data-match={dk}>
+                <button type="button" className="btn" onClick={() => setAsking(true)} data-match={dk}>
                   簡易に合わせる
                 </button>
+              </div>
+            )}
+            {/* 押す前に変わる所を見せる。簡易に入っている値だけを置き換え、初期で足した数値は残す */}
+            {onMatch && asking && preview && (
+              <div data-match-ask={dk}>
+                <div>
+                  {preview.before === preview.after
+                    ? '詳細の文は変わりません（文に出さない数値（確認用カルテの【】）だけを簡易に合わせます）。'
+                    : `「${preview.before || '（なし）'}」→「${preview.after || '（なし）'}」にします。`}
+                  簡易にない数値はそのまま残します。
+                </div>
+                <div className="acts">
+                  <button
+                    type="button"
+                    className="btn fill"
+                    onClick={() => {
+                      setAsking(false);
+                      onMatch(dk);
+                    }}
+                    data-match-ok={dk}
+                  >
+                    合わせる
+                  </button>
+                  <button type="button" className="btn" onClick={() => setAsking(false)} data-match-cancel={dk}>
+                    やめる
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -330,9 +360,14 @@ export default function InitialView({ state, update, config: cfg, toast, send, p
     // その時点の最新の木と記録に対して行う
     update((cur) => {
       const t = cur.trees.find((x) => x.id === tree.id) || tree;
-      return updateInitial(cur, rec.id, (r) => applyMeasures(r, t, cfg, [dk]));
+      return updateInitial(cur, rec.id, (r) => applyMeasures(r, t, cfg, [dk], { merge: true }));
     });
     toast('簡易診断の寸法に合わせました');
+  };
+  // 「違います」と出ている項目だけ、合わせたときの文を先に作っておく
+  const previewOf = (it) => {
+    const st = it.type === 'weak' ? mstats.get(detailKeyOf(it)) : null;
+    return st && !st.follow && st.differs ? matchPreview(rec, tree, cfg, st.key) : null;
   };
 
   // 入力の取り消し・下書きを消す
@@ -490,11 +525,11 @@ export default function InitialView({ state, update, config: cfg, toast, send, p
               g.grid ? (
                 <div className="grid2 item" key={g.items[0].key}>
                   {g.items.map((it) => (
-                    <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} edit={readOnly ? null : edit} inGrid mstat={it.type === 'weak' ? mstats.get(detailKeyOf(it)) : null} onMatch={readOnly ? null : onMatch} />
+                    <Item key={it.key} it={it} rec={rec} cfg={cfg} opts={optionsFor(it)} set={set} press={press} edit={readOnly ? null : edit} inGrid mstat={it.type === 'weak' ? mstats.get(detailKeyOf(it)) : null} onMatch={readOnly ? null : onMatch} preview={previewOf(it)} />
                   ))}
                 </div>
               ) : (
-                <Item key={g.items[0].key} it={g.items[0]} rec={rec} cfg={cfg} opts={optionsFor(g.items[0])} set={set} press={press} edit={readOnly ? null : edit} mstat={g.items[0].type === 'weak' ? mstats.get(detailKeyOf(g.items[0])) : null} onMatch={readOnly ? null : onMatch} />
+                <Item key={g.items[0].key} it={g.items[0]} rec={rec} cfg={cfg} opts={optionsFor(g.items[0])} set={set} press={press} edit={readOnly ? null : edit} mstat={g.items[0].type === 'weak' ? mstats.get(detailKeyOf(g.items[0])) : null} onMatch={readOnly ? null : onMatch} preview={previewOf(g.items[0])} />
               ),
             )}
           </div>

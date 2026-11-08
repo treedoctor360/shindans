@@ -50,6 +50,13 @@ test('記録を作った後に簡易診断で足した寸法（枯れ枝の本�
   await expect(page.locator('[data-item=b4] [data-mstat=manual]')).toBeVisible();
   await expect(page.locator('[data-differs=b4Detail]')).toContainText('簡易：3本');
   await page.click('[data-match=b4Detail]');
+  await expect(page.locator('[data-match-ask=b4Detail]')).toContainText('「5本」→「3本」');
+  await page.click('[data-match-ok=b4Detail]');
   await expect(page.locator('#i-b4Detail')).toHaveValue('3本');
+  await expect(page.locator('[data-differs=b4Detail]')).toHaveCount(0);
+
+  // 【再現】簡易にない数値（高さ）を初期で足しただけでは「違う」と出さない
+  await page.locator('[data-item=b4] [data-part="height.a"]').fill('3');
+  await expect(page.locator('#i-b4Detail')).toHaveValue('3本、地上3m');
   await expect(page.locator('[data-differs=b4Detail]')).toHaveCount(0);
 });
