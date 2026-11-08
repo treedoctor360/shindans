@@ -79,6 +79,23 @@ test.describe('広い画面', () => {
     });
     expect(Math.abs(gap)).toBeLessThan(3);
 
+    // 左の一覧表：有の項目・未選択・注意の印
+    const row = split.locator('.pane-l tr[data-tree=AB002]');
+    await expect(row.locator('[data-testid=ov-yes]')).toContainText('未選択');
+    await expect(row.locator('[data-testid=ov-flags]')).toContainText('未反映1');
+    await expect(row.locator('[data-testid=ov-flags]')).toContainText('初期未完了');
+    // 注意のある木だけ
+    const all = await split.locator('.pane-l tr[data-tree]').count();
+    await split.locator('[data-testid=ov-only-flagged]').check();
+    await expect(split.locator('.pane-l tr[data-tree=AB002]')).toBeVisible();
+    expect(await split.locator('.pane-l tr[data-tree]').count()).toBeLessThan(all);
+    await split.locator('[data-testid=ov-only-flagged]').uncheck();
+    // カードに切り替えると今までの一覧、一覧表に戻せる
+    await split.locator('[data-ov-mode=cards]').click();
+    await expect(split.locator('.pane-l .card[data-tree=AB002]')).toBeVisible();
+    await split.locator('[data-ov-mode=table]').click();
+    await expect(split.locator('[data-testid=ov-table]')).toBeVisible();
+
     // 詳しい診断の記録がない木では、右の列を出さない
     await split.locator('.pane-l [data-tree=AB003]').click();
     await expect(simple.locator('#f-height')).toBeVisible();
