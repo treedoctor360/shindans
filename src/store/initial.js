@@ -9,7 +9,7 @@
 import { branchRatioCell, branchRatioRaw, girthOf, heightRatioOf } from '../core/calc.js';
 import { num, toHalf } from '../core/text.js';
 import { isDead } from '../core/tree.js';
-import { buildDetail, checkNumbers, circled, detailKeyOfItem, entriesOf, manualKeyOf, partsKeyOf, partsOf, unchosenEntries } from '../core/detailParts.js';
+import { buildDetail, checkNumbers, circled, detailKeyOfItem, entriesOf, itemValueOf, manualKeyOf, partsKeyOf, partsOf, unchosenEntries } from '../core/detailParts.js';
 import { fixWording, wordingIssues } from '../core/wording.js';
 import { freeNotesOf, measureLinesOf, measuresToInitial, measuresWithLines, namesFromMeasures, splitNames } from '../core/noteMeasures.js';
 import { chipOfLine, noteLines } from '../core/notes.js';
@@ -180,7 +180,8 @@ export function measureStatus(rec, tree, cfg) {
     const mine = sigOf(rec[pk]);
     const blank = isEmpty(rec[dk]) && rec[pk] == null; // 詳しい診断で何も入れていない
     const follow = !rec[manualKeyOf(dk)] && (sig !== undefined ? mine === sig : blank || mine === now);
-    const differs = mine !== now || (!!rec[manualKeyOf(dk)] && String(rec[dk] ?? '') !== String(ms.values[dk] ?? ''));
+    // 違うのは、簡易診断に入っている値と食い違うときだけ（初期で足した欄・箇所は違いにしない）。簡易で消した寸法は、詳細が残っていれば違い
+    const differs = dk in ms.values ? conflicts(rec[pk], ms.values[pk]) : rec[pk] != null || !isEmpty(rec[dk]);
     const item = itemByDetailKey(cfg, dk);
     return { key: dk, label: item?.label || dk, follow, differs, simpleText: ms.values[dk] || '' };
   });
@@ -188,8 +189,11 @@ export function measureStatus(rec, tree, cfg) {
 
 // 詳しい診断で直していない項目を、簡易診断の寸法に合わせた記録を返す。返す形：{ record, changed: [弱点の名前…] }
 export function syncMeasures(rec, tree, cfg) {
+  // ついてくる項目は、中身全体が簡易診断と同じでなければ写し直す（簡易で消した欄も消すため、differs ではなく全体で比べる）
+  const ms = measuresToInitial(tree, cfg);
+  const whole = (dk) => sigOf(rec[partsKeyOf(dk)]) !== sigOf(ms.values[partsKeyOf(dk)]) || String(rec[dk] ?? '') !== String(ms.values[dk] ?? '');
   const keys = measureStatus(rec, tree, cfg)
-    .filter((x) => x.follow && (x.differs || rec.measureSig?.[x.key] === undefined))
+    .filter((x) => x.follow && (whole(x.key) || rec.measureSig?.[x.key] === undefined))
     .map((x) => x.key);
   if (!keys.length) return { record: rec, changed: [] };
   const next = applyMeasures(rec, tree, cfg, keys);
@@ -198,8 +202,45 @@ export function syncMeasures(rec, tree, cfg) {
   return { record: next, changed: changed.map((dk) => itemByDetailKey(cfg, dk)?.label || dk) };
 }
 
-// 寸法を写す（keys の項目だけ。「簡易に合わせる」も同じ）。簡易診断で消した寸法なら、詳細を消す
-export function applyMeasures(rec, tree, cfg, keys) {
+// 値が入っているか（空の文字・null は入っていない。false は「付けない」を選んだので入っている）
+const filled = (v) => v != null && String(v).trim() !== '';
+const same = (a, b) => toHalf(String(a ?? '')).trim() === toHalf(String(b ?? '')).trim();
+
+// 簡易診断の値（simple）のうち、詳しい診断の値（mine）と食い違うものがあるか。
+//  簡易に入っている欄ごとに比べる（箇所の並び more・大きさの並びも、何番目かで比べる）。簡易にない欄・箇所が初期にあっても違いにしない
+function conflicts(mine, simple) {
+  if (simple && typeof simple === 'object') {
+    return Object.keys(simple).some((k) => conflicts(mine && typeof mine === 'object' ? mine[k] : undefined, simple[k]));
+  }
+  if (!filled(simple)) return false;
+  return mine && typeof mine === 'object' ? true : !same(mine, simple);
+}
+
+// 詳しい診断の値に、簡易診断に入っている値だけを上書きした値（初期で足した欄・箇所は残す）
+function mergeValues(mine, simple) {
+  if (Array.isArray(simple)) {
+    const base = Array.isArray(mine) ? mine : [];
+    return Array.from({ length: Math.max(base.length, simple.length) }, (_, i) => (i < simple.length ? mergeValues(base[i], simple[i]) : structuredClone(base[i])));
+  }
+  if (simple && typeof simple === 'object') {
+    const base = mine && typeof mine === 'object' && !Array.isArray(mine) ? mine : {};
+    const out = structuredClone(base);
+    for (const k of Object.keys(simple)) out[k] = mergeValues(base[k], simple[k]);
+    return out;
+  }
+  return filled(simple) ? simple : mine;
+}
+
+// 「簡易に合わせる」を押したときに変わる所（押す前に見せる）。返す形：{ before: 今の詳細の文, after: 合わせた後の文 }
+export function matchPreview(rec, tree, cfg, dk) {
+  const next = applyMeasures(rec, tree, cfg, [dk], { merge: true });
+  return { before: String(rec[dk] ?? ''), after: String(next[dk] ?? '') };
+}
+
+// 寸法を写す（keys の項目だけ）。簡易診断で消した寸法なら、詳細を消す
+//  merge：「簡易に合わせる」のとき。簡易に入っている値だけを置き換え、初期で足した欄・箇所は残す。
+//         merge でない（自動で合わせる。初期で直していない項目）ときは、簡易の値をそのまま写す（簡易で消した欄も消える）
+export function applyMeasures(rec, tree, cfg, keys, { merge = false } = {}) {
   const ms = measuresToInitial(tree, cfg);
   const next = { ...rec, measureSig: { ...(rec.measureSig || {}) } };
   for (const dk of keys) {
@@ -212,10 +253,18 @@ export function applyMeasures(rec, tree, cfg, keys) {
       continue;
     }
     next.measureSig[dk] = sigOf(ms.values[pk]);
-    next[dk] = ms.values[dk];
-    next[pk] = structuredClone(ms.values[pk]);
-    const ch = ms.choices?.[dk]; // 有無の選択肢も数値から決まる項目（例 開口空洞）
-    if (ch) next[ch.key] = ch.value;
+    const item = merge && rec[pk] != null ? itemByDetailKey(cfg, dk) : null;
+    if (item) {
+      next[pk] = mergeValues(rec[pk], ms.values[pk]);
+      next[dk] = buildDetail(next[pk], partsOf(item, cfg), cfg);
+      const iv = itemValueOf(item, next[pk], cfg); // 有無の選択肢も数値から決まる項目（例 開口空洞）
+      if (iv) next[item.key] = iv;
+    } else {
+      next[dk] = ms.values[dk];
+      next[pk] = structuredClone(ms.values[pk]);
+      const ch = ms.choices?.[dk]; // 有無の選択肢も数値から決まる項目（例 開口空洞）
+      if (ch) next[ch.key] = ch.value;
+    }
     next.inherited = [...new Set([...(rec.inherited || []), dk])];
   }
   return next;

@@ -476,6 +476,34 @@ describe('特記事項の寸法の引き継ぎ', () => {
     expect(gone.b4DetailParts).toBeUndefined();
   });
 
+  it('【再現】簡易にない数値を初期で足しただけでは「違う」と出さず、「簡易に合わせる」でも消さない', () => {
+    const t0 = need('AB001');
+    let s = startInitial(S([t0]), t0, cfg).state;
+    let t = { ...t0, measuresV: 2, measures: [{ kind: 'deadBranch', place: '', values: { count: '1' } }] };
+    let rec = syncMeasures(s.initials[0], t, cfg).record;
+    expect(rec.b4Detail).toBe('1本');
+    // 初期で高さを足した
+    const mine = { ...rec, b4DetailParts: { count: '1', height: { a: '3' } }, b4Detail: '1本、地上3m' };
+    expect(measureStatus(mine, t, cfg)[0]).toMatchObject({ follow: false, differs: false });
+    // 簡易で本数を変えた → 違いを知らせる。合わせても高さは残す
+    t = { ...t, measures: [{ kind: 'deadBranch', place: '', values: { count: '2' } }] };
+    expect(measureStatus(mine, t, cfg)[0]).toMatchObject({ follow: false, differs: true });
+    const m = applyMeasures(mine, t, cfg, ['b4Detail'], { merge: true });
+    expect(m.b4DetailParts).toEqual({ count: '2', height: { a: '3' } });
+    expect(m.b4Detail).toBe('2本、地上3m');
+    expect(measureStatus(m, t, cfg)[0]).toMatchObject({ follow: false, differs: false });
+    // ついてきている項目は、簡易で欄を消せば初期でも消える
+    const follow = syncMeasures(rec, { ...t, measures: [{ kind: 'deadBranch', place: '', values: { count: '1', height: { a: '2' } } }] }, cfg).record;
+    expect(follow.b4Detail).toBe('1本、地上2m');
+    expect(syncMeasures(follow, { ...t, measures: [{ kind: 'deadBranch', place: '', values: { count: '1' } }] }, cfg).record.b4Detail).toBe('1本');
+    // 初期で箇所を足しただけも違いにしない
+    const two = { ...rec, b4DetailParts: { count: '1', more: [{ count: '3' }] } };
+    expect(measureStatus(two, { ...t, measures: [{ kind: 'deadBranch', place: '', values: { count: '1' } }] }, cfg)[0].differs).toBe(false);
+    // 簡易にある値を初期で消したのは違い
+    const cut = { ...rec, b4DetailParts: { height: { a: '3' } } };
+    expect(measureStatus(cut, t, cfg)[0].differs).toBe(true);
+  });
+
   it('【再現】前の形で寸法の1行を手で直しても、初期の詳細が「写す」で消えない（数値が減るだけの書き換えをしない）', () => {
     // 前の形：寸法の1行が特記事項の文字にある。後ろに言葉を足した行は、備考がない設定ではふつうの文と寸法の両方として残す
     const line = '枯れ枝：2本、地上3m';
