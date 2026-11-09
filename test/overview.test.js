@@ -42,6 +42,12 @@ describe('注意の印', () => {
     expect(f).toContain('未反映1');
     expect(f).toContain('初期未完了');
   });
+  it('【再現】詳しい診断を「否」に変えた木は、残っている記録の注意を出さない', () => {
+    const t = T({ source: 'app', done: true, initialNeeded: '要', species: 'テストノキ', height: '10', girths: ['0.5'] });
+    const s = startInitial(S([t]), t, cfg).state;
+    const no = { ...t, initialNeeded: '否' };
+    expect(flagsOf(no, { ...s, trees: [no] }, cfg).map((x) => x[0])).not.toContain('初期未完了');
+  });
   it('食い違い・付箋', () => {
     const t = T({ source: 'app', done: true, conflict: { rev: 3, data: {} } });
     expect(flagsOf(t, S([t]), cfg).map((x) => x[0])).toContain('食い違い');
