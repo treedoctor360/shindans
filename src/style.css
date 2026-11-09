@@ -392,17 +392,36 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .kv .hint{margin-top:8px}
 .kv-spill{overflow:hidden;white-space:pre;position:relative}
 
-/* 横にしたスマホのデスクトップ表示（2列：一覧と、簡易診断／詳しい診断の切り替え）。高さが少ないので上下の帯を細くする */
-.app.desk.compact .top{padding:4px 12px 5px}
+/* 横にしたスマホのデスクトップ表示（2列：一覧と、簡易診断／詳しい診断の切り替え）
+   ・画面全体は動かさず（高さを画面に合わせる）、左の一覧と右の列がそれぞれの中でスクロールする
+   ・高さが少ないので上下の帯・お知らせ・余白を細くし、下の著作権の行は出さない
+   ・「一覧を隠す」で右の列を画面いっぱいにする */
+.app.desk.compact{height:100vh;height:100dvh;display:flex;flex-direction:column;padding-bottom:0;overflow:hidden}
+.app.desk.compact .top{position:static;flex:none;padding:4px 12px 5px;padding-left:calc(12px + env(safe-area-inset-left,0px));padding-right:calc(12px + env(safe-area-inset-right,0px))}
 .app.desk.compact .top-row{align-items:center}
 .app.desk.compact .top h1{font-size:15px}
 .app.desk.compact .top .meta{display:none}
+.app.desk.compact>.alert{flex:none;margin:4px 8px 0 calc(8px + env(safe-area-inset-left,0px)) !important;padding:3px 10px;font-size:12.5px;min-height:0}
+.app.desk.compact footer{display:none}
+.app.desk.compact .tabs{position:static;flex:none}
 .app.desk.compact .tab{padding:3px 4px 4px;flex-direction:row;justify-content:center;gap:6px}
 .app.desk.compact .tab b{font-size:13px}
-.app.desk.compact main.split{grid-template-columns:minmax(300px,42%) minmax(0,1fr);gap:6px;padding:0 6px 0 calc(6px + env(safe-area-inset-left,0px))}
-.app.desk.compact .pane-l{max-height:calc(100vh - var(--top-h,40px) - 40px)}
-.app.desk.compact .pane-cols.one{display:flex;flex-direction:column;gap:4px;height:calc(100vh - var(--top-h,40px) - 40px)}
-.app.desk.compact .pane-cols.one .pane-col{flex:1}
+.app.desk.compact main.split{flex:1;min-height:0;grid-template-columns:minmax(280px,40%) minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:6px;padding:4px calc(4px + env(safe-area-inset-right,0px)) 2px calc(4px + env(safe-area-inset-left,0px))}
+.app.desk.compact main.split.list-hidden{grid-template-columns:minmax(0,1fr)}
+.app.desk.compact main.split.list-hidden .pane-l{display:none}
+.app.desk.compact .pane-l{position:static;max-height:none;height:100%;min-height:0}
+.app.desk.compact .pane-r{height:100%;min-height:0}
+.app.desk.compact .pane-cols.one{display:flex;flex-direction:column;gap:4px;height:100%}
+.app.desk.compact .pane-cols.one .pane-col{flex:1;min-height:0}
+.app.desk.compact .pane-head{display:flex;gap:6px;align-items:stretch;flex:none}
+.app.desk.compact .pane-list-btn{min-height:32px;padding:2px 10px;font-size:13px;white-space:nowrap}
+.app.desk.compact .pane-tabs{flex:1}
 .app.desk.compact .pane-tabs .seg-b{min-height:32px;padding:2px 4px}
+.app.desk.compact main.split .view{padding:6px 8px 12px;gap:8px}
+.app.desk.compact main.split .sec{padding:10px;gap:8px}
+.app.desk.compact .ov{padding:2px 2px 6px 0}
 .app.desk.compact .ov-t{font-size:11.5px}
 .app.desk.compact .ov-bar{gap:6px;margin-bottom:4px}
+.app.desk.compact .ov-group{margin-bottom:4px}
+.app.desk.compact .tree-bar{padding-top:4px;padding-bottom:4px}
+.app.desk.compact .tree-bar .btn{min-height:34px;padding:2px 8px}
