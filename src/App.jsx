@@ -40,6 +40,8 @@ export default function App() {
     else if (state.view === 'form' && state.currentId && state.currentId !== state.initialTreeId) update((cur) => ({ ...cur, initialTreeId: cur.currentId }));
   }, [split, state.view, state.currentId, state.initialTreeId]);
   useTopHeight(ready); // 上の帯の高さ（入力画面で、帯のすぐ下に樹木番号などを止めるため）
+  // 横にしたスマホ（2列）で、左の一覧を隠して右の列を広げるか
+  const [listHidden, setListHidden] = useState(false);
 
   // 画面下に短いお知らせを出す
   const [toastMsg, setToastMsg] = useState('');
@@ -115,7 +117,7 @@ export default function App() {
       )}
 
       {split ? (
-        <main className="split" data-testid="desktop-split">
+        <main className={`split${desk.compact && listHidden && state.view !== 'list' && state.currentId ? ' list-hidden' : ''}`} data-testid="desktop-split">
           <section className="pane-l">
             <OverviewTable {...app} toast={toast} compact={desk.compact} />
           </section>
@@ -131,16 +133,22 @@ export default function App() {
                 const setPaneTab = (v) => update((cur) => ({ ...cur, view: v, initialTreeId: v === 'initial' ? cur.currentId : cur.initialTreeId }));
                 return (
                   <div className="pane-cols one">
-                    {hasIni && (
-                      <div className="seg pane-tabs" role="tablist">
-                        <button type="button" className={`seg-b${tab === 'form' ? ' on' : ''}`} onClick={() => setPaneTab('form')} data-pane-tab="form">
-                          簡易診断
-                        </button>
-                        <button type="button" className={`seg-b${tab === 'initial' ? ' on' : ''}`} onClick={() => setPaneTab('initial')} data-pane-tab="initial">
-                          {cfg.initialSurvey.label}
-                        </button>
-                      </div>
-                    )}
+                    <div className="pane-head">
+                      {/* 一覧を隠すと、右の列を画面いっぱいに広げる */}
+                      <button type="button" className="btn pane-list-btn" onClick={() => setListHidden((v) => !v)} aria-pressed={!listHidden} data-testid="pane-list-toggle">
+                        {listHidden ? '一覧を出す' : '一覧を隠す'}
+                      </button>
+                      {hasIni && (
+                        <div className="seg pane-tabs" role="tablist">
+                          <button type="button" className={`seg-b${tab === 'form' ? ' on' : ''}`} onClick={() => setPaneTab('form')} data-pane-tab="form">
+                            簡易診断
+                          </button>
+                          <button type="button" className={`seg-b${tab === 'initial' ? ' on' : ''}`} onClick={() => setPaneTab('initial')} data-pane-tab="initial">
+                            {cfg.initialSurvey.label}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     {tab === 'form' ? (
                       <div className="pane-col" data-testid="pane-simple" key={`s-${state.currentId}`}>
                         <FormView key={state.currentId} {...app} toast={toast} />

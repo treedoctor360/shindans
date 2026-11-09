@@ -158,6 +158,21 @@ test.describe('スマホを横にしたとき', () => {
     await expect(split.locator('[data-pane-tab]')).toHaveCount(0);
     await expect(split.locator('[data-testid=pane-simple] #f-height')).toBeVisible();
 
+    // 画面全体は動かない（左の一覧・右の列がそれぞれの中でスクロールする）
+    const pageScroll = await page.evaluate(() => document.scrollingElement.scrollHeight - window.innerHeight);
+    expect(pageScroll).toBeLessThanOrEqual(1);
+    const inner = await split.locator('[data-testid=pane-simple]').evaluate((el) => el.scrollHeight > el.clientHeight);
+    expect(inner).toBe(true);
+    await expect(page.locator('footer')).toBeHidden();
+    // 一覧を隠すと右の列が広がる。もう一度押すと戻る
+    const w0 = await split.locator('.pane-r').evaluate((el) => el.clientWidth);
+    await page.click('[data-testid=pane-list-toggle]');
+    await expect(split.locator('.pane-l')).toBeHidden();
+    const w1 = await split.locator('.pane-r').evaluate((el) => el.clientWidth);
+    expect(w1).toBeGreaterThan(w0 + 200);
+    await page.click('[data-testid=pane-list-toggle]');
+    await expect(split.locator('.pane-l')).toBeVisible();
+
     // 縦に戻すと今までの表示
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.locator('[data-testid=desktop-split]')).toHaveCount(0);
