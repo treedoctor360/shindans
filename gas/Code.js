@@ -27,7 +27,7 @@ var HISTORY_SHEET = 'history';
 var HEADER = ['ID', '年度', '種類', '木のID', '版', '通し番号', '更新日時', '受信日時', '端末', '人', 'データ'];
 var HISTORY_HEADER = ['受信日時', 'ID', '種類', '木のID', '版', '人', '端末', 'データ'];
 var KINDS = ['tree', 'initial', 'sticky', 'confirm']; // initial：詳しい診断（初期診断など）の入力内容
-var FILE_KINDS = ['config', 'template', 'ledger', 'prevIndex', 'initialBook']; // initialBook：詳しい診断のデータ入力用ブック
+var FILE_KINDS = ['config', 'template', 'ledger', 'prevIndex', 'initialBook', 'karteTemplate']; // initialBook：詳しい診断のデータ入力用ブック。karteTemplate：確認用カルテの様式
 // 前回の写真は場所ごとに1ファイル（prevPhotos:p1, prevPhotos:p2 …）
 function isFileKind(kind) {
   return FILE_KINDS.indexOf(kind) >= 0 || /^prevPhotos:p[0-9]{1,4}$/.test(String(kind));

@@ -6,6 +6,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useBarHeight } from '../../ui/useTopHeight.js';
 import { toHalf } from '../../core/text.js';
+import KarteView from '../../ui/KarteView.jsx';
 import {
   INITIAL_STATUS_LABEL,
   bookEntry,
@@ -303,6 +304,7 @@ export default function InitialView({ state, update, config: cfg, toast, send, p
   const [askStay, setAskStay] = useState(false); // 「未入力のまま保存する」の後も、押したボタンと同じ行き先にする
   const [showBook, setShowBook] = useState(false); // アプリの記録があるとき、ブックの内容を見るか
   const [askRemove, setAskRemove] = useState(false); // 取り消し・下書きを消すの確かめ中か
+  const [showKarte, setShowKarte] = useState(false); // カルテで見る（画面に出しているか）
   useBarHeight(); // 樹木番号の帯の高さ（区切りの見出しを、その下に止めるため）
   const tree = state.trees.find((t) => t.id === (pane ? state.currentId : state.initialTreeId)); // 並べて出すときは、簡易診断で開いている木
   const appRec = tree && cfg ? initialOf(state, tree, cfg) : null;
@@ -467,6 +469,15 @@ export default function InitialView({ state, update, config: cfg, toast, send, p
             ))}
           </div>
         )}
+        {/* 今の入力内容を確認用カルテの形で見る（ダウンロードしなくても確かめられる） */}
+        {cfg.initialSurvey.karte && appRec && !viewingBook && (
+          <div className="acts">
+            <button type="button" className="btn" onClick={() => setShowKarte(true)} data-testid="karte-view-open">
+              カルテで見る
+            </button>
+          </div>
+        )}
+        {showKarte && <KarteView state={state} cfg={cfg} rec={appRec} form={form} onClose={() => setShowKarte(false)} />}
         {office && !viewingBook && <div className="readonly-note">表示のみ：事務の端末では入力内容を直せません。</div>}
         {entry && (
           <div className={`alert ${viewingBook ? 'info' : 'warn'}`} data-testid="book-note">
