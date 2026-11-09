@@ -9,10 +9,15 @@ import SessionStamp from './SessionStamp.jsx';
 import { photoFlag, photoPlan } from '../core/photo.js';
 import { alertsOf, missingFields } from '../core/rules.js';
 import { num, toHalf } from '../core/text.js';
+import { simpleKey } from '../store/surveys.js';
 import { composeTreat } from '../core/treat.js';
 import { isDead, isLocked } from '../core/tree.js';
 import {
+  addTree,
   deleteTree,
+  numberNoteLines,
+  renumberToAdded,
+  setAddedPlace,
   fillChecksNone,
   isAddedTree,
   normalizeField,
@@ -128,6 +133,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const [asking, setAsking] = useState(null); // 確かめ中のボタン { alertId, act }
   const [undo, setUndo] = useState(null); // 直前の操作を取り消すための、押す前の木 { treeId, before, label }
   const [askRemove, setAskRemove] = useState(''); // 削除・入力の取り消しを確かめ中の木の id
+  const [renum, setRenum] = useState(null); // 「現地の番号に変える」の入力中：{ no, drop: [特記から消す行] }
   const [askGirth, setAskGirth] = useState(''); // 値の入った幹周を減らすか確かめ中の木の id
   const [askAfter, setAskAfter] = useState('next'); // 未入力を確かめ中の保存の行き先
 
@@ -252,6 +258,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   // 表示する値
   const sheet = cfg.dbFormat.sheets.find((s) => s.type === t.siteType);
   const place = [groupLabel(state.trees, group, cfg), t.place].filter(Boolean).join('　');
+  const groupTrees = treesOfGroup(state.trees, group, cfg); // 同じ公園・路線の木（追加した木の並びを選ぶ）
   const g = girthOf(t, cfg);
   const hd = heightRatioOf(t, cfg);
   const blr = isDead(t, cfg) ? null : branchRatioRaw(t);
@@ -350,7 +357,13 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
               />
               {!isAddedTree(t) && (
                 <small className="hint" data-testid="treeno-locked">
-                  台帳の木の番号は変えられません。別の木を入れるときは、一覧の「一覧にない木を追加」を使います。
+                  台帳の木の番号は変えられません。現地の番号札が違うときは、下の「現地の番号に変える」を使います。
+                </small>
+              )}
+              {t.renamedFrom && (
+                <small className="hint" data-testid="renamed-from">
+                  一覧表では {toHalf(t.renamedFrom.treeNo)}
+                  {t.renamedFrom.dupIndex > 1 ? `（${t.renamedFrom.dupIndex}本目）` : ''} の行。内勤さんがその行の番号を直すと結び付きます
                 </small>
               )}
             </div>
@@ -782,6 +795,110 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
         )}
         {sheet && <span className="hint" style={{ textAlign: 'center' }}>{sheet.label}</span>}
       </div>
+
+      {/* 並び：追加した木は「どの木の次か」。一覧表の行の木は、この木の次に追加・現地の番号に変える */}
+      {/* 台帳で入力済みの木（読み取り専用）の次にも追加できる */}
+      {surveyor && !officeView && !t.deleted && (
+        <div className="sec" data-testid="place-tools">
+          <h2>並び・番号</h2>
+          {isAddedTree(t) && !readOnly && (
+            <div className="row">
+              <label className="lbl" htmlFor="f-after">
+                並び（野帳・一覧で、どの木の次に出すか）
+              </label>
+              <select
+                id="f-after"
+                value={(groupTrees.find((x) => x.id !== t.id && simpleKey(x, cfg) === t.after) || {}).id || ''}
+                onChange={(e) => update((cur) => setAddedPlace(cur, cfg, t.id, e.target.value), { now: true }).then(() => send?.())}
+                data-testid="after-select"
+              >
+                <option value="">{groupLabel(state.trees, group, cfg)}の最後</option>
+                {groupTrees
+                  .filter((x) => x.id !== t.id && !x.deleted)
+                  .map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {toHalf(x.treeNo) || '(番号なし)'}
+                      {x.dupIndex > 1 ? `（${x.dupIndex}本目）` : ''} {x.species || ''} の次
+                    </option>
+                  ))}
+              </select>
+              <small className="hint">一覧表に行がまだない間の並びです。内勤さんに渡す「差し込む行の一覧」にもこの位置で出ます。</small>
+            </div>
+          )}
+          <div className="acts">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                update((cur) => addTree({ ...cur, group }, cfg, { afterId: t.id, area: t.area || '' }), { now: true });
+                window.scrollTo(0, 0);
+              }}
+              data-testid="add-after"
+            >
+              この木の次に木を追加
+            </button>
+            {!isAddedTree(t) && !readOnly && t.source === 'app' && !renum && (
+              <button type="button" className="btn" onClick={() => setRenum({ no: '', drop: [] })} data-testid="renumber">
+                現地の番号に変える
+              </button>
+            )}
+          </div>
+          {renum && (
+            <div className="alert info" data-testid="renumber-ask">
+              <span>
+                一覧表の {toHalf(t.treeNo)} の行には入力せず、入力した内容を現地の番号の木に移します（並びはこのまま。詳しい診断の記録・付箋も移ります）。内勤さんが一覧表のこの行の番号を現地の番号に直して読み込むと、その行に結び付きます。
+              </span>
+              <label className="lbl" htmlFor="f-renum">
+                現地の番号
+              </label>
+              <input
+                id="f-renum"
+                type="text"
+                className="num"
+                autoCapitalize="characters"
+                value={renum.no}
+                onChange={(e) => {
+                  const no = e.target.value;
+                  setRenum({ no, drop: numberNoteLines(t, no) });
+                }}
+              />
+              {numberNoteLines(t, renum.no).map((l) => (
+                <label key={l} className="check">
+                  <input
+                    type="checkbox"
+                    checked={renum.drop.includes(l)}
+                    onChange={(e) => setRenum({ ...renum, drop: e.target.checked ? [...renum.drop, l] : renum.drop.filter((x) => x !== l) })}
+                  />
+                  特記事項から消す：{l}
+                </label>
+              ))}
+              <div className="acts">
+                <button
+                  type="button"
+                  className="btn fill"
+                  onClick={() => {
+                    try {
+                      renumberToAdded(state, cfg, t.id, renum.no, { dropLines: renum.drop }); // できないときはここで止まる（知らせを出す）
+                      const now = Date.now();
+                      update((cur) => renumberToAdded(cur, cfg, t.id, renum.no, { dropLines: renum.drop, now }), { now: true }).then(() => send?.());
+                      setRenum(null);
+                      toast(`${toHalf(renum.no).toUpperCase()} に変えました`);
+                    } catch (e) {
+                      toast(e.message);
+                    }
+                  }}
+                  data-testid="renumber-ok"
+                >
+                  変える
+                </button>
+                <button type="button" className="btn" onClick={() => setRenum(null)}>
+                  やめる
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {canRemove &&
         (askRemove === t.id ? (

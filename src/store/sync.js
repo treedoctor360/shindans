@@ -6,6 +6,7 @@
 
 import { isBlankLedgerTree, treeKey } from '../excel/ledger.js';
 import { SURVEYS, recordsOf, surveyOfKind } from './surveys.js';
+import { placeAdded } from './order.js';
 
 // つながらなかった失敗（少し待てば通るかもしれない）。retriable の印を付ける
 //  サーバーが理由を付けて断ったもの（合言葉が違うなど）は、待っても変わらないので印を付けない
@@ -320,6 +321,8 @@ export function applyPull(state, records, lastSeq, cfg) {
       confirms[key] = local?.dirty ? { ...local, rev: rec.rev } : { ...rec.data, rev: rec.rev, dirty: false };
     }
   }
+  // 追加した木は「どの木の次か」の位置に並べる（別の端末で追加した木・並びを変えた木も）
+  lists.trees = placeAdded(lists.trees, cfg);
   return {
     state: { ...state, ...lists, stickies, confirms, server: { ...state.server, lastSeq: Math.max(state.server.lastSeq || 0, lastSeq) } },
     changedTrees,
