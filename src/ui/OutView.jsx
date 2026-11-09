@@ -1,9 +1,10 @@
 // 出力画面：野帳・一覧表の Excel 出力（照合つき）と、一覧表形式での確認
-import { fullNotesOf } from '../core/noteMeasures.js';
 import { useState } from 'react';
-import { groupKey, groupLabel, treesOfGroup } from '../core/groups.js';
+import { groupKey, groupKeys as allGroupKeys, groupLabel, treesOfGroup } from '../core/groups.js';
 import { numberRanges, toHalf } from '../core/text.js';
 import { dbValues, exportDb } from '../excel/dbExport.js';
+import { FULL_NOTE, cellText, columns, fullNoteOf } from '../excel/listColumns.js';
+import { buildEntryList, buildInsertList, insertRows } from '../excel/entryList.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
 import { exportInitialBook } from '../excel/initialExport.js';
 import { exportKarte } from '../excel/karteExport.js';
@@ -36,47 +37,8 @@ const yymmdd = () => todayYmd().replace(/-/g, '').slice(2);
 // ファイル名に使えない文字を除く
 const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '').trim();
 
-// 一覧表形式の列（[列のキー, 見出し]…）。一覧表と同じ並び（貼り付けたり見比べたりしやすいように）
-//  台帳を読み込んだときの見出しの並び（ledgerInfo.columns）があれば、その並びと見出しの文字を使う。
-//  なければ設定の列の並び（dbFormat.columns）で、ほかのシートの種類の場所の項目と、どの木も空の場所の項目は出さない
-function columns(cfg, siteType, ledgerColumns, trees) {
-  const f = cfg.dbFormat;
-  const label = {
-    [f.serialKey]: '通しNo.', treeNo: '樹木番号', parkCode: 'コード', parkName: '公園緑地名', routeNo: '路線番号', routeName: '路線名', drawingNo: '図面番号',
-    place: '場所', region: '地域',
-    date: '調査日', inspector: '調査者', species: '樹種', height: '樹高', girth: '幹周', heightRatio: '樹高/幹径', branchRatio: '枝長/枝径',
-    vigor: cfg.vigorLabel, note: '特記事項', initialNeeded: cfg.initial.label, grade: cfg.gradeLabel, treat: '処置', photo: '写真の有無',
-  };
-  cfg.checks.forEach((c) => (label[c.key] = c.label));
-  cfg.rules.filter((r) => r.type === 'treatRequires').forEach((r) => (label[r.field] = r.label));
-  const shows = (k) => k === f.serialKey || k === 'treeNo' || f.writeKeys.includes(k) || f.infoKeys.includes(k);
-  if (ledgerColumns?.length) return ledgerColumns.filter((c) => shows(c.key)).map((c) => [c.key, c.header || label[c.key] || c.key]);
-  const others = f.sheets.filter((sh) => sh.type !== siteType).flatMap((sh) => [sh.identify, sh.code]);
-  return Object.keys(f.columns)
-    .filter(shows)
-    .filter((k) => !others.includes(k))
-    .filter((k) => !f.infoKeys.includes(k) || trees.some((t) => t[k]))
-    .map((k) => [k, label[k] || k]);
-}
-
-// 表のセルに出す文字
-// 一覧表形式の右端に足す列：特記事項（野帳の特記事項の全文。一覧表用の特記では寸法などが省かれるため）
-const FULL_NOTE = '特記事項（全文）';
-const fullNoteOf = (t, cfg) => (t.source === 'app' ? fullNotesOf(t, cfg) : '');
-// 全文の列は色を変える（一覧表にない列だと分かるように）
-const fullNoteStyle = { background: 'var(--info-soft)', minWidth: '16em' };
-
-function cellText(t, k, v, cfg) {
-  const f = cfg.dbFormat;
-  if (k === f.serialKey) return t.ledgerRow ? t.ledgerSerial || '' : (f.serialFor?.[t.status] ?? f.newSerial ?? '');
-  if (k === 'treeNo') return toHalf(t.treeNo);
-  if (f.infoKeys.includes(k)) return t[k] || '';
-  if (k === 'date') return (t.source === 'ledger' ? t.ledgerDate : t.date || '').replace(/-/g, '/');
-  if (k === 'inspector') return t.source === 'ledger' ? t.ledgerInspector : t.inspector;
-  if (k === 'branchRatio' && v == null) return t.ledgerBranchRatio || '';
-  if (typeof v === 'number') return String(Math.round(v * 100) / 100);
-  return v ?? '';
-}
+// 一覧表形式の列・セルの文字・特記事項の全文（入力内容の一覧の Excel と共通。src/excel/listColumns.js）
+const fullNoteStyle = { background: 'var(--info-soft)', minWidth: '16em' }; // 全文の列は色を変える（一覧表にない列だと分かるように）
 
 export default function OutView({ state, update, config: cfg, toast, send, sendStatus }) {
   const [busy, setBusy] = useState('');
@@ -85,6 +47,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   const [karteAll, setKarteAll] = useState(false); // 確認用カルテを、すべての公園・路線をまとめて出すか（既定は選んでいる公園・路線だけ）
   const [karteLong, setKarteLong] = useState([]); // 確認用カルテで、文字を小さくしても枠に収まらなかった欄
   const [withUnconfirmed, setWithUnconfirmed] = useState(false); // 未確定の木も一覧表に書き込むか（途中経過の確認用）
+  const [handKeys, setHandKeys] = useState(null); // 内勤さんに渡す Excel に出す公園・路線（null：今見ている公園・路線だけ）
   if (!cfg || !state.trees.length) {
     return (
       <section className="view">
@@ -158,10 +121,33 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
           (db.excluded.length ? `。未確定の${db.excluded.length}本は書き込んでいません` : '') +
           (gw.written.length ? `。${cfg.initialSurvey.label}の結果を健全度に書いた木${gw.written.length}本` : '') +
           (st.gradeOnly.length ? `。台帳で入力済みの行に健全度だけ書いた木${st.gradeOnly.length}本` : '') +
+          (st.notInLedger.length
+            ? `。一覧表に行がない追加の木${st.notInLedger.length}本（${st.notInLedger.slice(0, 5).join('・')}${st.notInLedger.length > 5 ? 'ほか' : ''}）は書き込んでいません（「内勤さんに渡す」の「差し込む行の一覧」の位置に行を入れてもらい、読み込み直してください）`
+            : '') +
           (st.gone.length
             ? `。台帳から消えた木${st.gone.length}本（${st.gone.slice(0, 5).join('・')}${st.gone.length > 5 ? 'ほか' : ''}）は書き込んでいません（番号が変わった可能性があります。不要なら削除してください。一覧の検索で「すべての公園・路線」を選んで探せます）`
             : ''),
       );
+    });
+
+  // 内勤さんに渡す Excel（ファイル名に公園・路線の名前。2つ以上なら「ほかN」）
+  const handNames = () => {
+    const ks = handKeys || [group];
+    const first = safeName(String(ks[0]).split(':').slice(1).join(':')); // まとまりの鍵「種類:名前」の名前
+    return ks.length > 1 ? `${first}ほか${ks.length - 1}` : first;
+  };
+  const onEntryList = () =>
+    run('入力内容の一覧', async () => {
+      const r = await buildEntryList(state, cfg, handKeys || [group]);
+      download(`入力内容の一覧_確認用_提出不可_${handNames()}_${yymmdd()}.xlsx`, r.buffer);
+      toast(`入力内容の一覧を出しました（${r.count.trees}本${r.count.initials ? `・${cfg.initialSurvey?.label || '詳しい診断'}${r.count.initials}本` : ''}）`);
+    });
+  const onInsertList = () =>
+    run('差し込む行の一覧', async () => {
+      const r = await buildInsertList(state, cfg, handKeys || [group]);
+      if (!r.rows.length) return toast('差し込む行・番号を直す行はありません');
+      download(`差し込む行の一覧_${handNames()}_${yymmdd()}.xlsx`, r.buffer);
+      toast(`差し込む行の一覧を出しました（${r.rows.length}件）`);
     });
 
   // 詳しい診断の記録を、データ入力用ブックに書き込む
@@ -410,6 +396,41 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
           </p>
         </div>
       )}
+
+      {/* アプリを使わない人に渡す Excel（見るだけ） */}
+      <div className="sec" data-testid="handoff">
+        <h2>内勤さんに渡す（見るだけの Excel）</h2>
+        <div className="hint">出す公園・路線を選びます（初めは今見ている公園・路線だけ）。どちらのファイルにも「確認用（提出不可）」と入ります。</div>
+        <div className="handoff-groups">
+          {allGroupKeys(state.trees.filter((t) => !t.deleted), cfg).map((k) => (
+            <label key={k} className="check">
+              <input
+                type="checkbox"
+                checked={(handKeys || [group]).includes(k)}
+                onChange={(e) => {
+                  const cur = handKeys || [group];
+                  setHandKeys(e.target.checked ? [...cur, k] : cur.filter((x) => x !== k));
+                }}
+                data-hand-group={k}
+              />
+              {groupLabel(state.trees, k, cfg)}
+            </label>
+          ))}
+        </div>
+        <div className="acts">
+          <button type="button" className="btn" disabled={!!busy || !(handKeys || [group]).length} onClick={onEntryList} data-testid="entry-list">
+            入力内容の一覧（確認用）
+          </button>
+          <button type="button" className="btn" disabled={!!busy || !(handKeys || [group]).length} onClick={onInsertList} data-testid="insert-list">
+            差し込む行の一覧（{insertRows(state, cfg, handKeys || [group]).length}件）
+          </button>
+        </div>
+        <p className="hint">
+          入力内容の一覧：調査者が入れた内容をそのまま出します（確定していない木も。状態の列で分かります）。簡易は一覧表と同じ列、{cfg.initialSurvey?.label || '詳しい診断'}はデータ入力用ブックと同じ列の並びです。
+          <br />
+          差し込む行の一覧：一覧表に行がない追加の木を、どの行の次に入れるか。「現地の番号に変える」をした木は、一覧表のどの行の番号を直すか。
+        </p>
+      </div>
 
       <div className="sec">
         <h2>サーバー</h2>

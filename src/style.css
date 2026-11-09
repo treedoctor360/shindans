@@ -425,3 +425,5 @@ fieldset.form-body:disabled button:not(.seg-b):not(.chip){opacity:.3}
 .app.desk.compact .ov-group{margin-bottom:4px}
 .app.desk.compact .tree-bar{padding-top:4px;padding-bottom:4px}
 .app.desk.compact .tree-bar .btn{min-height:34px;padding:2px 8px}
+/* 出力：内勤さんに渡す Excel の公園・路線の選択 */
+.handoff-groups{display:flex;flex-direction:column;gap:2px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px}

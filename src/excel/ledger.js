@@ -215,7 +215,9 @@ export function mergeLedger(trees, rows, cfg) {
   //  （番号を直すか削除するかを人が決める）
   const copyOnly = (t) => t.ledgerGone && t.source === 'ledger' && !t.appBackup && !t.conflict;
   for (const t of out) if (copyOnly(t)) stats.goneRemoved.push(toHalf(t.treeNo).trim() || '(番号なし)');
-  const kept = out.filter((t) => !copyOnly(t));
+  // 「現地の番号に変える」で空に戻した元の行の木（renamedTo）は、一覧表の番号が直って行がなくなったら外す（中身は新しい番号の木にある）
+  const renamedBlank = (t) => t.ledgerGone && t.renamedTo && !t.done && !t.deleted;
+  const kept = out.filter((t) => !copyOnly(t) && !renamedBlank(t));
   // 台帳の並び順にそろえる（台帳にない木は元の順のまま後ろへ）
   const rank = (t, i) => (t.order && seen.has(treeKey(t.siteType, t.treeNo, t.dupIndex)) ? t.order : 1e6 + i);
   const sorted = kept.map((t, i) => [rank(t, i), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);

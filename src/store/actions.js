@@ -7,6 +7,8 @@ import { normalizeSpecies } from '../core/species.js';
 import { toHalf } from '../core/text.js';
 import { blankTree, isDead } from '../core/tree.js';
 import { photoPlan } from '../core/photo.js';
+import { placeAdded } from './order.js';
+import { afterSameGroup, simpleKey } from './surveys.js';
 
 // 表示中のまとまりの木
 export const currentGroupTrees = (state, cfg) => treesOfGroup(state.trees, state.group, cfg);
@@ -95,7 +97,8 @@ export function saveTree(state, cfg, { force = false, now = new Date().toISOStri
   }));
   if (after === 'stay') return { state: next, missing, saved: true }; // 保存だけ（同じ木のまま続けて直せる）
   if (after === 'list') return { state: { ...next, view: 'list' }, missing, saved: true };
-  if (after === 'add') return { state: addTree(next, cfg, { area: t.area || '', now: Date.parse(now) + 1 || Date.now() }), missing, saved: true };
+  // もう1本追加：今の木の次に入れる（現地で続けて見つけた木を、見つけた順に並べる）
+  if (after === 'add') return { state: addTree(next, cfg, { area: t.area || '', now: Date.parse(now) + 1 || Date.now(), afterId: t.id }), missing, saved: true };
   const n = nextTodo(next, cfg);
   next = n ? { ...next, currentId: n.id } : { ...next, view: 'list' };
   return { state: next, missing, saved: true };
@@ -103,18 +106,44 @@ export function saveTree(state, cfg, { force = false, now = new Date().toISOStri
 
 // 台帳にない木を追加する（場所の情報は同じまとまりの最初の木から写す）
 //  uid … 追加した木の印（端末の印＋時刻）。番号の代わりにこれで木を見分ける（review.js の treeKey）
-export function addTree(state, cfg, { area = '', now = Date.now() } = {}) {
+//  afterId … この木の次に入れる（木の after にその木の鍵を覚え、一覧表を読み込み直しても位置を保つ。order.js）。
+//            なければ、まとまりの最後に入れる
+export function addTree(state, cfg, { area = '', now = Date.now(), afterId = '' } = {}) {
   const ts = currentGroupTrees(state, cfg);
-  const ref = ts[0] || {};
+  const anchor = afterId ? state.trees.find((x) => x.id === afterId) : null;
+  const ref = anchor || ts[0] || {};
   const copyKeys = ['siteType', ...cfg.dbFormat.infoKeys];
   const uid = `${state.server?.deviceId || 'dev'}-${Number(now).toString(36)}`;
   const nt = blankTree({ id: `new:${now}`, uid, status: cfg.newTreeStatus ?? '', area });
   for (const k of copyKeys) if (ref[k] !== undefined) nt[k] = ref[k];
-  // まとまりの最後の木の直後に入れる
-  const last = ts.at(-1);
-  const at = last ? state.trees.indexOf(last) + 1 : state.trees.length;
-  const trees = [...state.trees.slice(0, at), nt, ...state.trees.slice(at)];
+  let trees;
+  if (anchor) {
+    nt.after = simpleKey(anchor, cfg);
+    trees = placeAdded([...state.trees, nt], cfg);
+  } else {
+    // まとまりの最後の木の直後に入れる
+    const last = ts.at(-1);
+    const at = last ? state.trees.indexOf(last) + 1 : state.trees.length;
+    trees = [...state.trees.slice(0, at), nt, ...state.trees.slice(at)];
+  }
   return { ...state, trees, currentId: nt.id, view: 'form', group: state.group || groupKey(nt, cfg) };
+}
+
+// 追加した木の並び（どの木の次か）を変える。afterId が '' なら、まとまりの最後へ
+export function setAddedPlace(state, cfg, id, afterId, now) {
+  const t = state.trees.find((x) => x.id === id);
+  if (!t || !isAddedTree(t)) return state;
+  const anchor = afterId ? state.trees.find((x) => x.id === afterId) : null;
+  const after = anchor ? simpleKey(anchor, cfg) : '';
+  if ((t.after || '') === after) return state;
+  // 並びは送る内容にも入る（他の端末でも同じ位置に並ぶ）。入力済みの木だけ送り直す
+  const moved = { ...t, after, ...(t.done ? { sent: false, updatedAt: stamp(now) } : {}) };
+  let trees = state.trees.filter((x) => x.id !== id);
+  if (!anchor) {
+    const at = afterSameGroup(trees, moved, cfg);
+    trees = [...trees.slice(0, at), moved, ...trees.slice(at)];
+  } else trees = placeAdded([...trees, moved], cfg);
+  return { ...state, trees };
 }
 
 // ---------- 削除・入力の取り消し（調査者の操作） ----------
@@ -153,4 +182,89 @@ export function withdrawTree(state, id, now) {
   if (!t.done || t.source !== 'app') throw new Error('アプリで入力済みの木だけ取り消せます');
   if (t.conflict) throw new Error('別の端末との食い違いがあります。先にどちらを使うか選んでください');
   return updateTree(state, id, (x) => ({ ...x, done: false, sent: false, updatedAt: stamp(now) }));
+}
+
+// ---------- 現地の番号に変える（一覧表の行の木を、現地の番号の追加した木にする） ----------
+//  一覧表の番号と現地の番号札が違ったとき、調査者が使う。
+//  ・入力した内容は、現地の番号の「追加した木」に移す（uid を付ける。並びは元の行の次＝今と同じ位置）。
+//    内勤さんが一覧表のその行の番号を現地の番号に直して読み込めば、追加した木がその行に結び付く（ledger.js の takeAdded）
+//  ・元の一覧表の行の木は、空の木（未入力）に戻す。サーバーに届いていれば、空に戻ったことを送る（他の端末でも二重にならない）
+//  ・詳しい診断の記録・付箋も新しい番号の木に移す。確定は外す（番号が変わったので確かめ直す）
+//  ・dropLines：特記事項から消す行（「PI915に変更」のような番号の書き込み。一覧表の特記に書かれないように）
+//  返す形：新しい状態（今の木は新しい木）
+export function renumberToAdded(state, cfg, id, newNo, { dropLines = [], now = Date.now() } = {}) {
+  const t = state.trees.find((x) => x.id === id);
+  if (!t) return state;
+  if (isAddedTree(t)) throw new Error('追加した木は、番号の欄をそのまま直してください');
+  if (t.source === 'ledger') throw new Error('台帳で入力済みの木は変えられません');
+  if (t.conflict) throw new Error('別の端末との食い違いがあります。先にどちらを使うか選んでください');
+  const no = toHalf(String(newNo || '')).trim().toUpperCase();
+  if (!no) throw new Error('現地の番号を入れてください');
+  if (no === toHalf(t.treeNo).trim().toUpperCase()) throw new Error('今の番号と同じです');
+  const at = new Date(now).toISOString();
+  const oldKey = simpleKey(t, cfg);
+  const uid = `${state.server?.deviceId || 'dev'}-${Number(now).toString(36)}`;
+
+  // 新しい木（入力した内容をそのまま持つ。一覧表の行との結び付きは外す）
+  const { ledgerRow, ledgerGone, order, ledgerSerial, ledgerDuplicate, ledgerSpecies, rev, conflict, ...data } = t;
+  const notes = String(t.notes || '')
+    .split('\n')
+    .filter((l) => !dropLines.includes(l))
+    .join('\n');
+  const nt = {
+    ...data,
+    id: `new:${now}`,
+    uid,
+    treeNo: no,
+    dupIndex: 1,
+    after: oldKey, // 元の行（空に戻した木）の次 ＝ 今と同じ位置
+    renamedFrom: { treeNo: t.treeNo, dupIndex: t.dupIndex || 1 },
+    notes,
+    sent: false,
+    conflict: null,
+    updatedAt: at,
+  };
+  const newKey = simpleKey(nt, cfg);
+
+  // 元の行の木は空に戻す（場所の情報・一覧表の行はそのまま）
+  const keep = ['siteType', ...cfg.dbFormat.infoKeys];
+  const blank = blankTree({ id: t.id, treeNo: t.treeNo, dupIndex: t.dupIndex, status: t.status, species: ledgerSpecies ?? '' });
+  for (const k of keep) if (t[k] !== undefined) blank[k] = t[k];
+  Object.assign(blank, { ledgerRow, order, ledgerSerial, ledgerDuplicate, ledgerSpecies, renamedTo: uid, updatedAt: at });
+  if (rev > 0) Object.assign(blank, { rev, sent: false }); // 空に戻ったことを送る
+  let trees = state.trees.map((x) => (x.id === id ? blank : x));
+  trees = placeAdded([...trees, nt], cfg);
+
+  // 詳しい診断の記録：新しい木に移す。元の記録は、サーバーに届いていれば未入力に戻ったことを送り、届いていなければ消す
+  let initials = state.initials || [];
+  const rec = initials.find((r) => r.id && `initial|${simpleKey(r, cfg)}` === `initial|${oldKey}`);
+  if (rec) {
+    const { rev: rrev, conflict: rc, ...rd } = rec;
+    const moved = { ...rd, id: `ini:${nt.id}`, uid, treeNo: no, dupIndex: 1, sent: false, conflict: null, updatedAt: at };
+    initials = initials.filter((r) => r !== rec);
+    if (rrev > 0) initials = [...initials, { ...rec, done: false, sent: false, renamedTo: uid, updatedAt: at }];
+    initials = [...initials, moved];
+  }
+
+  // 付箋は新しい木に付け替える（送り直す）
+  const stickies = { ...(state.stickies || {}) };
+  for (const [sid, s] of Object.entries(stickies)) {
+    if (s.treeId === oldKey) stickies[sid] = { ...s, treeId: newKey, dirty: true };
+    else if (s.treeId === `initial|${oldKey}`) stickies[sid] = { ...s, treeId: `initial|${newKey}`, dirty: true };
+  }
+  // 確定は外す（番号が変わったので、事務が確かめ直す）
+  const confirms = { ...(state.confirms || {}) };
+  for (const k of [oldKey, `initial|${oldKey}`]) {
+    if (confirms[k]?.value) confirms[k] = { ...confirms[k], value: false, at, updatedAt: at, dirty: true };
+  }
+  return { ...state, trees, initials, stickies, confirms, currentId: nt.id };
+}
+
+// 特記事項のうち、番号の書き込みらしい行（現地の番号の数字を含む行）。「現地の番号に変える」で消す候補に出す
+export function numberNoteLines(t, newNo) {
+  const digits = String(toHalf(newNo || '')).replace(/\D/g, '').replace(/^0+/, '');
+  if (!digits) return [];
+  return String(t.notes || '')
+    .split('\n')
+    .filter((l) => l.trim() && toHalf(l).replace(/\D/g, ' ').split(' ').some((d) => d && d.replace(/^0+/, '') === digits));
 }

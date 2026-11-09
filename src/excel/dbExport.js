@@ -87,7 +87,9 @@ function indexRows(ws, map, f) {
 }
 
 // 書き戻す。返す形：{ buffer（照合に通ったときだけ）, stats, errors }
-export async function exportDb(ledgerBuffer, trees, cfg) {
+//  appendAdded：一覧表に行がない追加の木を、いちばん下に足すか（既定は足さない。足すと一覧表の並びが元と変わるため。
+//               行がない木は notInLedger で知らせ、内勤さんに「差し込む行の一覧」の位置に行を入れてもらう）
+export async function exportDb(ledgerBuffer, trees, cfg, { appendAdded = false } = {}) {
   const f = cfg.dbFormat;
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(ledgerBuffer);
@@ -95,7 +97,8 @@ export async function exportDb(ledgerBuffer, trees, cfg) {
   const plan = []; // 照合用：書いた行と、書いた値
   // gradeOnly：台帳で入力済みの行に健全度だけ書いた木、gradeKept：健全度が既に入っていて違う値だったので書かなかった木
   // gone：読み込み直した台帳にない木（番号が変わった・行が消された）。書かずに知らせる
-  const stats = { written: 0, appended: 0, skippedLedgerDone: [], gradeOnly: [], gradeKept: [], gone: [] };
+  // notInLedger：一覧表に行がない追加の木（足さずに知らせる）
+  const stats = { written: 0, appended: 0, skippedLedgerDone: [], gradeOnly: [], gradeKept: [], gone: [], notInLedger: [] };
 
   // 書く木：アプリで入力した木と、台帳で入力済みの木（紙から手で入力した行）のうち詳しい診断の結果（initialGrade）を付けた木
   const mine = trees.filter((t) => (t.done && t.source === 'app') || (t.source !== 'app' && t.initialGrade));
@@ -158,6 +161,10 @@ export async function exportDb(ledgerBuffer, trees, cfg) {
           errors.push(
             `${ws.name} ${where}：読み込んだときにあった行が、一覧表に見つかりません${t.ledgerGone ? '（読み込み直した一覧表にこの番号がありません。番号が変わったか、行が消されています。一覧の検索で「すべての公園・路線」を選んで探せます）' : ''}`,
           );
+          continue;
+        }
+        if (!appendAdded) {
+          stats.notInLedger.push(where);
           continue;
         }
         r = ++next;
