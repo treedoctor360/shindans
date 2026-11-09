@@ -11,6 +11,7 @@ import { useTopHeight } from './ui/useTopHeight.js';
 import { useDesktop } from './ui/useDesktop.js';
 import OverviewTable from './ui/OverviewTable.jsx';
 import { reviewStatesOf } from './store/review.js';
+import { inBook, initialOf, isInitialTarget } from './store/initial.js';
 import { APP_VERSION, BUILD_TIME } from './version.js';
 
 const TABS = [
@@ -58,7 +59,7 @@ export default function App() {
 
   const s = state.session;
   return (
-    <div className={`app${split ? ' desk' : ''}`}>
+    <div className={`app${split ? ' desk' : ''}${split && desk.compact ? ' compact' : ''}`}>
       <header className="top">
         <div className="top-row">
           <h1>{app.config?.job?.title || '樹木点検 野帳'}</h1>
@@ -116,10 +117,43 @@ export default function App() {
       {split ? (
         <main className="split" data-testid="desktop-split">
           <section className="pane-l">
-            <OverviewTable {...app} toast={toast} />
+            <OverviewTable {...app} toast={toast} compact={desk.compact} />
           </section>
           <section className="pane-r">
-            {state.view !== 'list' && state.currentId ? (
+            {state.view !== 'list' && state.currentId && desk.compact ? (
+              // 横にしたスマホ：簡易診断と詳しい診断を上の切り替えで出す（詳しい診断は記録かブックの内容がある木だけ）
+              (() => {
+                const t = state.trees.find((x) => x.id === state.currentId);
+                const cfg = app.config;
+                const hasIni = !!(cfg.initialSurvey && t && isInitialTarget(t, cfg) && (initialOf(state, t, cfg) || inBook(state, t, cfg)));
+                // 右の列に出すのは、今の画面（簡易診断／詳しい診断）。切り替えは画面を切り替える
+                const tab = hasIni && state.view === 'initial' ? 'initial' : 'form';
+                const setPaneTab = (v) => update((cur) => ({ ...cur, view: v, initialTreeId: v === 'initial' ? cur.currentId : cur.initialTreeId }));
+                return (
+                  <div className="pane-cols one">
+                    {hasIni && (
+                      <div className="seg pane-tabs" role="tablist">
+                        <button type="button" className={`seg-b${tab === 'form' ? ' on' : ''}`} onClick={() => setPaneTab('form')} data-pane-tab="form">
+                          簡易診断
+                        </button>
+                        <button type="button" className={`seg-b${tab === 'initial' ? ' on' : ''}`} onClick={() => setPaneTab('initial')} data-pane-tab="initial">
+                          {cfg.initialSurvey.label}
+                        </button>
+                      </div>
+                    )}
+                    {tab === 'form' ? (
+                      <div className="pane-col" data-testid="pane-simple" key={`s-${state.currentId}`}>
+                        <FormView key={state.currentId} {...app} toast={toast} />
+                      </div>
+                    ) : (
+                      <div className="pane-col" data-testid="pane-initial" key={`i-${state.currentId}`}>
+                        <InitialView key={state.currentId} {...app} toast={toast} pane />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
+            ) : state.view !== 'list' && state.currentId ? (
               <div className="pane-cols">
                 <div className="pane-col" data-testid="pane-simple" key={`s-${state.currentId}`}>
                   <FormView key={state.currentId} {...app} toast={toast} />

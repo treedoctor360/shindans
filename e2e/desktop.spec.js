@@ -120,3 +120,47 @@ test.describe('広い画面', () => {
     await expect(page.locator('[data-testid=desktop-split]')).toHaveCount(0);
   });
 });
+
+test.describe('スマホを横にしたとき', () => {
+  test.use({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+
+  test('ボタンを出し、一覧と、簡易診断／詳しい診断を切り替える2列にする。縦に戻すと今までの表示', async ({ page }) => {
+    await setup(page);
+    const toggle = page.locator('[data-testid=desktop-toggle]');
+    await expect(toggle).toBeVisible();
+    await page.click('.tab:has-text("一覧")');
+    await toggle.click();
+    const split = page.locator('[data-testid=desktop-split]');
+    await expect(split).toBeVisible();
+    // 幅が足りないので、一覧表は欄を減らす
+    await expect(split.locator('.ov-t th')).toHaveText(['番号', '樹種', '有の項目', '特記事項', '注意']);
+
+    await split.locator('.pane-l [data-tree=AB002]').click();
+    const simple = split.locator('[data-testid=pane-simple]');
+    await simple.locator('#f-height').fill('10');
+    await simple.locator('#f-girth0').fill('0.5');
+    await simple.locator('[data-group=initialNeeded] [data-v="要"]').click();
+    await simple.locator('text=保存して次の木へ').click();
+    await page.click('text=未入力のまま保存する');
+    await page.click('[data-testid=initial-prompt-go]');
+    // 「詳しい診断へ」で右の列が詳しい診断になる
+    await expect(split.locator('[data-testid=pane-initial] [data-testid=initial-tree]')).toContainText('AB002');
+    await expect(split.locator('[data-pane-tab=initial]')).toHaveClass(/on/);
+    // 右の列は1つ。一覧から選ぶと簡易診断。詳しい診断の記録がある木は、上の切り替えで出す
+    await split.locator('.pane-l [data-tree=AB002]').click();
+    await expect(split.locator('[data-pane-tab]')).toHaveCount(2);
+    await expect(split.locator('[data-testid=pane-initial]')).toHaveCount(0);
+    await split.locator('[data-pane-tab=initial]').click();
+    await expect(split.locator('[data-testid=pane-initial] [data-testid=initial-tree]')).toContainText('AB002');
+    await expect(split.locator('[data-testid=pane-simple]')).toHaveCount(0);
+    // 詳しい診断の記録がない木は切り替えを出さない
+    await split.locator('.pane-l [data-tree=AB001]').click();
+    await expect(split.locator('[data-pane-tab]')).toHaveCount(0);
+    await expect(split.locator('[data-testid=pane-simple] #f-height')).toBeVisible();
+
+    // 縦に戻すと今までの表示
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('[data-testid=desktop-split]')).toHaveCount(0);
+    await expect(page.locator('[data-testid=desktop-toggle]')).toHaveCount(0);
+  });
+});

@@ -257,7 +257,7 @@ export default function SettingsView({ state, update, config, setConfig, toast }
             disabled={busy}
             testId="karte-template-file"
           />
-          <p className="hint">カルテを作るマクロの入ったブックなど、空のカルテの様式があるブックを選びます。この端末にだけ置きます（マクロは動かしません）。確認用カルテは「出力」から作ります。</p>
+          <p className="hint">カルテを作るマクロの入ったブックなど、空のカルテの様式があるブックを選びます。「サーバーに置く」で調査者の端末にも渡し、詳しい診断の画面の「カルテで見る」で使えます（マクロは動かしません）。確認用カルテは「出力」から作ります。</p>
         </div>
       )}
 
