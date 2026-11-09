@@ -1,6 +1,6 @@
 // デスクトップ表示の一覧表（1本1行）に出す中身を作る
 //  ・判定は今の注意（簡易診断の未記入・詳しい診断の注意・付箋）と同じ関数を使い、ここで新しい判定は作らない
-import { initialOf, initialWarnings, measureStatus, simpleNotesStatus, syncMeasures } from '../store/initial.js';
+import { initialOf, initialWarnings, isInitialTarget, measureStatus, simpleNotesStatus, syncMeasures } from '../store/initial.js';
 import { reviewStatesOf } from '../store/review.js';
 import { missingFields } from '../core/rules.js';
 
@@ -27,7 +27,8 @@ export function checksOf(tree, cfg) {
 export function flagsOf(tree, state, cfg) {
   const out = [];
   if (tree.done && missingFields(tree, cfg).length) out.push(['未記入', `簡易で入れていない項目：${missingFields(tree, cfg).join('・')}`]);
-  const rec0 = cfg.initialSurvey ? initialOf(state, tree, cfg) : null;
+  // 詳しい診断の対象でなくなった木（「要」を後で「否」にした）に残っている記録は見ない（ブック・カルテにも書かない）
+  const rec0 = isInitialTarget(tree, cfg) ? initialOf(state, tree, cfg) : null;
   if (rec0) {
     const rec = syncMeasures(rec0, tree, cfg).record; // 画面を開いたときと同じく、簡易の寸法に合わせた後の状態で見る
     const ws = (initialWarnings(rec, tree, cfg) || []).map(String);

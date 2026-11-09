@@ -17,6 +17,7 @@ import {
   initialOf,
   initialStatus,
   initialWarnings,
+  isInitialTarget,
   missingInitial,
   initialWordingIssues,
   fixInitialWording,
@@ -316,7 +317,8 @@ export default function InitialView({ state, update, config: cfg, toast, send, p
   }, [canSync, tree]);
   const back = (view = 'list') => update((s) => ({ ...s, view, ...(view === 'form' && tree ? { currentId: tree.id } : {}) }));
 
-  if (pane && (!cfg?.initialSurvey || !tree || !rec)) return null;
+  // 並べて出すとき、詳しい診断の対象でなくなった木（「要」を後で「否」にした）に残っている記録は出さない
+  if (pane && (!cfg?.initialSurvey || !tree || !rec || !isInitialTarget(tree, cfg))) return null;
   if (!cfg?.initialSurvey || !tree || !rec) {
     return (
       <section className="view">
