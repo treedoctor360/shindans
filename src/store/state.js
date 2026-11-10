@@ -12,6 +12,8 @@ import { bookKey, filledIndex, readInitialBook } from '../excel/initialBook.js';
 import { readKarteTemplate } from '../excel/karteExport.js';
 import { idbGet, idbPut } from './idb.js';
 import { placeAdded } from './order.js';
+import { initialOf } from './initial.js';
+import { simpleKey } from './surveys.js';
 
 // 保存する状態の形の版（形を変えたら上げ、migrate で古い形を直す）
 export const STATE_VERSION = 3; // 2: 確認の流れ（付箋・確定・版番号）を追加 / 3: 詳しい診断の記録（initials）を追加
@@ -131,7 +133,23 @@ export async function readLedgerFile(name, buffer, cfg, today) {
   return { rows, sheets, info: { name, date: today, columns } };
 }
 export function applyLedger(state, parsed, cfg) {
-  const { trees, stats } = mergeLedger(state.trees, parsed.rows, cfg);
+  // 詳しい診断の記録・付箋・確定がある木は、一覧表から消えても外さない。
+  //  ただし、一度も送っていない入力中の記録（開いただけの下書き）しかない空の木は、下書きごと外す（stats.draftsRemoved で知らせる）
+  const keepIds = new Set();
+  const draftOf = new Map(); // 木の id → 開いただけの下書き
+  for (const t of state.trees) {
+    const key = simpleKey(t, cfg);
+    const rec = cfg.initialSurvey ? initialOf(state, t, cfg) : null;
+    const marks = Object.values(state.stickies || {}).some((s) => s.treeId === key || s.treeId === `initial|${key}`) || !!state.confirms?.[key]?.value || !!state.confirms?.[`initial|${key}`]?.value;
+    const onlyDraft = rec && !rec.done && !(rec.rev > 0) && !rec.conflict;
+    if (marks || (rec && !onlyDraft)) keepIds.add(t.id);
+    else if (onlyDraft) draftOf.set(t.id, rec);
+  }
+  const { trees, stats } = mergeLedger(state.trees, parsed.rows, cfg, { keepIds });
+  const left = new Set(trees.map((t) => t.id));
+  const dropDrafts = [...draftOf].filter(([id]) => !left.has(id)).map(([, rec]) => rec);
+  stats.draftsRemoved = dropDrafts.map((r) => String(r.treeNo || ''));
+  if (dropDrafts.length) state = { ...state, initials: (state.initials || []).filter((r) => !dropDrafts.includes(r)) };
   // 追加した木（一覧表の行がまだない木）は「どの木の次か」の位置に並べる（一覧表の最後にまとめない）
   return { state: { ...state, trees: placeAdded(trees, cfg), ledgerInfo: parsed.info }, stats, sheets: parsed.sheets };
 }

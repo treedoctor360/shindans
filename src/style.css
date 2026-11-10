@@ -209,6 +209,7 @@ html,body,#root{height:100%;margin:0}
 .sticky textarea,.sticky select{width:100%;box-sizing:border-box}
 .diff{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
 .diff th,.diff td{border:1px solid var(--line);padding:3px 5px;text-align:left;word-break:break-all;vertical-align:top}
+.diff th,.diff td{white-space:normal;overflow-wrap:anywhere}
 .notice{text-align:left;font:inherit;color:inherit;cursor:pointer}
 /* 前回の調査 */
 .prev summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}

@@ -80,7 +80,8 @@ export function dropBlankTwins(trees) {
 
 // 台帳の行をアプリの木のデータに取り込む。元の配列・木は書き換えず、新しい配列を返す
 // 返す形：{ trees, stats: { all, done, conflicts, duplicates: [番号…], goneRemoved: [外した台帳の写しの番号…] … } }
-export function mergeLedger(trees, rows, cfg) {
+//  keepIds：一覧表から消えても外さない木の id（詳しい診断の記録・付箋・確定がある木。state.js の applyLedger が渡す）
+export function mergeLedger(trees, rows, cfg, { keepIds = new Set() } = {}) {
   const f = cfg.dbFormat;
   // 同じ台帳の行に、現場で追加した木と、台帳から作った空の木の両方が結び付いていれば、空の木を除く
   //  （別の端末で追加した木を、新しい行の入った台帳を先に読み込んだ端末が後から受け取ったとき）
@@ -113,7 +114,10 @@ export function mergeLedger(trees, rows, cfg) {
   const countByNo = new Map(); // 番号ごとに、これまでに何行出てきたか
   // addedBound：現場で追加した木を台帳の行に結び付けた（番号・場所が同じ）。speciesDiff：そのうち樹種が台帳と違う木
   //  addedLeft：台帳の行と結び付かなかった、入力済みの追加した木
-  const stats = { all: 0, done: 0, conflicts: 0, duplicates: [], addedBound: [], speciesDiff: [], addedLeft: [], goneRemoved: [] };
+  //  goneKept：一覧表から消えた台帳の写しだが、詳しい診断の記録などがあるので残した木。goneBlank：一覧表から消えた空の木（外した）
+  //  placeMoved：同じ「番号＋何本目か」の行の場所が変わった、入力のある木（同じ番号の行が上に差し込まれた・行が入れ替わったおそれ）
+  const stats = { all: 0, done: 0, conflicts: 0, duplicates: [], addedBound: [], speciesDiff: [], addedLeft: [], goneRemoved: [], goneKept: [], goneBlank: [], placeMoved: [] };
+  const placeKeyOf = (type) => identifyOf(type);
   let order = 0;
 
   for (const row of rows) {
@@ -146,6 +150,15 @@ export function mergeLedger(trees, rows, cfg) {
       t = blankTree({ id, treeNo: no, siteType: row.sheetType, dupIndex });
       out.push(t);
       byKey.set(key, t);
+    }
+    // 同じ「番号＋何本目か」でも、場所が前と違う行に当たった木：
+    //  空の木なら前の場所の樹種を持ち越さない。入力のある木は知らせる（別の木の行かもしれない）
+    const pk = placeKeyOf(row.sheetType);
+    const was = toHalf(String((pk && t[pk]) ?? '')).trim();
+    const moved = !!t.ledgerRow && !!was && was !== toHalf(str(pk)).trim();
+    if (moved) {
+      if (isBlankLedgerTree(t)) t.species = '';
+      else if (t.source === 'app' || t.appBackup) stats.placeMoved.push(`${no}（${was} → ${str(pk)}）`);
     }
     order++;
     t.order = order;
@@ -186,6 +199,8 @@ export function mergeLedger(trees, rows, cfg) {
       treatFree: str('treat'),
       photoOverride: str('photo'),
     });
+    // 台帳の行を写しただけの木（アプリの入力の控えがない）は、樹種も台帳のとおりにする（台帳で樹種が直されたら従う）
+    if (!t.appBackup && str('species')) t.species = str('species');
     // その他の列は文字のまま写す（点検項目・健全度・伐採理由など）
     for (const k of Object.keys(f.columns)) {
       if (SPECIAL.includes(k) || f.infoKeys.includes(k) || k === f.serialKey || !(k in v)) continue;
@@ -213,11 +228,23 @@ export function mergeLedger(trees, rows, cfg) {
   // 今の台帳にない木のうち、台帳で入力済みの行をそのまま写しただけの木（アプリで入力していない）は外す。
   //  アプリで入力した木・アプリの入力の控え（appBackup）がある木・台帳から作った木（アプリで書いたかもしれない）は残す
   //  （番号を直すか削除するかを人が決める）
-  const copyOnly = (t) => t.ledgerGone && t.source === 'ledger' && !t.appBackup && !t.conflict;
-  for (const t of out) if (copyOnly(t)) stats.goneRemoved.push(toHalf(t.treeNo).trim() || '(番号なし)');
+  //  詳しい診断の記録・付箋・確定がある木（keepIds）は外さない（外すと、その記録の行き先がなくなる）
+  const copyGone = (t) => t.ledgerGone && t.source === 'ledger' && !t.appBackup && !t.conflict;
+  const copyOnly = (t) => copyGone(t) && !keepIds.has(t.id);
+  // 一覧表から消えた、何も入力していない空の木も外す
+  //  （樹種を直した・寸法を入れた・番号を消した木は、何か書いた木として残す）
+  const half = (v) => toHalf(String(v ?? '')).trim();
+  const untouched = (t) => isBlankLedgerTree(t) && half(t.treeNo) && half(t.species) === half(t.ledgerSpecies) && !half(t.height) && !(t.girths || []).some(half) && !t.grade && !t.initialNeeded;
+  const blankGone = (t) => t.ledgerGone && untouched(t) && !t.renamedTo && !keepIds.has(t.id);
+  for (const t of out) {
+    const no = toHalf(t.treeNo).trim() || '(番号なし)';
+    if (copyOnly(t)) stats.goneRemoved.push(no);
+    else if (copyGone(t)) stats.goneKept.push(no);
+    else if (blankGone(t)) stats.goneBlank.push(no);
+  }
   // 「現地の番号に変える」で空に戻した元の行の木（renamedTo）は、一覧表の番号が直って行がなくなったら外す（中身は新しい番号の木にある）
   const renamedBlank = (t) => t.ledgerGone && t.renamedTo && !t.done && !t.deleted;
-  const kept = out.filter((t) => !copyOnly(t) && !renamedBlank(t));
+  const kept = out.filter((t) => !copyOnly(t) && !renamedBlank(t) && !blankGone(t));
   // 台帳の並び順にそろえる（台帳にない木は元の順のまま後ろへ）
   const rank = (t, i) => (t.order && seen.has(treeKey(t.siteType, t.treeNo, t.dupIndex)) ? t.order : 1e6 + i);
   const sorted = kept.map((t, i) => [rank(t, i), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
