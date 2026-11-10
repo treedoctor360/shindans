@@ -4,7 +4,7 @@
 //
 // 本文は JSON の文字として送る（Content-Type を付けないことで、ブラウザの事前確認なしに送れる）
 
-import { isBlankLedgerTree, treeKey } from '../excel/ledger.js';
+import { isBlankLedgerTree, rowDupOf, treeKey } from '../excel/ledger.js';
 import { SURVEYS, recordsOf, surveyOfKind } from './surveys.js';
 import { placeAdded } from './order.js';
 
@@ -245,7 +245,7 @@ export async function pull(state, cfg, fetchFn = fetch) {
 // 受け取った記録を当てはめる
 //  返す形：{ state, changedTrees: [木の番号…]（他の端末で変わった木）, newStickies: 件数, conflicts: [木の番号…] }
 // 同じ台帳の行（シートの種類・番号・何本目か）の木か
-const sameLedgerRow = (a, b) => treeKey(a.siteType, a.treeNo, a.dupIndex) === treeKey(b.siteType, b.treeNo, b.dupIndex);
+const sameLedgerRow = (a, b) => treeKey(a.siteType, a.treeNo, rowDupOf(a)) === treeKey(b.siteType, b.treeNo, rowDupOf(b));
 
 export function applyPull(state, records, lastSeq, cfg) {
   // 種類ごとに、記録の配列（複製）と「鍵 → 配列の位置」の索引を用意する

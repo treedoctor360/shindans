@@ -67,15 +67,34 @@ function splitParen(v, strip) {
 //  台帳の中で同じ番号が重複している場合は、上から何本目か（dupIndex）で見分ける
 export const treeKey = (sheetType, treeNo, dupIndex = 1) => `${sheetType}|${toHalf(treeNo).trim()}|${dupIndex || 1}`;
 
+// 台帳の何本目の行に結び付いているか。追加した木（uid）は、木を見分ける「何本目か」（dupIndex。鍵に入る）を変えずに、
+//  結び付いた行の何本目か（rowDup）を別に持つ
+export const rowDupOf = (t) => t.rowDup || t.dupIndex || 1;
+
 // 台帳から作っただけで、まだ何も入力していない木か（送ったこともなく、追加した印 uid もない）
 export const isBlankLedgerTree = (t) =>
   !!t.ledgerRow && !t.uid && !t.done && !(t.rev > 0) && !t.deleted && !t.vigor && !String(t.notes || '').trim() && !(t.measures || []).length;
 
 // 同じ台帳の行（シートの種類・番号・何本目か）に結び付いた木が2本あり、片方が空の木なら、空の木を除く
 export function dropBlankTwins(trees) {
-  const k = (t) => treeKey(t.siteType, t.treeNo, t.dupIndex);
+  const k = (t) => treeKey(t.siteType, t.treeNo, rowDupOf(t));
   const filled = new Set(trees.filter((t) => t.ledgerRow && !isBlankLedgerTree(t)).map(k));
   return trees.filter((t) => !(isBlankLedgerTree(t) && filled.has(k(t))));
+}
+
+// 台帳の行ごとの「鍵（種類・番号・何本目か）→ 場所の名前」（読み込む前に、行の当たり先が変わる木を調べる）
+export function rowPlaces(rows, cfg) {
+  const count = new Map();
+  const out = new Map();
+  for (const row of rows) {
+    const no = toHalf(String(row.values.treeNo ?? '')).trim();
+    const noKey = `${row.sheetType}|${no}`;
+    const n = (count.get(noKey) || 0) + 1;
+    count.set(noKey, n);
+    const k = cfg.dbFormat.sheets.find((x) => x.type === row.sheetType)?.identify;
+    out.set(treeKey(row.sheetType, no, n), toHalf(String((k && row.values[k]) ?? '')).trim());
+  }
+  return out;
 }
 
 // 台帳の行をアプリの木のデータに取り込む。元の配列・木は書き換えず、新しい配列を返す
@@ -87,13 +106,25 @@ export function mergeLedger(trees, rows, cfg, { keepIds = new Set() } = {}) {
   //  （別の端末で追加した木を、新しい行の入った台帳を先に読み込んだ端末が後から受け取ったとき）
   const out = dropBlankTwins(trees.map((t) => ({ ...t })));
   // 台帳の行と結び付いている木は「番号＋何本目か」で探す
+  //  追加した木（uid）は、行に結び付いた後も、読み込むたびに「番号＋場所の名前」で結び付け直す
+  //  （同じ番号の行が上に入って何本目かがずれても、別の場所の行に当たらない）
+  const wasBound = new Set();
+  for (const t of out) {
+    if (!t.uid || !t.ledgerRow) continue;
+    wasBound.add(t.id);
+    delete t.ledgerRow;
+    delete t.rowDup;
+    delete t.ledgerGone;
+  }
   const byKey = new Map(out.filter((t) => t.ledgerRow).map((t) => [treeKey(t.siteType, t.treeNo, t.dupIndex), t]));
   // 追加した木（台帳の行と結び付いていない木）は、番号に加えて場所の名前も合うときだけ台帳の行と結び付ける
   //  （現地の番号札が台帳では別の場所の木の番号だったとき、その木と取り違えないため）
+  //  同じ番号の行が何本あっても、場所の名前が合う行に結び付ける（何本目かは見ない。追加した木は印 uid で見分けるので、
+  //  結び付いた行の「何本目か」を持たせても同じ木のまま）
   const addedByKey = new Map();
   for (const t of out) {
     if (t.ledgerRow) continue;
-    const k = treeKey(t.siteType, t.treeNo, t.dupIndex);
+    const k = `${t.siteType}|${toHalf(t.treeNo).trim()}`;
     if (!addedByKey.has(k)) addedByKey.set(k, []);
     addedByKey.get(k).push(t);
   }
@@ -104,10 +135,18 @@ export function mergeLedger(trees, rows, cfg, { keepIds = new Set() } = {}) {
     const mine = toHalf(String((k && t[k]) ?? '')).trim();
     return !mine || mine === toHalf(String(row.values[k] ?? '')).trim();
   };
-  const takeAdded = (key, row) => {
-    const list = addedByKey.get(key) || [];
-    const i = list.findIndex((t) => samePlace(t, row));
-    return i < 0 ? null : list.splice(i, 1)[0];
+  //  1本目の行には今までどおり（場所の名前がない追加の木も結び付ける）。2本目からの行には、場所の名前が合う木だけ
+  const placeOf = (t, row) => {
+    const k = identifyOf(row.sheetType);
+    return toHalf(String((k && t[k]) ?? '')).trim();
+  };
+  const takeAdded = (noKey, row, dupIndex) => {
+    const list = addedByKey.get(noKey) || [];
+    const i = list.findIndex((t) => samePlace(t, row) && (dupIndex === 1 || placeOf(t, row)) && !t.deleted);
+    if (i < 0) return null;
+    const t = list.splice(i, 1)[0];
+    t.rowDup = dupIndex;
+    return t;
   };
   const usedIds = new Set(out.map((t) => t.id));
   const seen = new Set();
@@ -135,8 +174,8 @@ export function mergeLedger(trees, rows, cfg, { keepIds = new Set() } = {}) {
 
     let t = byKey.get(key);
     if (!t) {
-      t = takeAdded(key, row);
-      if (t) {
+      t = takeAdded(noKey, row, dupIndex);
+      if (t && !wasBound.has(t.id)) {
         stats.addedBound.push(no);
         const sp = toHalf(str('species'));
         if (t.species && sp && toHalf(t.species).trim() !== sp) stats.speciesDiff.push(`${no}（アプリ「${t.species}」／台帳「${sp}」）`);
@@ -157,7 +196,9 @@ export function mergeLedger(trees, rows, cfg, { keepIds = new Set() } = {}) {
     const was = toHalf(String((pk && t[pk]) ?? '')).trim();
     const moved = !!t.ledgerRow && !!was && was !== toHalf(str(pk)).trim();
     if (moved) {
-      if (isBlankLedgerTree(t)) t.species = '';
+      // 入力のない木（空の木・空に戻した木）は新しい行の木として扱う
+      const hasInput = t.done || !!t.appBackup || !!t.vigor || !!String(t.height || '').trim() || !!String(t.notes || '').trim() || (t.measures || []).length > 0;
+      if (!hasInput) t.species = '';
       else if (t.source === 'app' || t.appBackup) stats.placeMoved.push(`${no}（${was} → ${str(pk)}）`);
     }
     order++;
@@ -221,7 +262,7 @@ export function mergeLedger(trees, rows, cfg, { keepIds = new Set() } = {}) {
   //  この印の木は追加した木と同じく削除できる（actions.js の isAddedTree）。一覧表への書き戻しでは、行が見つからないとして止める
   for (const t of out) {
     if (!t.ledgerRow) continue;
-    if (seen.has(treeKey(t.siteType, t.treeNo, t.dupIndex))) delete t.ledgerGone;
+    if (seen.has(treeKey(t.siteType, t.treeNo, rowDupOf(t)))) delete t.ledgerGone;
     else t.ledgerGone = true;
   }
   for (const t of out) if (!t.ledgerRow && t.done && !t.deleted && t.source === 'app') stats.addedLeft.push(toHalf(t.treeNo).trim() || '(番号なし)');
@@ -246,7 +287,7 @@ export function mergeLedger(trees, rows, cfg, { keepIds = new Set() } = {}) {
   const renamedBlank = (t) => t.ledgerGone && t.renamedTo && !t.done && !t.deleted;
   const kept = out.filter((t) => !copyOnly(t) && !renamedBlank(t) && !blankGone(t));
   // 台帳の並び順にそろえる（台帳にない木は元の順のまま後ろへ）
-  const rank = (t, i) => (t.order && seen.has(treeKey(t.siteType, t.treeNo, t.dupIndex)) ? t.order : 1e6 + i);
+  const rank = (t, i) => (t.order && t.ledgerRow && seen.has(treeKey(t.siteType, t.treeNo, rowDupOf(t))) ? t.order : 1e6 + i);
   const sorted = kept.map((t, i) => [rank(t, i), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
   // 番号が重複している木に印を付ける（画面で注意を出す）
   for (const t of sorted) {

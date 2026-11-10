@@ -120,7 +120,7 @@ export function alertsOf(tree, cfg) {
     a.push({
       id: 'ledgerDuplicate',
       lv: 'warn',
-      msg: `台帳に同じ番号の行が${tree.ledgerDuplicate}行あります（この木は${tree.dupIndex || 1}行目）。現地の番号札と、場所・樹種が台帳と合っているか確認してください。`,
+      msg: `台帳に同じ番号の行が${tree.ledgerDuplicate}行あります（この木は${tree.rowDup || tree.dupIndex || 1}行目）。現地の番号札と、場所・樹種が台帳と合っているか確認してください。`,
       acts: [],
     });
   if (tree.appBackup)

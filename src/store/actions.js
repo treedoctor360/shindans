@@ -192,18 +192,28 @@ export function withdrawTree(state, id, now) {
 //  ・詳しい診断の記録・付箋も新しい番号の木に移す。確定は外す（番号が変わったので確かめ直す）
 //  ・dropLines：特記事項から消す行（「PI915に変更」のような番号の書き込み。一覧表の特記に書かれないように）
 //  返す形：新しい状態（今の木は新しい木）
-export function renumberToAdded(state, cfg, id, newNo, { dropLines = [], now = Date.now() } = {}) {
+//  moved：一覧表の読み込みで、同じ番号の行が別の場所に入って行の当たり先が変わる木を、行から外すとき（detachMoved）。
+//         番号は変えず、印（uid）は元の鍵から決める（どの端末で外しても同じ木になる）。元の行・新しい番号の印は残さない
+export function renumberToAdded(state, cfg, id, newNo, { dropLines = [], now = Date.now(), moved = false } = {}) {
   const t = state.trees.find((x) => x.id === id);
   if (!t) return state;
-  if (isAddedTree(t)) throw new Error('追加した木は、番号の欄をそのまま直してください');
-  if (t.source === 'ledger') throw new Error('台帳で入力済みの木は変えられません');
-  if (t.conflict) throw new Error('別の端末との食い違いがあります。先にどちらを使うか選んでください');
-  const no = toHalf(String(newNo || '')).trim().toUpperCase();
-  if (!no) throw new Error('現地の番号を入れてください');
-  if (no === toHalf(t.treeNo).trim().toUpperCase()) throw new Error('今の番号と同じです');
+  const isMoved = moved;
   const at = new Date(now).toISOString();
   const oldKey = simpleKey(t, cfg);
-  const uid = `${state.server?.deviceId || 'dev'}-${Number(now).toString(36)}`;
+  let no;
+  let uid;
+  if (moved) {
+    no = toHalf(t.treeNo).trim();
+    uid = `mv-${oldKey.replace(/[^0-9A-Za-z]+/g, '-')}`;
+  } else {
+    if (isAddedTree(t)) throw new Error('追加した木は、番号の欄をそのまま直してください');
+    if (t.source === 'ledger') throw new Error('台帳で入力済みの木は変えられません');
+    if (t.conflict) throw new Error('別の端末との食い違いがあります。先にどちらを使うか選んでください');
+    no = toHalf(String(newNo || '')).trim().toUpperCase();
+    if (!no) throw new Error('現地の番号を入れてください');
+    if (no === toHalf(t.treeNo).trim().toUpperCase()) throw new Error('今の番号と同じです');
+    uid = `${state.server?.deviceId || 'dev'}-${Number(now).toString(36)}`;
+  }
 
   // 新しい木（入力した内容をそのまま持つ。一覧表の行との結び付きは外す）
   const { ledgerRow, ledgerGone, order, ledgerSerial, ledgerDuplicate, ledgerSpecies, rev, conflict, ...data } = t;
@@ -213,12 +223,11 @@ export function renumberToAdded(state, cfg, id, newNo, { dropLines = [], now = D
     .join('\n');
   const nt = {
     ...data,
-    id: `new:${now}`,
+    id: moved ? `new:${uid}` : `new:${now}`,
     uid,
     treeNo: no,
     dupIndex: 1,
-    after: oldKey, // 元の行（空に戻した木）の次 ＝ 今と同じ位置
-    renamedFrom: { treeNo: t.treeNo, dupIndex: t.dupIndex || 1 },
+    ...(moved ? {} : { after: oldKey, renamedFrom: { treeNo: t.treeNo, dupIndex: t.dupIndex || 1 } }), // after：元の行（空に戻した木）の次 ＝ 今と同じ位置
     notes,
     sent: false,
     conflict: null,
@@ -230,7 +239,7 @@ export function renumberToAdded(state, cfg, id, newNo, { dropLines = [], now = D
   const keep = ['siteType', ...cfg.dbFormat.infoKeys];
   const blank = blankTree({ id: t.id, treeNo: t.treeNo, dupIndex: t.dupIndex, status: t.status, species: ledgerSpecies ?? '' });
   for (const k of keep) if (t[k] !== undefined) blank[k] = t[k];
-  Object.assign(blank, { ledgerRow, order, ledgerSerial, ledgerDuplicate, ledgerSpecies, renamedTo: uid, updatedAt: at });
+  Object.assign(blank, { ledgerRow, order, ledgerSerial, ledgerDuplicate, ledgerSpecies, updatedAt: at }, moved ? { species: '' } : { renamedTo: uid });
   if (rev > 0) Object.assign(blank, { rev, sent: false }); // 空に戻ったことを送る
   let trees = state.trees.map((x) => (x.id === id ? blank : x));
   trees = placeAdded([...trees, nt], cfg);
@@ -242,7 +251,10 @@ export function renumberToAdded(state, cfg, id, newNo, { dropLines = [], now = D
     const { rev: rrev, conflict: rc, ...rd } = rec;
     const moved = { ...rd, id: `ini:${nt.id}`, uid, treeNo: no, dupIndex: 1, sent: false, conflict: null, updatedAt: at };
     initials = initials.filter((r) => r !== rec);
-    if (rrev > 0) initials = [...initials, { ...rec, done: false, sent: false, renamedTo: uid, updatedAt: at }];
+    //  moved（行の当たり先が変わる木）では、元の鍵の記録に中身を残さない（その鍵は別の木のものになるため）
+    if (rrev > 0) {
+      initials = [...initials, isMoved ? { id: rec.id, siteType: rec.siteType, treeNo: rec.treeNo, dupIndex: rec.dupIndex, rev: rrev, done: false, sent: false, updatedAt: at } : { ...rec, done: false, sent: false, renamedTo: uid, updatedAt: at }];
+    }
     initials = [...initials, moved];
   }
 
@@ -257,7 +269,30 @@ export function renumberToAdded(state, cfg, id, newNo, { dropLines = [], now = D
   for (const k of [oldKey, `initial|${oldKey}`]) {
     if (confirms[k]?.value) confirms[k] = { ...confirms[k], value: false, at, updatedAt: at, dirty: true };
   }
-  return { ...state, trees, initials, stickies, confirms, currentId: nt.id };
+  return { ...state, trees, initials, stickies, confirms, currentId: moved ? state.currentId : nt.id };
+}
+
+// 一覧表の読み込みの前に：同じ番号の行が別の場所に入って、行の当たり先が変わる木を行から外す（追加した木と同じ扱いにする）。
+//  外した木は、読み込みで「番号＋場所の名前」が合う行に結び付く（ledger.js の takeAdded）。入力・詳しい診断の記録・付箋も一緒
+//  places：新しい一覧表の「鍵 → 場所の名前」（ledger.js の rowPlaces）。keepIds：詳しい診断の記録・付箋・確定がある木
+//  返す形：{ state, moved: [知らせの文…] }
+export function detachMoved(state, cfg, places, keepIds = new Set(), now = Date.now()) {
+  const half = (v) => toHalf(String(v ?? '')).trim();
+  const moved = [];
+  let s = state;
+  for (const t of state.trees) {
+    if (!t.ledgerRow || t.ledgerGone || t.uid || t.deleted) continue;
+    const pk = cfg.dbFormat.sheets.find((x) => x.type === t.siteType)?.identify;
+    const mine = half(pk && t[pk]);
+    const theirs = places.get(`${t.siteType}|${half(t.treeNo)}|${t.dupIndex || 1}`);
+    if (!mine || theirs === undefined || theirs === mine) continue;
+    // 何か入力した木・記録のある木だけ（空の木・台帳を写しただけの木は、新しい行の内容に入れ替わるだけでよい）
+    const hasInput = (t.source === 'app' && (t.done || t.rev > 0 || !!t.vigor || !!half(t.height) || !!half(t.notes) || (t.measures || []).length > 0)) || !!t.appBackup;
+    if (!hasInput && !keepIds.has(t.id)) continue;
+    s = renumberToAdded(s, cfg, t.id, '', { moved: true, now });
+    moved.push(`${half(t.treeNo)}（${mine}）`);
+  }
+  return { state: s, moved };
 }
 
 // 特記事項のうち、番号の書き込みらしい行（現地の番号の数字を含む行）。「現地の番号に変える」で消す候補に出す

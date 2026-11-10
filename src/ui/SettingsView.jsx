@@ -74,6 +74,7 @@ export default function SettingsView({ state, update, config, setConfig, toast }
           (st.addedBound?.length ? `。追加した木${st.addedBound.length}本を台帳の行に結び付けました（${st.addedBound.slice(0, 5).join('・')}${st.addedBound.length > 5 ? 'ほか' : ''}）` : '') +
           (st.speciesDiff?.length ? `。そのうち樹種が台帳と違う木：${st.speciesDiff.slice(0, 5).join('・')}` : '') +
           (st.addedLeft?.length ? `。台帳の行と結び付かなかった追加の木${st.addedLeft.length}本（${st.addedLeft.slice(0, 5).join('・')}${st.addedLeft.length > 5 ? 'ほか' : ''}）は、一覧表に行が入るまで書き込みません（出力の「差し込む行の一覧」を内勤さんに渡してください）` : '') +
+          (st.rebound?.length ? `。同じ番号の行が別の場所に入ったため、入力を場所の合う行に付け替えました：${st.rebound.slice(0, 5).join('・')}（中身を確かめてください）` : '') +
           (st.placeMoved?.length ? `。【注意】同じ番号の行の場所が変わった木：${st.placeMoved.slice(0, 5).join('・')}（別の木の行に当たっていないか確かめてください）` : '') +
           (st.goneKept?.length ? `。一覧表から消えた木のうち、詳しい診断の記録・付箋がある${st.goneKept.length}本（${st.goneKept.slice(0, 5).join('・')}）は残しました` : '') +
           (st.goneBlank?.length ? `。一覧表から消えた空の木${st.goneBlank.length}本（${st.goneBlank.slice(0, 5).join('・')}${st.goneBlank.length > 5 ? 'ほか' : ''}）を外しました` : '') +
