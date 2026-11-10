@@ -161,3 +161,61 @@ describe('内勤さんに渡す Excel', () => {
     expect(ini.getRow(3).getCell(ih.findIndex((h) => /^I /.test(h)) + 1).value).toBe('有（大）');
   });
 });
+
+describe('【再現】同じ番号の行が、別の場所の行として上に入った一覧表を読み込む', () => {
+  it('入力のある木は別の場所の行に当たらず、場所の合う行に結び付く（詳しい診断の記録・付箋も一緒）。書き込みもその行', async () => {
+    const { applyLedger } = await import('../src/store/state.js');
+    const { exportDb } = await import('../src/excel/dbExport.js');
+    const ExcelJS = (await import('exceljs')).default;
+    const buf = await makeLedger();
+    const parsed = await readLedger(buf, cfg);
+    const nk = (v) => String(v ?? '').normalize('NFKC');
+    let trees = mergeLedger([], parsed.rows, cfg).trees;
+    const mine = trees.find((t) => nk(t.treeNo) === 'AB002');
+    const filled = { ...mine, done: true, source: 'app', rev: 2, sent: true, height: '7', girths: ['0.4'], vigor: '良', initialNeeded: '要', date: '2099-05-06', inspector: '試験 二郎' };
+    let s = state(trees.map((t) => (t === mine ? filled : t)));
+    s = startInitial(s, filled, cfg).state;
+    const oldKey = simpleKey(filled, cfg);
+    s = { ...s, initials: s.initials.map((r) => ({ ...r, done: true, rev: 1, sent: true })), stickies: { st1: { id: 'st1', treeId: oldKey, text: '質問' } } };
+    // 内勤さんが、同じ番号 AB002 の行（別の公園・別の樹種・入力済み）をいちばん上に入れた
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    const ws = wb.getWorksheet('公園');
+    const first = 3; // 見出し・凡例の次
+    ws.insertRow(first, [9, 'K09', '別の架空公園', 'AB002', 'ベツノキ', new Date(Date.UTC(2099, 3, 7)), '試験 三郎', 5, 0.3, '', '', '並']);
+    const map = { height: 8 }; // H 列
+    const buf2 = await wb.xlsx.writeBuffer();
+    const parsed2 = await readLedger(buf2, cfg);
+    expect(parsed2.rows.filter((r) => nk(r.values.treeNo) === 'AB002').map((r) => r.values.parkName)).toEqual(['別の架空公園', '架空公園']);
+
+    const r = applyLedger(s, { ...parsed2, info: {} }, cfg);
+    expect(r.stats.rebound).toEqual(['AB002（架空公園）']);
+    expect(r.stats.placeMoved).toEqual([]);
+    const ab = r.state.trees.filter((t) => nk(t.treeNo) === 'AB002');
+    const other = ab.find((t) => t.parkName === '別の架空公園');
+    const kept = ab.find((t) => t.parkName === '架空公園');
+    expect(ab).toHaveLength(2);
+    expect(other).toMatchObject({ source: 'ledger', species: 'ベツノキ', dupIndex: 1 }); // 別の公園の行は台帳の内容
+    expect(other.height).not.toBe('7');
+    expect(kept).toMatchObject({ source: 'app', done: true, height: '7', vigor: '良', dupIndex: 1, rowDup: 2, uid: expect.stringMatching(/^mv-/) });
+    expect(kept.ledgerRow).toBeTruthy();
+    expect(initialOf(r.state, kept, cfg)).toMatchObject({ done: true, treeNo: 'AB002' });
+    // 元の鍵の記録は、中身のない未入力の記録として残る（サーバーに未入力に戻ったことを送る）
+    const left = initialOf(r.state, other, cfg);
+    expect(left).toMatchObject({ done: false, sent: false });
+    expect(left.species).toBeUndefined();
+    expect(r.state.stickies.st1.treeId).toBe(simpleKey(kept, cfg));
+    // もう一度読み込んでも変わらない
+    const again = applyLedger(r.state, { ...parsed2, info: {} }, cfg);
+    expect(again.stats.rebound).toEqual([]);
+    expect(again.state.trees.find((t) => t.id === kept.id)).toMatchObject({ height: '7', rowDup: 2 });
+    // 一覧表への書き込みは、場所の合う行（2本目）へ
+    const out = await exportDb(buf2, again.state.trees, cfg);
+    expect(out.errors).toEqual([]);
+    const wb2 = new ExcelJS.Workbook();
+    await wb2.xlsx.load(out.buffer);
+    const ws2 = wb2.getWorksheet(ws.name);
+    expect(String(ws2.getRow(kept.ledgerRow.row).getCell(map.height).value)).toBe('7');
+    expect(String(ws2.getRow(first).getCell(map.height).value)).not.toBe('7');
+  });
+});

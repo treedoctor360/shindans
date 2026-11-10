@@ -14,7 +14,7 @@ import { fill, num, toHalf } from '../core/text.js';
 import { composeTreat } from '../core/treat.js';
 import { isCheckKey, isLocked } from '../core/tree.js';
 import { cellValue, ymdOfCell } from './cell.js';
-import { columnMap } from './ledger.js';
+import { columnMap, rowDupOf } from './ledger.js';
 import { definedNamesXml, externalLinkParts, finishXlsx, restoreDefinedNames, restoreExternalLinks } from './xlsxFix.js';
 
 const half = (v) => toHalf(v).trim();
@@ -120,7 +120,7 @@ export async function exportDb(ledgerBuffer, trees, cfg, { appendAdded = false }
       // 台帳から読み込んだ木は「番号＋何本目か」の行。
       // 追加した木は、同じ番号で場所の名前も合う行（前に書き戻して足した行）。なければ末尾に足す
       //  （現地の番号札が、台帳では別の場所の木の番号だったとき、その行に書かないため）
-      let r = t.ledgerRow ? index.get(`${no}|${t.dupIndex || 1}`) : samePlaceRow(no, t);
+      let r = t.ledgerRow ? index.get(`${no}|${rowDupOf(t)}`) : samePlaceRow(no, t);
       const row = r ? ws.getRow(r) : null;
 
       if (row) {
@@ -157,7 +157,7 @@ export async function exportDb(ledgerBuffer, trees, cfg, { appendAdded = false }
           stats.gone.push(where);
           continue;
         }
-        if (t.source !== 'app' || t.dupIndex > 1 || t.ledgerRow) {
+        if (t.source !== 'app' || rowDupOf(t) > 1 || t.ledgerRow) {
           errors.push(
             `${ws.name} ${where}：読み込んだときにあった行が、一覧表に見つかりません${t.ledgerGone ? '（読み込み直した一覧表にこの番号がありません。番号が変わったか、行が消されています。一覧の検索で「すべての公園・路線」を選んで探せます）' : ''}`,
           );

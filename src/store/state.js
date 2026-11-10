@@ -7,7 +7,8 @@
 //  'ledger'   … 読み込んだ台帳 { name, date, buffer }（一覧表に書き戻すときの元ファイル）
 
 import { chooseConfig } from '../core/config.js';
-import { mergeLedger, readLedger } from '../excel/ledger.js';
+import { mergeLedger, readLedger, rowPlaces } from '../excel/ledger.js';
+import { detachMoved } from './actions.js';
 import { bookKey, filledIndex, readInitialBook } from '../excel/initialBook.js';
 import { readKarteTemplate } from '../excel/karteExport.js';
 import { idbGet, idbPut } from './idb.js';
@@ -145,7 +146,12 @@ export function applyLedger(state, parsed, cfg) {
     if (marks || (rec && !onlyDraft)) keepIds.add(t.id);
     else if (onlyDraft) draftOf.set(t.id, rec);
   }
+  // 同じ番号の行が別の場所に入って、行の当たり先が変わる木（入力・記録のある木）は、先に行から外す。
+  //  読み込みで「番号＋場所の名前」が合う行に結び付き直す（別の場所の行に入力が当たらない）
+  const det = detachMoved(state, cfg, rowPlaces(parsed.rows, cfg), keepIds);
+  state = det.state;
   const { trees, stats } = mergeLedger(state.trees, parsed.rows, cfg, { keepIds });
+  stats.rebound = det.moved;
   const left = new Set(trees.map((t) => t.id));
   const dropDrafts = [...draftOf].filter(([id]) => !left.has(id)).map(([, rec]) => rec);
   stats.draftsRemoved = dropDrafts.map((r) => String(r.treeNo || ''));
