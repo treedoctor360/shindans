@@ -2,6 +2,7 @@
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import { makeInitialBook } from '../test/helpers/makeInitialBook.js';
+import { makeKarteTemplate } from '../test/helpers/makeKarteTemplate.js';
 import { makeLedger } from '../test/helpers/makeLedger.js';
 
 const tmp = (name, bytes) => {
@@ -20,6 +21,8 @@ test('ブックに入力済みの木は、ブックの内容を表示だけす�
   await expect(page.locator('[data-testid=ledger-status] .ok')).toBeVisible();
   await page.setInputFiles('[data-testid=initial-book-file]', tmp('b-book.xlsx', await makeInitialBook({ withAB001: true })));
   await expect(page.locator('[data-testid=initial-book-status] .ok')).toBeVisible();
+  await page.setInputFiles('[data-testid=karte-template-file]', tmp('b-tpl.xlsx', await makeKarteTemplate()));
+  await expect(page.locator('[data-testid=karte-template-status] .ok')).toBeVisible();
 
   // AB001（台帳で「必要」）：ブックで入力済み
   await page.click('.tab:has-text("一覧")');
@@ -36,6 +39,16 @@ test('ブックに入力済みの木は、ブックの内容を表示だけす�
   await expect(page.locator('[data-testid=save-initial]')).toHaveCount(0);
   await page.click('[data-form=environment]');
   await expect(page.locator('[data-group=stake] [data-v="有"]')).toHaveAttribute('aria-pressed', 'true');
+
+  // ブックの内容も「カルテで見る」で確認用カルテの形で見られる（判定の欄は様式の式で出る）
+  await page.click('[data-form=initial]');
+  await page.click('[data-testid=karte-view-open]');
+  const kv = page.locator('[data-testid=karte-view]');
+  await expect(kv.locator('[data-testid=kv-table]')).toContainText('2本、地上5m');
+  await expect(kv.locator('[data-cell="7:3"]')).toHaveText('□無 ■有（大）');
+  await expect(kv.locator('[data-cell="7:4"]')).toHaveText('E');
+  await kv.locator('[data-testid=kv-close]').click();
+  await page.click('[data-form=environment]');
 
   // アプリで入力し直す → ブックの値が下書き。直して保存できる
   await page.click('[data-testid=book-copy]');

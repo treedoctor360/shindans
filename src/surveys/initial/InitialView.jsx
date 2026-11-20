@@ -10,6 +10,7 @@ import KarteView from '../../ui/KarteView.jsx';
 import {
   INITIAL_STATUS_LABEL,
   bookEntry,
+  bookKarteRecord,
   bookValues,
   detailKeyOf,
   discardInitial,
@@ -311,6 +312,7 @@ export default function InitialView({ state, update, config: cfg, toast, send, p
   const entry = tree && cfg?.initialSurvey ? bookEntry(state, tree, cfg) : null;
   const viewingBook = !!entry && (!appRec || showBook); // ブックの内容を表示している（表示だけ）
   const rec = viewingBook ? bookValues(entry, cfg) : appRec;
+  const karteRec = viewingBook ? bookKarteRecord(state, tree, cfg) : appRec; // カルテで見る記録
   // 開いたとき・簡易診断の寸法が変わったとき：詳しい診断で直していない項目を簡易診断の寸法に合わせる（事務の端末は見るだけ）
   const canSync = !!appRec && !!tree && state.user?.role !== 'office';
   useEffect(() => {
@@ -469,15 +471,15 @@ export default function InitialView({ state, update, config: cfg, toast, send, p
             ))}
           </div>
         )}
-        {/* 今の入力内容を確認用カルテの形で見る（ダウンロードしなくても確かめられる） */}
-        {cfg.initialSurvey.karte && appRec && !viewingBook && (
+        {/* 今の入力内容を確認用カルテの形で見る（ダウンロードしなくても確かめられる）。ブックの内容を出しているときはブックの内容で */}
+        {cfg.initialSurvey.karte && karteRec && (
           <div className="acts">
             <button type="button" className="btn" onClick={() => setShowKarte(true)} data-testid="karte-view-open">
               カルテで見る
             </button>
           </div>
         )}
-        {showKarte && <KarteView state={state} cfg={cfg} rec={appRec} form={form} onClose={() => setShowKarte(false)} />}
+        {showKarte && <KarteView state={state} cfg={cfg} rec={karteRec} form={form} onClose={() => setShowKarte(false)} />}
         {office && !viewingBook && <div className="readonly-note">表示のみ：事務の端末では入力内容を直せません。</div>}
         {entry && (
           <div className={`alert ${viewingBook ? 'info' : 'warn'}`} data-testid="book-note">

@@ -8,12 +8,15 @@ import { blankTree } from '../src/core/tree.js';
 import { importInitialBook, initialState, migrate } from '../src/store/state.js';
 import { measureLine, measureRecord, toMeasuresV2 } from '../src/core/noteMeasures.js';
 import { initialWarnings, simpleNotesStatus } from '../src/store/initial.js';
-import { bookEntry, bookValues, discardInitial, karteExtras, karteRecords, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial, measureStatus, syncMeasures, applyMeasures } from '../src/store/initial.js';
+import { bookEntry, bookKarteRecord, bookValues, discardInitial, karteExtras, karteRecords, fillNone, gradeWriteBack, initialOf, initialsForBook, withdrawInitial, initialStatus, initialTargets, inheritFrom, missingInitial, optionsOf, saveInitial, startInitial, updateInitial, measureStatus, syncMeasures, applyMeasures } from '../src/store/initial.js';
 import { addSticky, answerSticky, closeSticky, fieldLabel, reviewFields, reviewState, reviewStatesOf, setConfirm, treeKey } from '../src/store/review.js';
 import { applyPull, applyPush, outbox, pull, push } from '../src/store/sync.js';
 import { INITIAL, initialKey } from '../src/store/surveys.js';
 import { makeFakeGas } from './helpers/fakeGas.js';
 import { makeInitialBook } from './helpers/makeInitialBook.js';
+import { makeKarteTemplate } from './helpers/makeKarteTemplate.js';
+import { exportKarte } from '../src/excel/karteExport.js';
+import { bookView } from '../src/excel/sheetView.js';
 
 const cfg = structuredClone(cfgJson);
 const server = { url: 'https://example.invalid/exec', pass: 'ひみつ', deviceId: 'dev1', lastSeq: 0 };
@@ -367,6 +370,22 @@ describe('ブックに入力済みの木の中身', () => {
     expect(bookValues(e, cfg)).not.toHaveProperty('_row');
     expect(bookValues(e, cfg)).not.toHaveProperty('serial');
     expect(bookEntry(s, s.trees[1], cfg)).toBeNull();
+  });
+
+  it('ブックの行から、確認用カルテを作れる（記録は作らない）。判定の欄は様式の式で出る', async () => {
+    let s = S([need('AB001'), need('AB002')]);
+    s = (await importInitialBook(s, 'b.xlsx', await makeInitialBook({ withAB001: true }), cfg, '2099-05-06')).state;
+    const rec = bookKarteRecord(s, s.trees[0], cfg);
+    expect(rec).toMatchObject({ siteType: 'park', treeNo: 'AB001', dupIndex: 1, b4: '有（大）', b4Detail: '2本、地上5m', stake: '有' });
+    expect(bookKarteRecord(s, s.trees[1], cfg)).toBeNull();
+    expect(s.initials || []).toEqual([]);
+    const r = await exportKarte(await makeKarteTemplate(), karteRecords(s, [rec], cfg), cfg);
+    expect(r.errors).toEqual([]);
+    const [v] = await bookView(r.buffer);
+    const at = (addr) => v.rows.find((row) => row.key === Number(addr.slice(1))).cells.find((c) => c.key === `${addr.slice(1)}:${addr.charCodeAt(0) - 64}`).text;
+    expect(at('C7')).toBe('□無 ■有（大）');
+    expect(at('E7')).toBe('2本、地上5m');
+    expect(at('D7')).toBe('E'); // 様式の式（選んだ選択肢から判定）を計算して出す
   });
 
   it('「アプリで入力し直す」は、ブックの値を下書きにする（簡易からの引き継ぎより優先）', async () => {

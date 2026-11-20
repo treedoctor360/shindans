@@ -24,6 +24,8 @@ export async function makeKarteTemplate({ withFormulaTarget = false, title = '�
   a.getCell('E6').value = '□安全　□危険';
   a.getCell('A7').value = '枯れ枝';
   a.getCell('C7').value = '■無 □有';
+  // 選んだ選択肢から判定の文字を出す式（保存されている結果は様式のときの空欄）
+  a.getCell('D7').value = { formula: 'IF(C7="□無 ■有（小）","D",IF(C7="□無 ■有（大）","E",""))', result: '' };
   a.getCell('A8').value = '総合評価';
   a.getCell('A9').value = 'メモ欄';
   a.getCell('C9').value = '様式のまま残る文字';
