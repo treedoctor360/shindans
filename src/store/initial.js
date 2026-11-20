@@ -159,6 +159,18 @@ export function bookValues(entry, cfg) {
   return v;
 }
 
+// ブックに入力済みの行を、確認用カルテに出すための記録の形にする（なければ null）。見るだけで、端末の記録にはしない
+//  中身はブックの値。元の木を見分ける項目（シートの種類・何本目・uid）は木から写す（カルテに足す計算した値を、元の木から作るため）
+export function bookKarteRecord(state, tree, cfg) {
+  const v = bookValues(bookEntry(state, tree, cfg), cfg);
+  if (!v) return null;
+  const rec = { id: `book:${tree.id}` };
+  for (const k of ['species', ...cfg.dbFormat.infoKeys]) if (tree[k] !== undefined && tree[k] !== '') rec[k] = tree[k];
+  Object.assign(rec, v);
+  for (const k of ['siteType', 'treeNo', 'dupIndex', 'uid']) if (tree[k] !== undefined && tree[k] !== '') rec[k] = tree[k];
+  return rec;
+}
+
 // ---------- 簡易診断の寸法を、後から写す ----------
 //  記録を作ったときに写した寸法は、その後に簡易診断で足したり直したりしても写らない。
 //  そこで、写した時点の寸法の写し（measureSig）と今の寸法を比べ、変わった・まだ写していない弱点の項目を知らせる。

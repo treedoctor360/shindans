@@ -84,6 +84,7 @@ test('カルテの様式を読み込み、入力済みの詳しい診断を確�
   await expect(kv.locator('[data-testid=kv-table]')).toContainText('1本、地上5m');
   await expect(kv.locator('[data-testid=kv-table]')).toContainText('確認用（提出不可）');
   await expect(kv.locator('[data-cell="7:3"]')).toHaveText('□無 ■有（大）');
+  await expect(kv.locator('[data-cell="7:4"]')).toHaveText('E'); // 判定の欄（様式の式）を計算して出す
   await kv.locator('[data-kv-sheet="AB001_環境"]').click();
   await expect(kv.locator('[data-testid=kv-table]')).toContainText('支柱なし');
   await kv.locator('[data-testid=kv-close]').click();

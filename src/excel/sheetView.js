@@ -1,12 +1,15 @@
 // Excel のシートを、画面に表として出すための形にする（見るだけ。カルテを画面で確かめるとき）
 //  セルの結合・列の幅・行の高さ・罫線・文字の大きさ・太字・色・塗り・寄せ・折り返しを写す。
 //  図形・画像・条件付き書式は写さない。
+//  式は、入っている値から計算し直して出す（formula.js。計算できない形の式は保存されている結果）。
+//  セルの表示形式（例「#" 倍"」）は写さない
 //  返す形：{ name, width, cols: [幅 px…], rows: [{ height, cells: [{ text, rowSpan, colSpan, style }] }] }
 //  style は React の style（CSS の名前は camelCase）にそのまま使える形
 //  罫線は ExcelJS で読むと結合の中のセルの分が左上のセルの分で上書きされる（既知の落とし穴）ので、ファイルの XML から読む
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { sheetFiles } from './xlsxFix.js';
+import { resultText, sheetCalc } from './formula.js';
 
 const PX_PER_CHAR = 7; // 列の幅（文字数）→ px。標準の書体（11pt）の数字1文字の幅
 const colPx = (w) => Math.round((w ?? 8.43) * PX_PER_CHAR + 5);
@@ -124,6 +127,7 @@ const letters = (n) => {
 // シート1枚を表の形にする
 //  borders：番地ごとの罫線（Map。XML から読んだもの）。なければ ExcelJS の値を使う
 export function sheetView(ws, borders = null) {
+  const calc = sheetCalc(ws); // 式は、入っている値から計算し直す（保存されている結果は様式のときのままのため）
   const borderAt = (y, x) => (borders ? borders.get(`${letters(x)}${y}`) || {} : ws.getCell(y, x).border || {});
   const area = areaOf(ws);
   // 結合：左上のセル → 範囲。結合の中の左上以外のセルは出さない
@@ -170,7 +174,8 @@ export function sheetView(ws, borders = null) {
       if (left) st.borderLeft = left;
       if (bottom) st.borderBottom = bottom;
       if (right) st.borderRight = right;
-      cells.push({ key: `${y}:${x}`, text: textOf(cell), rowSpan, colSpan, style: st, at: colsShown.indexOf(x) });
+      const r = calc.resultOf(cell); // 計算できない式は undefined（保存されている結果を出す）
+      cells.push({ key: `${y}:${x}`, text: r === undefined ? textOf(cell) : resultText(r), rowSpan, colSpan, style: st, at: colsShown.indexOf(x) });
     }
     // 折り返さない文は、Excel と同じく右の空いたセルにはみ出して見せる（左寄せの文だけ。空いていないセルの手前まで）
     cells.forEach((c, i) => {
