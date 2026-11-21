@@ -2,11 +2,15 @@
 // 設定ファイル（業務ごとの選択肢・定型文・判定の基準など）は外から読み込むので、
 // 使う前に形を確かめる。不正なら使わず、前に使えていた設定で動かす。
 
+import { validateListSheet } from './listSheetConfig.js';
+import { blankTree } from './tree.js';
 import { RULE_TYPES } from './rules.js';
 import { validateDetailParts } from './detailParts.js';
 import { validateKarte } from './karteCells.js';
+import { simpleKarteKeys } from './simpleKarte.js';
 import { validateFromMeasures, validateNoteMeasures } from './noteMeasures.js';
 import { validateWording } from './wording.js';
+import { validateEntrySheet } from './entrySheet.js';
 
 // このアプリが読める設定の版。形式を変えたら上げる
 export const CONFIG_VERSION = 6; // 2: dbFormat（台帳の列）/ 3: 一覧表への書き戻し / 4: fieldSheet（野帳）/ 5: 入力画面の選択肢 / 6: initialSurvey（詳しい診断のデータ入力用ブック。省略可）
@@ -69,6 +73,7 @@ export function validateConfig(cfg) {
     cfg.details.forEach((d, i) => {
       need(isCond(d?.when) && isStr(d?.field) && isStr(d?.label), `details[${i}] の形が違います`);
       need(d?.numeric == null || typeof d.numeric === 'boolean', `details[${i}].numeric（数字のキーボード）は true か false にしてください`);
+      need(d?.noteText == null || (typeof d.noteText === 'string' && d.noteText.includes('{v}')), `details[${i}].noteText（一覧型の野帳の備考での書き方。例「H={v}m」）は {v} を含む文字にしてください`);
     });
 
   need(isObj(cfg.initial) && isStr(cfg.initial.label) && isStr(cfg.initial.yes) && isStr(cfg.initial.no), 'initial（初期診断の必要性）の形が違います');
@@ -138,8 +143,127 @@ export function validateConfig(cfg) {
   if (cfg.initialSurvey != null) validateInitialSurvey(cfg.initialSurvey, cfg, need);
   if (cfg.noteMeasures != null) validateNoteMeasures(cfg.noteMeasures, need); // 特記事項に足す寸法の1行（省略可）
   if (cfg.wording != null) validateWording(cfg.wording, need); // 表記の統一（省略可）
+  if (cfg.extraFields != null) validateExtraFields(cfg.extraFields, cfg, need); // 計測に足す欄（省略可）
+  // 点検項目の並びの指定（省略可）：place「measure」は計測の区切り（枝長の前）に出す、always は枯死の木でも選ぶ
+  if (isArr(cfg.checks))
+    cfg.checks.forEach((c) => {
+      need(c?.place == null || c.place === 'measure', `checks の ${c?.key} の place は "measure" だけ使えます`);
+      need(c?.always == null || typeof c.always === 'boolean', `checks の ${c?.key} の always は true か false にしてください`);
+      // none：「すべて無にする」でこの項目に入れる値（省略時は noneValue か「無」）
+      need(c?.none == null || (typeof c.none === 'string' && (cfg.options?.[c?.key] || []).includes(c.none)), `checks の ${c?.key} の none は、その項目の選択肢の値にしてください`);
+      // measure：この項目の下に出す部位・寸法（noteMeasures の種類）と、入れられる値（eq。例「有」）
+      if (c?.measure != null) {
+        const kinds = (cfg.noteMeasures?.kinds || []).map((k) => k?.key);
+        const m = c.measure;
+        need(
+          m && isArr(m.kinds) && m.kinds.length > 0 && m.kinds.every((k) => kinds.includes(k)) && (typeof m.eq === 'string' || (isArr(m.eq) && m.eq.length > 0)),
+          `checks の ${c?.key} の measure は { kinds: [noteMeasures の種類…], eq: 値 か [値…] } にしてください`,
+        );
+      }
+    });
+  // 詳しい診断の要否を、点検項目の並びの中（その項目の次）に出す（省略可）
+  need(cfg.initial?.fillNone == null || typeof cfg.initial.fillNone === 'boolean', 'initial.fillNone（「すべて無にする」で要否も「不」にする）は true か false にしてください');
+  if (cfg.initial?.afterCheck != null)
+    need(isArr(cfg.checks) && cfg.checks.some((c) => c?.key === cfg.initial.afterCheck && c.place !== 'measure'), 'initial.afterCheck は、計測の区切りに出さない点検項目のキーにしてください');
+  if (cfg.numbering != null) validateNumbering(cfg.numbering, need); // 追加した木に番号を順に振る（省略可）
+  if (cfg.listSheet != null) validateListSheet(cfg.listSheet, cfg, need); // 一覧型の野帳（省略可）
+  // 伐採済み（省略可）：{ label?: ボタンの文字 }
+  if (cfg.felled != null) need(cfg.felled && typeof cfg.felled === 'object' && !Array.isArray(cfg.felled) && (cfg.felled.label == null || typeof cfg.felled.label === 'string'), 'felled（伐採済み）は { label?: ボタンの文字 } にしてください');
+  // 簡易診断のカルテ（1本1シート。提出用。省略可）。形は initialSurvey.karte と同じで、form は simple
+  if (cfg.karte != null) {
+    const siteTypes = isObj(cfg.dbFormat) && isArr(cfg.dbFormat.sheets) ? cfg.dbFormat.sheets.map((x) => x?.type) : [];
+    validateKarte(cfg.karte, () => simpleKarteKeys(cfg), siteTypes, need, 'karte', ['simple']);
+    need(cfg.karte?.measureLine == null || (typeof cfg.karte.measureLine === 'string' && cfg.karte.measureLine.includes('{text}')), 'karte.measureLine は {text} を含む文字にしてください');
+    for (const k of ['checkJoin', 'notesJoin']) need(cfg.karte?.[k] == null || typeof cfg.karte[k] === 'string', `karte.${k}（つなぎの文字）は文字にしてください`);
+    // 確定していない木もカルテに出す（確認の流れを使わない業務。省略可）
+    need(cfg.karte?.unconfirmedOk == null || typeof cfg.karte.unconfirmedOk === 'boolean', 'karte.unconfirmedOk は true か false にしてください');
+    // カルテに貼る写真の枠（省略可）：{ slots: [{ key, label, range, caption? }], pad?, charPx?, maxPx?, numberLabel? }
+    if (cfg.karte?.photos != null) validateKartePhotos(cfg.karte.photos, need);
+  }
+  // まとまりを名前のほかの項目でも分ける（省略可。例 路線番号・区域）
+  if (isArr(cfg.dbFormat?.sheets))
+    cfg.dbFormat.sheets.forEach((sh) => {
+      if (sh?.identifyAlso == null) return;
+      const keys = isArr(cfg.dbFormat.infoKeys) ? cfg.dbFormat.infoKeys : [];
+      need(isArr(sh.identifyAlso) && sh.identifyAlso.every((k) => keys.includes(k) && k !== sh.identify), `dbFormat.sheets の ${sh.type} の identifyAlso は、名前の項目以外の dbFormat.infoKeys の項目の一覧にしてください`);
+    });
+  if (cfg.addGroups != null) validateAddGroups(cfg.addGroups, cfg, need); // まとまり（公園・路線）を現地で足す（省略可）
+  if (cfg.entrySheet != null) validateEntrySheet(cfg.entrySheet, cfg, need); // 入力表（Excel。1本1行）の読み込み（省略可）
 
   return { ok: e.length === 0, errors: e };
+}
+
+// カルテに貼る写真の枠（karte.photos）
+//  slots：[{ key, label, range（枠のセルの範囲 "Q4:V16"）, caption?（見出しを書く記録の項目の番号 1〜）, full?（全景の枠。縦の写真を自動で入れる） }]
+function validateKartePhotos(p, need) {
+  if (!need(isObj(p) && isArr(p.slots) && p.slots.length > 0, 'karte.photos は { slots: [{ key, label, range }] } の形にしてください')) return;
+  const keys = new Set();
+  p.slots.forEach((s, i) => {
+    const at = `karte.photos.slots[${i}]`;
+    if (!need(isObj(s) && isStr(s.key) && isStr(s.label) && /^[A-Z]+\d+(:[A-Z]+\d+)?$/.test(s.range || ''), `${at} は { key, label, range（例 "Q4:V16"） } の形にしてください`)) return;
+    need(!keys.has(s.key), `${at}.key が重複しています`);
+    keys.add(s.key);
+    need(s.caption == null || (Number.isInteger(s.caption) && s.caption >= 1 && s.caption <= 9), `${at}.caption（見出しの番号）は 1〜9 の整数にしてください`);
+    need(s.full == null || typeof s.full === 'boolean', `${at}.full は true か false にしてください`);
+  });
+  need(p.slots.filter((s) => s?.full).length <= 1, 'karte.photos.slots の full（全景の枠）は1つだけにしてください');
+  for (const k of ['pad', 'charPx', 'maxPx']) need(p[k] == null || (typeof p[k] === 'number' && p[k] >= 0), `karte.photos.${k} は 0 以上の数にしてください`);
+  need(p.captions == null || (isArr(p.captions) && p.captions.every(isStr)), 'karte.photos.captions（見出しの候補）は文字の一覧にしてください');
+}
+
+// 計測に足す欄（例 枝張り・枝下高）。木の記録に、その key の名前で値を持つ
+//  木の記録がもともと使っている名前（番号・樹高など）・点検項目・追加で入れる項目と同じ key は使えない
+function validateExtraFields(list, cfg, need) {
+  if (!need(isArr(list) && list.every((f) => isStr(f?.key) && isStr(f?.label)), 'extraFields は [{ key, label }] の一覧にしてください')) return;
+  const taken = new Set([
+    ...Object.keys(blankTree()),
+    ...['siteType', 'area', 'uid', 'after', 'deleted', 'sent', 'updatedAt', 'rev', 'measures', 'measuresV', 'ledgerRow', 'ledgerGone', 'rowDup'],
+    'felled', // 伐採済み（felled）
+    ...(isArr(cfg.checks) ? cfg.checks.map((c) => c?.key) : []),
+    ...(isArr(cfg.details) ? cfg.details.map((d) => d?.field) : []),
+    ...(isArr(cfg.dbFormat?.infoKeys) ? cfg.dbFormat.infoKeys : []), // 台帳から写す場所の情報
+  ]);
+  const seen = new Set();
+  list.forEach((f) => {
+    need(/^[A-Za-z][A-Za-z0-9]*$/.test(f.key), `extraFields の key「${f.key}」は英字で始まる英数字にしてください`);
+    need(!taken.has(f.key), `extraFields の key「${f.key}」は、ほかの項目が使っている名前です`);
+    need(!seen.has(f.key), `extraFields の key「${f.key}」が重なっています`);
+    need(f.newRow == null || typeof f.newRow === 'boolean', `extraFields の ${f.key} の newRow（新しい行から始める）は true か false にしてください`);
+    seen.add(f.key);
+    need(f.unit == null || typeof f.unit === 'string', `extraFields の ${f.key} の unit（単位）は文字にしてください`);
+  });
+}
+
+// 追加した木の番号（まとまりごとに start から順に）と、前の木から写す項目
+function validateNumbering(n, need) {
+  if (!need(isObj(n), 'numbering（追加した木の番号）の形が違います')) return;
+  need(n.start == null || (Number.isInteger(n.start) && n.start >= 0), 'numbering.start（最初の番号）は 0 以上の整数にしてください');
+  need(n.carry == null || (isArr(n.carry) && n.carry.every(isStr)), 'numbering.carry（前の木から写す項目）は項目の名前の一覧にしてください');
+}
+
+// まとまりを現地で足すときの入力欄
+function validateAddGroups(a, cfg, need) {
+  if (!need(isObj(a), 'addGroups（まとまりを足す）の形が違います')) return;
+  const sheet = isArr(cfg.dbFormat?.sheets) ? cfg.dbFormat.sheets.find((x) => x?.type === a.siteType) : null;
+  if (!need(!!sheet, 'addGroups.siteType は dbFormat.sheets の type のどれかにしてください')) return;
+  need(a.label == null || isStr(a.label), 'addGroups.label（まとまりの呼び名。例「路線」）は文字にしてください');
+  if (!need(isArr(a.fields) && a.fields.length > 0 && a.fields.every((f) => isStr(f?.key) && isStr(f?.label)), 'addGroups.fields は [{ key, label }] の一覧にしてください')) return;
+  need(a.fields.some((f) => f.key === sheet.identify), `addGroups.fields に、まとまりの名前の項目（${sheet.identify}）が必要です`);
+  const known = [sheet.identify, sheet.code, ...(isArr(cfg.dbFormat.infoKeys) ? cfg.dbFormat.infoKeys : [])];
+  a.fields.forEach((f) => need(known.includes(f.key), `addGroups.fields の ${f.key} は、dbFormat.infoKeys にある項目にしてください`));
+  // 一覧から選ぶまとまり（省略可）：[{ label, values: { fields の key: 値 }, tree?: { species }, count? }]
+  if (a.presets != null) {
+    const keys = a.fields.map((f) => f.key);
+    if (!need(isArr(a.presets), 'addGroups.presets（一覧から選ぶまとまり）は一覧にしてください')) return;
+    a.presets.forEach((p, i) => {
+      need(isObj(p) && isStr(p.label) && isObj(p.values), `addGroups.presets[${i}] は { label, values } にしてください`);
+      if (!isObj(p?.values)) return;
+      Object.keys(p.values).forEach((k) => need(keys.includes(k) && typeof p.values[k] === 'string', `addGroups.presets[${i}].values の ${k} は、addGroups.fields の項目の文字にしてください`));
+      need(isStr(p.values[sheet.identify]), `addGroups.presets[${i}].values に、まとまりの名前（${sheet.identify}）が必要です`);
+      need(p.tree == null || (isObj(p.tree) && Object.keys(p.tree).every((k) => k === 'species' && typeof p.tree[k] === 'string')), `addGroups.presets[${i}].tree は { species } だけ書けます`);
+      need(p.count == null || (Number.isInteger(p.count) && p.count >= 0), `addGroups.presets[${i}].count（本数）は 0 以上の整数にしてください`);
+    });
+  }
 }
 
 // 台帳・一覧表の書式（見出しの探し方など）
@@ -414,7 +538,9 @@ function validateScreen(cfg, need) {
   const o = cfg.options;
   if (!need(isObj(o), 'options（選択肢）がありません')) return;
   const keys = ['vigor', 'initialNeeded', 'grade', ...(isArr(cfg.checks) ? cfg.checks.map((c) => c?.key) : [])];
-  for (const k of keys) need(isArr(o[k]) && o[k].length > 0 && o[k].every((v) => typeof v === 'string'), `options.${k}（選択肢の一覧）がありません`);
+  // noGrade（健全度を現場で付けない業務）のときは、options.grade は空の一覧でよい
+  for (const k of keys) need(isArr(o[k]) && (o[k].length > 0 || (k === 'grade' && cfg.noGrade === true)) && o[k].every((v) => typeof v === 'string'), `options.${k}（選択肢の一覧）がありません`);
+  need(cfg.noGrade == null || typeof cfg.noGrade === 'boolean', 'noGrade は true か false にしてください');
   if (isArr(o.vigor)) need(o.vigor.includes(cfg.deadVigor), 'options.vigor に deadVigor の値が入っていません');
   if (isArr(o.initialNeeded) && isObj(cfg.initial)) need(o.initialNeeded.includes(cfg.initial.yes) && o.initialNeeded.includes(cfg.initial.no), 'options.initialNeeded に initial.yes・no の値が必要です');
   if (cfg.statusOptions != null)

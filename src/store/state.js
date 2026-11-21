@@ -12,6 +12,7 @@ import { detachMoved } from './actions.js';
 import { bookKey, filledIndex, readInitialBook } from '../excel/initialBook.js';
 import { readKarteTemplate } from '../excel/karteExport.js';
 import { idbGet, idbPut } from './idb.js';
+import { openCurrentWorkspace } from './workspace.js';
 import { placeAdded } from './order.js';
 import { initialOf } from './initial.js';
 import { simpleKey } from './surveys.js';
@@ -94,7 +95,9 @@ export function migrate(s) {
 }
 
 // 端末から読み込む
+//  先に、使う業務（置き場所）を決める（src/store/workspace.js）
 export async function loadAll() {
+  await openCurrentWorkspace();
   const [state, config] = await Promise.all([idbGet('state'), idbGet('config')]);
   return { state: migrate(state), config: config ?? null };
 }
@@ -103,7 +106,8 @@ export const saveState = (state) => idbPut('state', state);
 
 // 設定ファイル（JSON の文字）を読み込む。不正なら保存せず、前の設定のまま
 // 返す形：{ config, errors }
-export async function loadConfigText(text, previous) {
+//  save: false なら確かめるだけで保存しない（別の業務として使うか聞いてから保存するため）
+export async function loadConfigText(text, previous, { save = true } = {}) {
   let parsed;
   try {
     parsed = JSON.parse(text);
@@ -111,7 +115,7 @@ export async function loadConfigText(text, previous) {
     return { config: previous, errors: ['JSON として読めません（ファイルが壊れているか、設定ファイルではありません）'] };
   }
   const r = chooseConfig(parsed, previous);
-  if (!r.errors.length) await idbPut('config', r.config);
+  if (!r.errors.length && save) await idbPut('config', r.config);
   return r;
 }
 
@@ -180,11 +184,15 @@ export const loadInitialBookFile = () => idbGet('initialBook');
 
 // 確認用カルテの様式（カルテの空の様式が入ったブック）を読み込む。この端末にだけ置く（サーバーには置かない）
 //  返す形：状態に入れる情報 { name, date, sheets: [見つかったシート名…], errors: [...] }
+//  errorsOf：カルテの設定ごとの誤り（簡易診断の karte・詳しい診断の initial）。片方の様式がなくても、もう片方は作れる
 export async function readKarteTemplateFile(name, buffer, cfg, today) {
   const r = await readKarteTemplate(buffer.slice(0), cfg);
   if (!r.sheets.length) throw new Error('設定にあるカルテの様式のシートが見つかりませんでした。カルテの様式が入ったブックを選んでください');
+  const errorsOf = {};
+  if (cfg.karte) errorsOf.karte = (await readKarteTemplate(buffer.slice(0), cfg, cfg.karte)).errors;
+  if (cfg.initialSurvey?.karte) errorsOf.initial = (await readKarteTemplate(buffer.slice(0), cfg, cfg.initialSurvey.karte)).errors;
   await idbPut('karteTemplate', { name, date: today, buffer });
-  return { name, date: today, sheets: r.sheets.map((s) => s.name), errors: r.errors };
+  return { name, date: today, sheets: r.sheets.map((s) => s.name), errors: r.errors, errorsOf };
 }
 export const loadKarteTemplateFile = () => idbGet('karteTemplate');
 

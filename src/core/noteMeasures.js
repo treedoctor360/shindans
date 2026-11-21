@@ -10,7 +10,7 @@
 //              photo：その1行があるときに撮る弱点写真の名前（{place} で部位を入れられる）。fullOnly：true なら全景だけ要る
 //              db：その1行があるときに一覧表用の特記に入れる言い回し（{place} で部位。notes.js の autoDbNote）
 //   line   … 1行の形（省略時「{place}の{kind}：{text}」）
-// 作った1行は特記事項（野帳）に足すだけで、ほかの項目は変えない。足した後は手で直せる。
+// 作った1行は特記事項（野帳）に足すだけで、ほかの項目は変えない。足した後は、出す文を手で直せる（記録の text。数字は残す）。
 // 足した1行の元の数字は木の measures に残し、詳しい診断の記録を作るときに弱点の詳細へ写す
 // （設定 initialSurvey.fromMeasures。measuresToInitial）。
 
@@ -66,15 +66,20 @@ export function activeMeasures(tree) {
 export function measuresWithLines(tree, cfg) {
   const ms = activeMeasures(tree);
   if (!isMeasuresV2(tree)) return ms;
-  const one = (m) => ({ ...m, line: measureLine(cfg, m.kind, m.place, m.values) });
+  const one = (m) => ({ ...m, line: noteLineOf(cfg, m) });
   if (!cfg.noteMeasures?.merge) return ms.map(one).filter((m) => m.line);
   const groups = new Map();
+  const out = [];
   for (const m of ms) {
+    // 手で直した文の寸法は、まとめずにその文のまま1行にする
+    if (manualTextOf(m)) {
+      out.push(one(m));
+      continue;
+    }
     const k = `${m.kind}|${m.place || ''}`;
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(m);
   }
-  const out = [];
   for (const g of groups.values()) {
     const kind = kindOf(g[0].kind, cfg);
     const texts = g.map((m) => measureText(cfg, m.kind, m.values)).filter(Boolean);
@@ -133,6 +138,9 @@ export function toMeasuresV2(tree, cfg) {
 export const putMeasure = (tree, cfg, rec, i = -1) => {
   const t = toMeasuresV2(tree, cfg);
   const m = { kind: rec.kind, place: rec.place || '', values: rec.values };
+  // 手で直した文（rec.text）を渡されたら残す。そのときの「数字から作った文」も一緒に覚える
+  const text = manualTextOf(rec);
+  if (text) Object.assign(m, { text, textAuto: autoWording(cfg, m) });
   const ms = [...t.measures];
   if (i >= 0 && i < ms.length) ms[i] = m;
   else ms.push(m);
@@ -173,15 +181,86 @@ export function measureLine(cfg, kindKey, place, values) {
   if (!kind) return '';
   const needPlace = measurePlaces(kindKey, cfg).length > 0;
   if (needPlace && !place) return '';
+  if (kind.sentence) return sentenceOf(cfg, kind, needPlace ? place : '', values);
   const text = measureText(cfg, kindKey, values);
   if (!text) return '';
   return lineOf(cfg, kind, needPlace ? place : '', text);
 }
 
+// 出す部位（設定 noteMeasures.hidePlaces の部位は書かない。例 幹は書かず、幹以外のときだけ部位を書く）
+export const shownPlace = (cfg, place) => ((cfg.noteMeasures?.hidePlaces || []).includes(place) ? '' : place || '');
+
+// 種類の sentence（文の形）から特記事項の1文を作る
+//  {place}（部位）と {欄の名前}（その欄の文。例 {height} →「H=1.1m」）を入れる。[ ] で囲んだところは、中の {…} が
+//  どれか空なら丸ごと省く。例「[{height}で][{size}の]樹皮枯死欠損が見られる。」→「H=1.1mで35×5cmの樹皮枯死欠損が見られる。」
+export function sentenceOf(cfg, kind, place, values) {
+  const parts = measureParts(kind.key, cfg);
+  const textOf = (name) => {
+    if (name === 'place') return shownPlace(cfg, place);
+    if (name === 'kind') return kind.label;
+    const p = parts.find((x) => x.name === name);
+    return p ? buildText(values, [p], '') : '';
+  };
+  const fill = (str) => str.replace(/\{(\w+)\}/g, (_, n) => textOf(n));
+  const out = kind.sentence.replace(/\[([^\]]*)\]/g, (_, seg) => {
+    const names = [...seg.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+    return names.every((n) => textOf(n)) ? fill(seg) : '';
+  });
+  return fill(out).trim();
+}
+
 // 数字の部分だけの文（例「H0～0.4m、40×20cm」）
-const measureText = (cfg, kindKey, values) => buildText(values, measureParts(kindKey, cfg), cfg.noteMeasures?.join ?? '、');
+export const measureText = (cfg, kindKey, values) => buildText(values, measureParts(kindKey, cfg), cfg.noteMeasures?.join ?? '、');
 const lineOf = (cfg, kind, place, text) =>
-  (kind.line || cfg.noteMeasures.line || '{place}の{kind}：{text}').replace('{place}', place).replace('{kind}', kind.label).replace('{text}', text);
+  (kind.line || cfg.noteMeasures.line || '{place}の{kind}：{text}').replace('{place}', shownPlace(cfg, place)).replace('{kind}', kind.label).replace('{text}', text);
+
+// ---------- 手で直した文 ----------
+//  寸法の記録の text：数字から作った文（部位と寸法の部分。文の形（sentence）の種類は1文まるごと）を、人が書き換えたもの。
+//  text があれば、野帳・カルテ・一覧にはその文を出す（数字は消さず、詳しい診断への引き継ぎなどに今までどおり使う）。
+//  textAuto：書き換えたときに数字から作られていた文。後で数字を直したときに、文を作り直すかを聞くために覚える
+export const manualTextOf = (m) => String(m?.text ?? '').trim();
+
+// 数字から作る文（手で直す前の形）。文の形の種類は1文まるごと、ほかは「部位と寸法」（カルテの点検項目の欄に書く形）
+//  種類・（部位を選ぶ種類なら）部位が選ばれていない、または数字が何もなければ空
+export function autoWording(cfg, m) {
+  const kind = kindOf(m?.kind, cfg);
+  if (!kind) return '';
+  const needPlace = measurePlaces(m.kind, cfg).length > 0;
+  if (needPlace && !m.place) return '';
+  if (kind.sentence) return sentenceOf(cfg, kind, needPlace ? m.place : '', m.values);
+  const text = measureText(cfg, m.kind, m.values);
+  if (!text) return '';
+  return (cfg.karte?.measureLine ?? '{text} {place}')
+    .replace('{text}', text)
+    .replace('{place}', needPlace ? shownPlace(cfg, m.place) : '')
+    .replace('{kind}', kind.label)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// 出す文（手で直した文があればそれ、なければ数字から作る文）
+export const wordingOf = (cfg, m) => manualTextOf(m) || autoWording(cfg, m);
+
+// 野帳などに出す1行。手で直した文は、文の形の種類ならそのまま、ほかは「種類：文」（部位は文の中に書いてある）
+export function noteLineOf(cfg, m) {
+  const text = manualTextOf(m);
+  if (!text) return measureLine(cfg, m.kind, m.place, m.values);
+  const kind = kindOf(m.kind, cfg);
+  if (!kind) return '';
+  return kind.sentence ? text : `${kind.label}：${text}`;
+}
+
+// 出す文を手で直す（i：記録の番号）。空にするか、数字から作る文と同じにすると、手で直した印を外す（数字から作る文に戻る）
+export function setMeasureText(tree, cfg, i, text) {
+  const t = toMeasuresV2(tree, cfg);
+  const m = t.measures[i];
+  if (!m) return t;
+  const { text: _old, textAuto: _oldAuto, ...rest } = m;
+  const auto = autoWording(cfg, rest);
+  const v = String(text ?? '').replace(/\s+/g, ' ').trim();
+  const next = !v || v === auto ? rest : { ...rest, text: v, textAuto: auto };
+  return { ...t, measures: t.measures.map((x, j) => (j === i ? next : x)) };
+}
 
 // 丸数字（①〜⑳。それより多ければ「(21)」）
 const circled = (i) => (i < 20 ? String.fromCharCode(0x2460 + i) : `(${i + 1})`);
@@ -266,6 +345,7 @@ export function validateNoteMeasures(m, need) {
   need(m.line == null || (isStr(m.line) && m.line.includes('{text}')), 'noteMeasures.line は {text} を含む文字にしてください');
   need(m.join == null || typeof m.join === 'string', 'noteMeasures.join は文字にしてください');
   need(m.merge == null || typeof m.merge === 'boolean', 'noteMeasures.merge は true か false にしてください');
+  need(m.hidePlaces == null || (Array.isArray(m.hidePlaces) && m.hidePlaces.every(isStr)), 'noteMeasures.hidePlaces（書かない部位）は部位の文字の並びにしてください');
   const okDefs = validatePartDefs(m.parts, 'noteMeasures.parts', need);
   if (!need(Array.isArray(m.kinds) && m.kinds.length > 0, 'noteMeasures.kinds（寸法の種類）がありません')) return;
   const keys = new Set();
@@ -277,6 +357,10 @@ export function validateNoteMeasures(m, need) {
     if (okDefs) need(k.parts.every((n) => m.parts[n]), `${at}.parts に、noteMeasures.parts にない欄があります`);
     need(k.places == null || (Array.isArray(k.places) && k.places.every(isStr)), `${at}.places は部位の文字の並び（部位を選ばないなら []）にしてください`);
     need(k.line == null || (isStr(k.line) && k.line.includes('{text}')), `${at}.line は {text} を含む文字にしてください`);
+    need(
+      k.sentence == null || (isStr(k.sentence) && [...k.sentence.matchAll(/\{(\w+)\}/g)].every((x) => ['place', 'kind'].includes(x[1]) || k.parts.includes(x[1]))),
+      `${at}.sentence は文の形（{place}・{kind}・その種類の欄の名前を {…} で入れる。[ ] は中が空なら省く）にしてください`,
+    );
     need(k.photo == null || isStr(k.photo), `${at}.photo は写真の名前（文字）にしてください`);
     need(k.fullOnly == null || typeof k.fullOnly === 'boolean', `${at}.fullOnly は true か false にしてください`);
     need(k.db == null || isStr(k.db), `${at}.db は一覧表用の言い回し（文字）にしてください`);

@@ -9,22 +9,24 @@ import { fixWording, wordingIssues } from './wording.js';
 import { photoPlan } from './photo.js';
 import { fill, monthDay, num, toHalf } from './text.js';
 import { composeTreat } from './treat.js';
-import { isDead, isLocked, matches } from './tree.js';
+import { isDead, isFelled, isLocked, matches } from './tree.js';
 
 // ---------- 入力漏れ ----------
 export function missingFields(tree, cfg) {
   const m = [];
   if (!toHalf(tree.treeNo).trim()) m.push('樹木番号');
   if (!tree.species) m.push('樹種');
+  if (isFelled(tree, cfg)) return m; // 伐採済みの木：番号と樹種のほかは聞かない
   if (!num(tree.height)) m.push('樹高');
   if (!girthOf(tree, cfg)) m.push('幹周');
   if (!tree.vigor) m.push(cfg.vigorLabel);
-  if (!isLocked(tree, cfg)) cfg.checks.forEach((c) => !tree[c.key] && m.push(c.label));
+  const locked = isLocked(tree, cfg);
+  cfg.checks.forEach((c) => (!locked || c.always) && !tree[c.key] && m.push(c.label)); // 枯死の木は always の項目だけ聞く
   cfg.details.forEach((d) => {
     if (d.required && matches(tree, d.when, cfg) && !String(tree[d.field] ?? '').trim()) m.push(d.label);
   });
   if (!tree.initialNeeded) m.push(cfg.initial.label);
-  if (tree.initialNeeded === cfg.initial.no && !tree.grade) m.push(cfg.gradeLabel);
+  if (!cfg.noGrade && tree.initialNeeded === cfg.initial.no && !tree.grade) m.push(cfg.gradeLabel); // noGrade：健全度を現場で付けない業務では聞かない
   const treat = composeTreat(tree, cfg);
   cfg.rules
     .filter((r) => r.type === 'treatRequires' && new RegExp(r.pattern).test(treat) && !tree[r.field])
