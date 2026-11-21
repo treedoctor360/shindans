@@ -1,17 +1,20 @@
 // 入力画面：1本ずつ、紙の野帳と同じ順に入力する
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { branchRatioRaw, branchRatioText, girthOf, heightRatioOf } from '../core/calc.js';
 import { groupLabel, treesOfGroup } from '../core/groups.js';
 import { dbNoteOf, freeNoteLines, isChipLine, noteLines, toggleChip } from '../core/notes.js';
 import { freeNotesOf, toMeasuresV2 } from '../core/noteMeasures.js';
+import { entryIssues } from '../core/entrySheet.js';
 import NoteMeasures from './NoteMeasures.jsx';
+import KarteView from './KarteView.jsx';
+import MoveBox from './MoveBox.jsx';
 import SessionStamp from './SessionStamp.jsx';
 import { photoFlag, photoPlan } from '../core/photo.js';
 import { alertsOf, missingFields } from '../core/rules.js';
 import { num, toHalf } from '../core/text.js';
 import { simpleKey } from '../store/surveys.js';
 import { composeTreat } from '../core/treat.js';
-import { isDead, isLocked } from '../core/tree.js';
+import { isDead, isFelled, isLocked } from '../core/tree.js';
 import {
   addTree,
   deleteTree,
@@ -19,6 +22,7 @@ import {
   renumberToAdded,
   setAddedPlace,
   fillChecksNone,
+  checksNoneLabel,
   isAddedTree,
   normalizeField,
   pressAlertAction,
@@ -127,6 +131,16 @@ function InitialBlock({ t, state, cfg, openInitial }) {
   );
 }
 
+// 足した計測の欄を2つずつの並びにする。newRow の欄の前で行が半端なら空き（null）を入れる
+export function extraCells(fields) {
+  const out = [];
+  for (const f of fields) {
+    if (f.newRow && out.length % 2 === 1) out.push(null);
+    out.push(f);
+  }
+  return out;
+}
+
 export default function FormView({ state, update, config: cfg, toast, send }) {
   const [showAllChips, setShowAllChips] = useState(false);
   const [missingAsk, setMissingAsk] = useState(null); // 保存しようとしたときの未入力の一覧
@@ -136,6 +150,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const [renum, setRenum] = useState(null); // 「現地の番号に変える」の入力中：{ no, drop: [特記から消す行] }
   const [askGirth, setAskGirth] = useState(''); // 値の入った幹周を減らすか確かめ中の木の id
   const [askAfter, setAskAfter] = useState('next'); // 未入力を確かめ中の保存の行き先
+  const [showKarte, setShowKarte] = useState(false); // カルテで見る（簡易診断のカルテ。設定 karte）
 
   if (!cfg || !state.trees.length) {
     return (
@@ -176,6 +191,10 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const readOnly = t.source === 'ledger' || officeView || !!t.deleted;
   const surveyor = (state.user?.role || 'surveyor') !== 'office';
   const locked = isLocked(t, cfg);
+  const felled = isFelled(t, cfg); // 伐採済み（点検項目・要否・樹勢を止める）
+  // 点検項目の並び（設定 checks の place・initial.afterCheck で野帳の並びに合わせる）
+  const measureChecks = cfg.checks.filter((c) => c.place === 'measure');
+  const mainChecks = cfg.checks.filter((c) => c.place !== 'measure');
   // 入力済みの木を直したら、送り直しの印を付ける
   const change = (fn, opt) => update((s) => updateTree({ ...s, currentId: t.id, group }, t.id, (x) => touched(fn(x))), opt);
   const setField = (k, v) => change((x) => ({ ...x, [k]: v, ...(k === 'dbNote' ? { dbNoteManual: true } : {}) }));
@@ -282,6 +301,84 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
   const gradeLocked = t.initialNeeded === cfg.initial.yes;
   const missing = readOnly ? [] : missingFields(t, cfg);
   const isOn = (k, v) => t[k] === v;
+
+  // 点検項目1つ（選択肢と、「有」のとき追加で入れる項目）。枯死の木では原則選べない（always の項目は選べる）
+  const checkRow = (c) => {
+    const details = cfg.details.filter((d) => d.when.field === c.key);
+    return (
+      <fieldset key={c.key} disabled={(locked && !c.always) || felled}>
+        <div className="check">
+          <span className="lbl">{c.label}</span>
+          <Seg field={c.key} opts={cfg.options[c.key]} value={t[c.key]} onPress={press} />
+        </div>
+        {details
+          .filter((d) => isOn(c.key, d.when.eq))
+          .map((d) => (
+            <div className="row" key={d.field} style={{ padding: '6px 0' }}>
+              <label className="lbl" htmlFor={`f-${d.field}`}>
+                {d.label}
+              </label>
+              {d.chips && (
+                <div className="chips">
+                  {d.chips.map((w) => (
+                    <button
+                      key={w}
+                      type="button"
+                      className={`chip${strongWords.includes(w) ? ' strong' : ''}${t[d.field] === w ? ' on' : ''}`}
+                      onClick={() => change((x) => ({ ...x, [d.field]: x[d.field] === w ? '' : w }))}
+                    >
+                      {w}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <input
+                type="text"
+                inputMode={d.numeric ? 'numeric' : undefined} // 数の欄（例：枯れ枝の本数）は数字のキーボードを出す
+                id={`f-${d.field}`}
+                className="num"
+                value={t[d.field] || ''}
+                onChange={(e) => setField(d.field, e.target.value)}
+                onBlur={() => blurField(d.field)}
+              />
+            </div>
+          ))}
+        {c.measure && (
+          // 部位・寸法（checks の measure。特記事項の寸法と同じ入れ方を、この項目の種類だけで出す）
+          <NoteMeasures cfg={cfg} tree={t} onChange={(fn) => change(fn)} readOnly={readOnly} kinds={c.measure.kinds} canAdd={[].concat(c.measure.eq).includes(t[c.key])} />
+        )}
+      </fieldset>
+    );
+  };
+
+  // 詳しい診断の要否（判定の区切りか、initial.afterCheck の項目の次に出す）
+  //  点検の並びに出すときは、点検項目と同じ見た目（1行に名前と選択肢）
+  //  details の when が initialNeeded の項目（例 理由）は、その条件のときに下に出す
+  const initialRow = (
+    <fieldset disabled={felled}>
+      <div className={cfg.initial.afterCheck ? 'check' : 'row'}>
+        <span className="lbl">{cfg.initial.label}</span>
+        <Seg field="initialNeeded" opts={cfg.options.initialNeeded} value={t.initialNeeded} onPress={press} />
+      </div>
+      {cfg.details
+        .filter((d) => d.when.field === 'initialNeeded' && isOn('initialNeeded', d.when.eq))
+        .map((d) => (
+          <div className="row" key={d.field} style={{ padding: '6px 0' }}>
+            <label className="lbl" htmlFor={`f-${d.field}`}>
+              {d.label}
+            </label>
+            <input
+              type="text"
+              id={`f-${d.field}`}
+              inputMode={d.numeric ? 'decimal' : undefined}
+              value={t[d.field] || ''}
+              onChange={(e) => setField(d.field, e.target.value)}
+              onBlur={() => blurField(d.field)}
+            />
+          </div>
+        ))}
+    </fieldset>
+  );
   const felling = cfg.rules.filter((r) => r.type === 'treatRequires').filter((r) => new RegExp(r.pattern).test(treat));
 
   return (
@@ -334,6 +431,17 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
           {t.ledgerInspector || ''}）。調べ直すときは、下の「調べ直す」を押します。
         </div>
       )}
+
+      {/* 今の入力内容をカルテ（設定 karte）の形で見る（入力中でも。ダウンロードしなくても確かめられる）
+          詳しい診断の画面と同じく上の方に置く。見るだけなので、見るだけの木（fieldset の外）でも押せる */}
+      {cfg.karte && (
+        <div className="acts">
+          <button type="button" className="btn" onClick={() => setShowKarte(true)} data-testid="karte-view-open">
+            カルテで見る
+          </button>
+        </div>
+      )}
+      {showKarte && <KarteView state={state} cfg={cfg} tree={t} onClose={() => setShowKarte(false)} />}
 
       <fieldset disabled={readOnly} className="form-body">
         <div className="sec">
@@ -390,6 +498,44 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
               <option key={s} value={s} />
             ))}
           </datalist>
+          {/* 入力表から読み込んだ木で、読めなかった所（src/core/entrySheet.js の entryIssues）。
+              値を入れた項目は消え、備考は「確かめた」か入力済みにして保存すると消える */}
+          {entryIssues(t, cfg).length > 0 && (
+            <div className="alert warn" data-testid="entry-issues">
+              <span>入力表で読めなかった所があります。確かめて入力してください：</span>
+              {entryIssues(t, cfg).map((x) => (
+                <span key={x.key} data-testid={x.key === 'remarks' ? 'entry-left' : `entry-bad-${x.key}`}>
+                  ・{x.text}
+                </span>
+              ))}
+              {t.entryLeft && (
+                <button type="button" className="btn" onClick={() => setField('entryLeft', '')} data-testid="entry-left-clear">
+                  備考を確かめた（この知らせを消す）
+                </button>
+              )}
+            </div>
+          )}
+          {/* 伐採済み（設定 felled）：押すと点検項目・要否・樹勢を空欄にし、入力を止める（未入力にも数えない）。もう一度押すと戻す */}
+          {cfg.felled && (
+            <div className="row">
+              <button
+                type="button"
+                className={`chip${t.felled ? ' on strong' : ''}`}
+                aria-pressed={!!t.felled}
+                onClick={() =>
+                  change((x) => {
+                    if (x.felled) return { ...x, felled: false };
+                    const cleared = Object.fromEntries([...cfg.checks.map((c) => c.key), 'initialNeeded', 'vigor'].map((k) => [k, '']));
+                    return { ...x, ...cleared, felled: true };
+                  })
+                }
+                data-testid="felled"
+              >
+                {cfg.felled.label || '伐採済み'}
+              </button>
+              {t.felled && <small className="hint">点検項目・要否・{cfg.vigorLabel}は空欄のままにします（未入力に数えません）。特記事項に様子を書いてください</small>}
+            </div>
+          )}
           {cfg.statusOptions && (
             <div className="row">
               <span className="lbl">状態</span>
@@ -492,6 +638,37 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
               )}
             </div>
           </div>
+          {/* 設定で足した計測の欄（extraFields。例 枝張り・枝下高）。2つずつ横に並べる。枝長・枝径の前に出す（野帳の並び）
+              newRow: true の欄は新しい行から始める（例 枝下の歩道・車道を横に並べる。前の行の右は空ける） */}
+          {(cfg.extraFields || []).length > 0 && (
+            <div className="grid2" data-testid="extra-fields">
+              {extraCells(cfg.extraFields).map((f, i) =>
+                !f ? (
+                  <div key={`gap${i}`} aria-hidden="true" />
+                ) : (
+                <div className="row" key={f.key}>
+                  <label className="lbl" htmlFor={`f-x-${f.key}`}>
+                    {f.label}
+                  </label>
+                  <div className="unit">
+                    <input
+                      type="text"
+                      inputMode={f.numeric ? 'decimal' : undefined}
+                      id={`f-x-${f.key}`}
+                      className={f.numeric ? 'num' : undefined}
+                      value={t[f.key] ?? ''}
+                      onChange={(e) => setField(f.key, e.target.value)}
+                      onBlur={() => blurField(f.key)}
+                    />
+                    {f.unit && <span>{f.unit}</span>}
+                  </div>
+                </div>
+                ),
+              )}
+            </div>
+          )}
+          {/* 計測の区切りに出す点検項目（checks の place: "measure"。例 傾斜） */}
+          {measureChecks.length > 0 && <div className="check-list">{measureChecks.map(checkRow)}</div>}
           <div className="grid2">
             <div className="row">
               <label className="lbl" htmlFor="f-bl">
@@ -535,10 +712,10 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
 
         <div className="sec">
           <h2>点検</h2>
-          <div className="row">
+          <fieldset disabled={felled} className="row">
             <span className="lbl">{cfg.vigorLabel}</span>
             <Seg field="vigor" opts={cfg.options.vigor} value={t.vigor} onPress={press} />
-          </div>
+          </fieldset>
           <fieldset disabled={locked}>
             <button
               type="button"
@@ -547,56 +724,24 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                 const r = fillChecksNone(t, cfg);
                 if (!r.keys.length) return toast('まだ選んでいない点検項目はありません');
                 change((x) => fillChecksNone(x, cfg).tree); // その時点の最新の木に対して行う
-                toast(`まだ選んでいなかった${r.keys.length}項目を「${cfg.noneValue || '無'}」にしました`);
+                const extra = checksNoneLabel(cfg).match(/（要否などは「(.+?)」）/); // 要否の項目なども入れる設定か
+                toast(`まだ選んでいなかった${r.keys.length}項目を「${cfg.noneValue || '無'}」${extra ? `（要否などは「${extra[1]}」）` : ''}にしました`);
               }}
               data-testid="checks-none"
             >
-              まだ選んでいない点検項目をすべて「{cfg.noneValue || '無'}」にする
+              {checksNoneLabel(cfg)}
             </button>
-            {cfg.checks.map((c) => {
-              const details = cfg.details.filter((d) => d.when.field === c.key);
-              return (
-                <div key={c.key}>
-                  <div className="check">
-                    <span className="lbl">{c.label}</span>
-                    <Seg field={c.key} opts={cfg.options[c.key]} value={t[c.key]} onPress={press} />
-                  </div>
-                  {details
-                    .filter((d) => isOn(c.key, d.when.eq))
-                    .map((d) => (
-                      <div className="row" key={d.field} style={{ padding: '6px 0' }}>
-                        <label className="lbl" htmlFor={`f-${d.field}`}>
-                          {d.label}
-                        </label>
-                        {d.chips && (
-                          <div className="chips">
-                            {d.chips.map((w) => (
-                              <button
-                                key={w}
-                                type="button"
-                                className={`chip${strongWords.includes(w) ? ' strong' : ''}${t[d.field] === w ? ' on' : ''}`}
-                                onClick={() => change((x) => ({ ...x, [d.field]: x[d.field] === w ? '' : w }))}
-                              >
-                                {w}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        <input
-                          type="text"
-                          inputMode={d.numeric ? 'numeric' : undefined} // 数の欄（例：枯れ枝の本数）は数字のキーボードを出す
-                          id={`f-${d.field}`}
-                          className="num"
-                          value={t[d.field] || ''}
-                          onChange={(e) => setField(d.field, e.target.value)}
-                          onBlur={() => blurField(d.field)}
-                        />
-                      </div>
-                    ))}
-                </div>
-              );
-            })}
           </fieldset>
+          {/* 点検項目は1項目ずつ fieldset（枯死の木で項目ごとに入力を止めるため）。間隔は check-list で詰める */}
+          <div className="check-list">
+            {mainChecks.map((c) => (
+              <Fragment key={c.key}>
+                {checkRow(c)}
+                {/* 詳しい診断の要否を点検項目の並びの中に出す（initial.afterCheck。野帳の並び） */}
+                {cfg.initial.afterCheck === c.key && initialRow}
+              </Fragment>
+            ))}
+          </div>
           {/* 特記事項は枯死の木でも書ける（点検項目だけを原則空欄にする） */}
           <div className="row" style={{ paddingTop: 8 }}>
             <label className="lbl" htmlFor="f-notes">
@@ -631,7 +776,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
                 change((x) => ({ ...toMeasuresV2(x, cfg), notes: v })); // 寸法の1行は文字に入れない（新しい形に移す）
               }}
             />
-            <NoteMeasures cfg={cfg} tree={t} onChange={(fn) => change(fn)} readOnly={readOnly} />
+            <NoteMeasures cfg={cfg} tree={t} onChange={(fn) => change(fn)} readOnly={readOnly} exclude={cfg.checks.flatMap((c) => c.measure?.kinds || [])} />
             <label className="lbl" htmlFor="f-dbnote" style={{ marginTop: 6 }}>
               一覧表用の特記 <small>{t.dbNoteManual ? '手入力' : '定型文から自動で作成'}</small>
             </label>
@@ -649,20 +794,25 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
           </div>
         </div>
 
-        <div className="sec">
-          <h2>判定</h2>
-          <div className="row">
-            <span className="lbl">{cfg.initial.label}</span>
-            <Seg field="initialNeeded" opts={cfg.options.initialNeeded} value={t.initialNeeded} onPress={press} />
+        {/* 判定：詳しい診断の要否を点検の並びに出し、健全度も付けない業務では区切りごと出さない */}
+        {!(cfg.noGrade && cfg.initial.afterCheck) && (
+          <div className="sec">
+            <h2>判定</h2>
+            {!cfg.initial.afterCheck && initialRow}
+          {/* noGrade：健全度を現場で付けない業務では欄を出さない */}
+          {!cfg.noGrade && (
+            <div className="row" data-testid="grade-row">
+              <span className="lbl">{cfg.gradeLabel}</span>
+              <Seg field="grade" opts={cfg.options.grade} value={t.grade} onPress={press} disabled={gradeLocked} className="grade" />
+              <div className="hint">{t.grade ? `${t.grade}：${cfg.gradeText?.[t.grade] || ''}` : cfg.gradeHint || ''}</div>
+              {gradeLocked && <div className="lock">{cfg.initial.label}が「{cfg.initial.yes}」なので、{cfg.gradeLabel}は空欄にします。</div>}
+            </div>
+          )}
           </div>
-          <div className="row">
-            <span className="lbl">{cfg.gradeLabel}</span>
-            <Seg field="grade" opts={cfg.options.grade} value={t.grade} onPress={press} disabled={gradeLocked} className="grade" />
-            <div className="hint">{t.grade ? `${t.grade}：${cfg.gradeText?.[t.grade] || ''}` : cfg.gradeHint || ''}</div>
-            {gradeLocked && <div className="lock">{cfg.initial.label}が「{cfg.initial.yes}」なので、{cfg.gradeLabel}は空欄にします。</div>}
-          </div>
-        </div>
+        )}
 
+        {/* 処置：選択肢のない業務では区切りごと出さない */}
+        {(cfg.treat.prune.length > 0 || cfg.treat.other.length > 0) && (
         <div className="sec">
           <h2>処置</h2>
           {[
@@ -698,6 +848,7 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
             </div>
           ))}
         </div>
+        )}
 
         <Alerts list={otherAlerts} onAct={onAct} asking={asking} onAsk={(a, act) => setAsking({ alertId: a.id, act })} onCancel={() => setAsking(null)} />
 
@@ -837,6 +988,21 @@ export default function FormView({ state, update, config: cfg, toast, send }) {
             >
               この木の次に木を追加
             </button>
+            {/* この木の前に入れる（路線の先頭の前にも。番号は空欄。「番号を並び順に振り直す」で整える） */}
+            {cfg.numbering && isAddedTree(t) && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  update((cur) => addTree({ ...cur, group }, cfg, { beforeId: t.id, area: t.area || '' }), { now: true }).then(() => send?.());
+                  window.scrollTo(0, 0);
+                }}
+                data-testid="add-before"
+              >
+                この木の前に木を追加
+              </button>
+            )}
+            {cfg.addGroups && isAddedTree(t) && !readOnly && <MoveBox state={state} cfg={cfg} tree={t} update={update} send={send} toast={toast} />}
             {!isAddedTree(t) && !readOnly && t.source === 'app' && !renum && (
               <button type="button" className="btn" onClick={() => setRenum({ no: '', drop: [] })} data-testid="renumber">
                 現地の番号に変える

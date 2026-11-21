@@ -1,6 +1,9 @@
 // 一覧画面：公園・路線を選び、木の一覧から入力する木を選ぶ
+import AddGroupBox from './AddGroupBox.jsx';
+import RenumberBox from './RenumberBox.jsx';
 import { groupKey, groupKeys, groupLabel, treesOfGroup } from '../core/groups.js';
 import { alertsOf } from '../core/rules.js';
+import { isEntryStuck } from '../core/entrySheet.js';
 import { monthDay, toHalf } from '../core/text.js';
 import { useState } from 'react';
 import { addTree } from '../store/actions.js';
@@ -42,6 +45,14 @@ const REVIEW_FILTERS = [
 export default function ListView({ state, update, config: cfg, send, toast }) {
   const [askBulk, setAskBulk] = useState(false);
   const prevIndex = usePrevIndex();
+  // 台帳がなくても、設定でまとまりを足せるなら、ここから始められる
+  if (cfg?.addGroups && !state.trees.length) {
+    return (
+      <section className="view">
+        <AddGroupBox state={state} cfg={cfg} update={update} toast={toast} open />
+      </section>
+    );
+  }
   if (!cfg || !state.trees.length) {
     return (
       <section className="view">
@@ -64,7 +75,8 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
   const all = inGroup.filter((t) => !t.deleted);
   const areas = [...new Set(all.map((t) => t.area || NO_AREA))];
   const area = areas.includes(state.area) ? state.area : '';
-  const filter = state.listFilter === 'deleted' && !deleted.length ? 'all' : state.listFilter || 'all';
+  const stuck = all.filter(isEntryStuck); // 入力表から読み込んで、入力中のまま止まっている木
+  const filter = (state.listFilter === 'deleted' && !deleted.length) || (state.listFilter === 'entry' && !stuck.length) ? 'all' : state.listFilter || 'all';
   const inArea = (t) => !area || (t.area || NO_AREA) === area;
   const rsOf = (t) => (t.conflict ? 'conflict' : reviewState(t, state, cfg));
   // 確認の段階での絞り込みは、木と、その木の詳しい診断の記録のどちらかが当てはまれば出す
@@ -87,6 +99,7 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
         filter === 'deleted' ||
         filter === 'all' ||
         (filter === 'todo' && !t.done) ||
+        (filter === 'entry' && isEntryStuck(t)) ||
         (filter === 'wait' && treeState(t, cfg) === 'wait') ||
         rsHas(t, filter),
     );
@@ -222,6 +235,7 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
             ['all', 'すべて'],
             ['todo', '未入力'],
             ['wait', waitLabel],
+            ...(stuck.length ? [['entry', `入力表で止まった木（${stuck.length}）`]] : []),
             ...(deleted.length ? [['deleted', `削除した木（${deleted.length}）`]] : []),
           ].map(([k, l]) => (
             <button key={k} type="button" className={`chip${filter === k ? ' on' : ''}`} onClick={() => set({ listFilter: k })} data-filter={k}>
@@ -303,6 +317,11 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
                     {monthDay(t.date)} {surnames(t.inspector)}
                   </span>
                 )}
+                {isEntryStuck(t) && (
+                  <span className="tag w" data-testid="card-entry-stuck">
+                    入力表で止まった木
+                  </span>
+                )}
                 {t.appBackup && <span className="tag w">アプリ入力の控えあり</span>}
                 {t.ledgerDuplicate > 0 && <span className="tag w">番号重複</span>}
                 {t.deleted && <span className="tag w">削除</span>}
@@ -357,6 +376,11 @@ export default function ListView({ state, update, config: cfg, send, toast }) {
       >
         ＋ 一覧にない木を追加
       </button>
+      {/* 番号を並び順に振り直す（差し込んだ・移したあと。調査者だけ） */}
+      {cfg.numbering && role === 'surveyor' && group && (
+        <RenumberBox key={`rn-${group}`} state={{ ...state, group }} cfg={cfg} update={(fn, o) => update((cur) => ({ ...fn({ ...cur, group }), group }), o)} send={send} toast={toast} groupName={groupLabel(state.trees, group, cfg)} />
+      )}
+      {cfg.addGroups && <AddGroupBox state={state} cfg={cfg} update={update} toast={toast} />}
       {/* 調査日を間違えて保存した木を、この公園・路線でまとめて直す（入力内容を直すのは調査者だけ） */}
       {role === 'surveyor' && (
         <RedateBox key={group} state={state} update={update} cfg={cfg} trees={all} groupName={groupLabel(state.trees, group, cfg)} send={send} toast={toast} />

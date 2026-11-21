@@ -6,8 +6,14 @@ import { dbValues, exportDb } from '../excel/dbExport.js';
 import { FULL_NOTE, cellText, columns, fullNoteOf } from '../excel/listColumns.js';
 import { buildEntryList, buildInsertList, insertRows } from '../excel/entryList.js';
 import { buildPages, exportFieldSheet } from '../excel/fieldSheet.js';
+import { exportListSheet, listPages } from '../excel/listSheet.js';
 import { exportInitialBook } from '../excel/initialExport.js';
 import { exportKarte } from '../excel/karteExport.js';
+import { addKartePhotos } from '../excel/kartePhotos.js';
+import { segmentsOf, slotPhotos } from '../core/kartePhotoPlan.js';
+import { getKPhotoData, loadKPhotos } from '../store/kphotos.js';
+import { photoCaptionKey, simpleKarteRecord } from '../core/simpleKarte.js';
+import { stuckReasons } from '../core/entrySheet.js';
 import { gradeWriteBack, initialsForBook, karteRecords } from '../store/initial.js';
 import { loadInitialBookFile, loadKarteTemplateFile, loadLedgerFile, loadTemplate } from '../store/state.js';
 import { unsentCount, unsentList } from '../store/sync.js';
@@ -46,6 +52,8 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   const [gradeKept, setGradeKept] = useState([]); // 一覧表の出力で、健全度が既に入っていて書き換えなかった木
   const [karteAll, setKarteAll] = useState(false); // 確認用カルテを、すべての公園・路線をまとめて出すか（既定は選んでいる公園・路線だけ）
   const [karteLong, setKarteLong] = useState([]); // 確認用カルテで、文字を小さくしても枠に収まらなかった欄
+  const [simpleLong, setSimpleLong] = useState([]); // 簡易診断のカルテで、文字を小さくしても枠に収まらなかった欄
+  const [askKarte, setAskKarte] = useState(false); // 簡易診断のカルテ：入力中の木があるので、出すかを聞いている
   const [withUnconfirmed, setWithUnconfirmed] = useState(false); // 未確定の木も一覧表に書き込むか（途中経過の確認用）
   const [handKeys, setHandKeys] = useState(null); // 内勤さんに渡す Excel に出す公園・路線（null：今見ている公園・路線だけ）
   if (!cfg || !state.trees.length) {
@@ -83,6 +91,93 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
       setBusy('');
     }
   };
+
+  // 簡易診断のカルテ（設定 karte。提出用。今の公園・路線の入力済みの木。サーバーを使うときは確定した木だけ）
+  const dbIds = new Set(db.trees.map((t) => t.id));
+  //  設定 karte.unconfirmedOk：確認の流れ（付箋・確定）を使わない業務では、確定していない木もそのまま出す
+  const karteAnyTree = !useReview || withUnconfirmed || !!cfg.karte?.unconfirmedOk;
+  const karteDraftMark = cfg.karte?.unconfirmedOk ? '' : draftMark;
+  const simpleKarteTrees = shown.filter((t) => karteAnyTree || dbIds.has(t.id));
+  //  入力中の木（入力表で止まった木も）：カルテには出さず、出力の前に番号と理由を見せて「入力中の木も出すか」を聞く
+  //  確定した木だけを出す業務（karteAnyTree でない）では入力中の木は出せないので、知らせるだけ
+  const karteTodo = groupTrees.filter((t) => !t.done);
+  const pressSimpleKarte = () => (karteTodo.length ? setAskKarte(true) : onSimpleKarte(simpleKarteTrees));
+  const onSimpleKarte = (karteTrees) =>
+    run('簡易診断カルテ', async () => {
+      setAskKarte(false);
+      const simpleKarteTrees = karteTrees; // 出す木（入力済み、選べば入力中の木も。並びは一覧の順）
+      const file = await loadKarteTemplateFile();
+      if (!file) throw new Error('カルテの様式がありません。「設定」で読み込んでください');
+      const recs = simpleKarteTrees.map((t) => simpleKarteRecord(t, cfg));
+      // 写真（設定 karte.photos。「写真」の画面で選んだもの）：見出しを記録に足し、写真の中身を読む
+      const pc = cfg.karte.photos;
+      const picsOf = new Map(); // 木の id → [{ slot, data, w, h }]
+      if (pc) {
+        const kp = await loadKPhotos(group);
+        const keyed = groupTrees.map((t) => ({ key: simpleKey(t, cfg), treeNo: toHalf(t.treeNo).trim() }));
+        const segOf = new Map();
+        for (const sg of segmentsOf(kp.photos, keyed).segments) if (sg.treeKey && !segOf.has(sg.treeKey)) segOf.set(sg.treeKey, sg);
+        for (let i = 0; i < simpleKarteTrees.length; i++) {
+          const t = simpleKarteTrees[i];
+          const key = simpleKey(t, cfg);
+          const sg = segOf.get(key);
+          if (!sg) continue;
+          const pics = [];
+          for (const x of slotPhotos(sg.photos, pc.slots, kp.picks[key] || {})) {
+            if (!x.photo) continue;
+            const d = await getKPhotoData(x.photo.id);
+            if (!d?.data) throw new Error(`${toHalf(t.treeNo)}：写真「${x.photo.name}」の中身がこの端末にありません。「写真」の画面で入れ直してください`);
+            pics.push({ slot: x.slot.key, data: new Uint8Array(d.data), w: x.photo.w, h: x.photo.h });
+            if (x.slot.caption) recs[i][photoCaptionKey(x.slot.caption)] = x.caption || '';
+          }
+          if (pics.length) picsOf.set(t.id, pics);
+        }
+      }
+      const r = await exportKarte(file.buffer.slice(0), recs, cfg, cfg.karte, { submit: true });
+      if (r.errors.length) return setCheck({ title: 'カルテの出力検査', errors: r.errors });
+      if (!r.stats.sheets.length) return toast('カルテにする木がありませんでした');
+      // 写真を貼る（シートは樹木番号で探す。同じ番号の木が2本あるときは、どちらのシートか決められないので貼らない）
+      let photoNote = '';
+      if (picsOf.size) {
+        const items = [];
+        const unsure = [];
+        for (const t of simpleKarteTrees) {
+          if (!picsOf.has(t.id)) continue;
+          const no = toHalf(String(t.treeNo ?? '')).trim();
+          const hits = r.stats.sheets.filter((x) => x.treeNo === no);
+          if (hits.length === 1) items.push({ sheet: hits[0].name, pics: picsOf.get(t.id) });
+          else unsure.push(no || '(番号なし)');
+        }
+        const pr = await addKartePhotos(r.buffer, items, pc);
+        if (pr.errors.length) return setCheck({ title: 'カルテの写真の検査', errors: pr.errors });
+        r.buffer = pr.buffer;
+        photoNote = `。写真${pr.stats.photos}枚を${pr.stats.sheets}本に貼りました` + (unsure.length ? `（同じ番号の木があるため貼れなかった木：${unsure.join('・')}）` : '');
+      }
+      const label = cfg.karte.fileLabel || 'カルテ';
+      const nos = numberRanges(simpleKarteTrees.map((t) => t.treeNo));
+      // ファイル名：「書式の名前_路線の表示名_番号-番号_日付」（表示名の頭の [道路] などは除く）
+      const name = gname.replace(/^\[.*?\]\s*/, '');
+      download(`${safeName([label, name, nos].filter(Boolean).join('_')).replace(/\s+/g, '_')}${karteDraftMark}_${yymmdd()}.xlsx`, r.buffer);
+      setSimpleLong(r.stats.tooLong || []);
+      toast(
+        `検査OK。${r.stats.sheets.length}本のカルテを作りました（1本1シート）${photoNote}` +
+          (r.stats.tooLong?.length ? `。文字を小さくしても枠に収まらない欄が${r.stats.tooLong.length}か所あります（画面の下に一覧）` : ''),
+      );
+    });
+
+  // 一覧型の野帳（設定 listSheet。原本を使わず一から作る。今の公園・路線）
+  const onListSheet = () =>
+    run('野帳の出力', async () => {
+      const pages = listPages(groupTrees, cfg);
+      const r = await exportListSheet(pages, cfg);
+      if (r.errors.length) return setCheck({ title: '野帳の出力検査', errors: r.errors });
+      // ファイル名はまとまりの表示名（例「0318 塩 区域」）。同じ名前で番号違いのまとまりが上書きし合わないように
+      download(`野帳_${safeName(pages[0]?.label).replace(/\s+/g, '_') || '野帳'}_${yymmdd()}.xlsx`, r.buffer);
+      toast(
+        `野帳を出力しました（${pages.length}枚・${groupTrees.length}本。全件照合OK）` +
+          (r.long.length ? `。文字を小さくしても枠に収まらない欄：${r.long.map((x) => `${x.treeNo}の${x.label}`).join('、')}（短くするか、印刷して確かめてください）` : ''),
+      );
+    });
 
   const onField = () =>
     run('野帳の出力', async () => {
@@ -133,7 +228,7 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
   // 内勤さんに渡す Excel（ファイル名に公園・路線の名前。2つ以上なら「ほかN」）
   const handNames = () => {
     const ks = handKeys || [group];
-    const first = safeName(String(ks[0]).split(':').slice(1).join(':')); // まとまりの鍵「種類:名前」の名前
+    const first = safeName(String(ks[0]).split(':').slice(1).join(':').split('#')[0]); // まとまりの鍵「種類:名前」の名前
     return ks.length > 1 ? `${first}ほか${ks.length - 1}` : first;
   };
   const onEntryList = () =>
@@ -258,12 +353,25 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
 
       <div className="sec">
         <h2>Excel ファイルに出力</h2>
-        <button type="button" className="btn fill big" disabled={!!busy} onClick={onField} data-testid="export-field">
-          {busy === '野帳の出力' ? '作成中…' : `野帳（Excel）を出力：${gname}`}
-        </button>
-        <p className="hint">
-          野帳の原本に書き込みます（確定していない木も含めて、入力どおりに出します）。選んだ項目は○で囲みます（白黒印刷でも分かります）。未入力の木も番号・樹種が入るので、紙の野帳としても印刷できます。保存する前に、書き出したファイルを読み直して全件照合します。
-        </p>
+        {cfg.listSheet ? (
+          <>
+            <button type="button" className="btn fill big" disabled={!!busy || !groupTrees.length} onClick={onListSheet} data-testid="export-list-sheet">
+              {busy === '野帳の出力' ? '作成中…' : `野帳（${cfg.listSheet.paper || 'A3'}）を出力：${gname}`}
+            </button>
+            <p className="hint">
+              1本1行の野帳を作ります（確定していない木も含めて、入力どおりに出します）。{cfg.listSheet.rowsPerSheet}本で次の用紙へ。保存する前に、書き出したファイルを読み直して全件照合します。
+            </p>
+          </>
+        ) : (
+          <>
+            <button type="button" className="btn fill big" disabled={!!busy} onClick={onField} data-testid="export-field">
+              {busy === '野帳の出力' ? '作成中…' : `野帳（Excel）を出力：${gname}`}
+            </button>
+            <p className="hint">
+              野帳の原本に書き込みます（確定していない木も含めて、入力どおりに出します）。選んだ項目は○で囲みます（白黒印刷でも分かります）。未入力の木も番号・樹種が入るので、紙の野帳としても印刷できます。保存する前に、書き出したファイルを読み直して全件照合します。
+            </p>
+          </>
+        )}
         <button type="button" className="btn big" disabled={!!busy || !dbCount} onClick={onDb} data-testid="export-db">
           {busy === '一覧表の出力'
             ? '作成中…'
@@ -364,13 +472,82 @@ export default function OutView({ state, update, config: cfg, toast, send, sendS
         </div>
       )}
 
+      {cfg.karte && (
+        <div className="sec" data-testid="simple-karte-sec">
+          <h2>{cfg.karte.fileLabel || 'カルテ'}</h2>
+          <button
+            type="button"
+            className="btn fill big"
+            disabled={
+              !!busy ||
+              !(simpleKarteTrees.length || (karteAnyTree && karteTodo.length)) ||
+              !state.karteTemplateInfo ||
+              (state.karteTemplateInfo.errorsOf?.karte ?? state.karteTemplateInfo.errors)?.length > 0
+            }
+            onClick={pressSimpleKarte}
+            data-testid="export-simple-karte"
+          >
+            {busy === '簡易診断カルテ' ? '作成中…' : `${cfg.karte.fileLabel || 'カルテ'}を出力：${gname}（${simpleKarteTrees.length}本${karteTodo.length ? `・入力中${karteTodo.length}本` : ''}）`}
+          </button>
+          {askKarte && karteTodo.length > 0 && (
+            <div className="alert warn" data-testid="karte-todo">
+              <span>
+                {numberRanges(karteTodo.map((t) => t.treeNo)) || '番号のない木'}は入力中です（{karteTodo.length}本）。
+                {karteAnyTree ? '入力中の木も出力しますか？' : '入力中の木はカルテに出せません。入力済みの木だけを出力しますか？'}
+              </span>
+              <ul className="hint" data-testid="karte-todo-list">
+                {karteTodo.slice(0, 30).map((t) => (
+                  <li key={t.id}>
+                    {toHalf(t.treeNo) || '(番号なし)'}：{stuckReasons(t, cfg).join('／') || '入力中'}
+                  </li>
+                ))}
+                {karteTodo.length > 30 && <li>ほか{karteTodo.length - 30}本</li>}
+              </ul>
+              {karteAnyTree && <span className="hint">入力中の木を出すと、読めなかった所・未入力の項目は空のままカルテに書かれます。</span>}
+              <div className="acts">
+                {karteAnyTree && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => onSimpleKarte(groupTrees.filter((t) => !t.done || simpleKarteTrees.includes(t)))}
+                    data-testid="karte-with-todo"
+                  >
+                    入力中の木も含めて出力（{simpleKarteTrees.length + karteTodo.length}本）
+                  </button>
+                )}
+                <button type="button" className="btn fill" disabled={!simpleKarteTrees.length} onClick={() => onSimpleKarte(simpleKarteTrees)} data-testid="karte-done-only">
+                  入力済みだけ出力（{simpleKarteTrees.length}本）
+                </button>
+                <button type="button" className="btn" onClick={() => setAskKarte(false)}>
+                  やめる
+                </button>
+              </div>
+            </div>
+          )}
+          {simpleLong.length > 0 && (
+            <div className="alert warn" data-testid="simple-karte-long">
+              <span>
+                文字を小さくしても枠に収まらない欄があります。カルテを開いて確かめてください：
+                {simpleLong.slice(0, 15).map((x) => `${x.sheet} ${x.cell}`).join('・')}
+                {simpleLong.length > 15 ? 'ほか' : ''}
+              </span>
+            </div>
+          )}
+          <p className="hint">
+            {state.karteTemplateInfo
+              ? `入力済みの木を、カルテの様式に1本1シートで書き込みます${karteAnyTree ? '' : '（確定した木だけ）'}。${cfg.karte.photos ? '「写真」の画面で選んだ写真を、枠に合わせて貼ります。' : '写真は入りません。'}長い文は文字を小さくし、様式の行の高さは変えません。保存する前に、書き出したファイルを読み直して照合します。`
+              : '先に「設定」でカルテの様式を読み込んでください。'}
+          </p>
+        </div>
+      )}
+
       {ini && cfg.initialSurvey.karte && (
         <div className="sec" data-testid="karte-sec">
           <h2>{cfg.initialSurvey.label}：確認用カルテ</h2>
           <button
             type="button"
             className="btn big"
-            disabled={!!busy || !karteRecs.length || !state.karteTemplateInfo || state.karteTemplateInfo.errors?.length > 0}
+            disabled={!!busy || !karteRecs.length || !state.karteTemplateInfo || (state.karteTemplateInfo.errorsOf?.initial ?? state.karteTemplateInfo.errors)?.length > 0}
             onClick={onKarte}
             data-testid="export-karte"
           >

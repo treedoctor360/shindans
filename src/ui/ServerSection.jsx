@@ -1,8 +1,10 @@
 // 設定画面の「サーバー」欄：URL と合言葉、接続の確認、設定・原本・台帳の受け渡し
 import { useState } from 'react';
-import { idbGet } from '../store/idb.js';
+import { idbGet, idbPut } from '../store/idb.js';
+import { needsNewWorkspace, rememberTitle } from '../store/workspace.js';
 import { bookCount } from '../store/initial.js';
 import { applyLedger, importInitialBook, loadConfigText, readKarteTemplateFile, readLedgerFile, saveTemplate } from '../store/state.js';
+import { karteConfs } from '../excel/karteExport.js';
 import { callServer, getFile, putFile } from '../store/sync.js';
 import { getPreviousIndex, getPreviousPhotos, loadIndex, putPrevious } from '../store/previous.js';
 import { todayYmd } from './SettingsView.jsx';
@@ -46,7 +48,7 @@ export default function ServerSection({ state, update, config, setConfig, toast 
       if (book) await putFile(sv, 'initialBook', book.name, book.buffer);
       // 確認用カルテの様式（調査者の端末でも「カルテで見る」で使う）
       //  サーバー（GAS）が古いと受け付けないので、そのときは知らせてほかは続ける
-      let kt = config.initialSurvey?.karte ? await idbGet('karteTemplate') : null;
+      let kt = karteConfs(config).length ? await idbGet('karteTemplate') : null;
       let ktNote = '';
       if (kt) {
         try {
@@ -68,9 +70,16 @@ export default function ServerSection({ state, update, config, setConfig, toast 
       let cfg = config;
       const c = await getFile(sv, 'config');
       if (c) {
-        const r = await loadConfigText(new TextDecoder().decode(c.buffer), config);
+        const r = await loadConfigText(new TextDecoder().decode(c.buffer), config, { save: false });
         if (r.errors.length) throw new Error(`サーバーの設定ファイルに誤りがあります：${r.errors[0]}`);
+        // この端末の今の業務に別の業務の木があれば、入れ替えずに止める（別の業務の設定・木が混ざらないように）
+        if (needsNewWorkspace(state, config, r.config))
+          throw new Error(
+            `サーバーの設定は別の業務（${r.config.job?.title || '名前なし'}）です。この端末の今の業務（${config?.job?.title || '名前なし'}）には木があるので受け取りませんでした。設定ファイルを読み込んで「別の業務として使う」を選び、その業務でサーバーの URL・合言葉を入れてから受け取ってください`,
+          );
+        await idbPut('config', r.config); // 確かめてから保存する
         cfg = r.config;
+        await rememberTitle(cfg.job?.title); // 業務の一覧に出す名前
         setConfig(cfg);
         got.push('設定');
       }
@@ -99,7 +108,7 @@ export default function ServerSection({ state, update, config, setConfig, toast 
           got.push(`データ入力用ブック（入力済み${bookCount(r.state.initialBookInfo)}本）`);
         }
       }
-      if (cfg?.initialSurvey?.karte) {
+      if (karteConfs(cfg).length) {
         const kt = await getFile(sv, 'karteTemplate').catch(() => null); // サーバーが古ければ受け取らない
         if (kt) {
           const info = await readKarteTemplateFile(kt.name, kt.buffer, cfg, todayYmd());
@@ -132,7 +141,7 @@ export default function ServerSection({ state, update, config, setConfig, toast 
     config && `設定ファイル（${config.job?.title || ''} 版${config.version}）`,
     state.ledgerInfo && `台帳「${state.ledgerInfo.name}」（${state.ledgerInfo.date} に読み込み）`,
     config?.initialSurvey && state.initialBookInfo && `データ入力用ブック「${state.initialBookInfo.name}」（${state.initialBookInfo.date} に読み込み）`,
-    config?.initialSurvey?.karte && state.karteTemplateInfo && `カルテの様式「${state.karteTemplateInfo.name}」（${state.karteTemplateInfo.date} に読み込み）`,
+    karteConfs(config).length > 0 && state.karteTemplateInfo && `カルテの様式「${state.karteTemplateInfo.name}」（${state.karteTemplateInfo.date} に読み込み）`,
     '野帳の原本・前回の調査（この端末に読み込んであれば）',
   ].filter(Boolean);
   return (

@@ -1,7 +1,16 @@
 // 設定画面：調査情報、設定ファイル・野帳の原本・台帳の読み込み
 import { useState } from 'react';
+import { readEntrySheets } from '../excel/entrySheetRead.js';
+import { importEntry } from '../store/actions.js';
+import { entryIssues, rereadEntry } from '../core/entrySheet.js';
+import { groupLabel } from '../core/groups.js';
+import { toHalf } from '../core/text.js';
 import { bookCount } from '../store/initial.js';
+import { idbPut } from '../store/idb.js';
+import { needsNewWorkspace, rememberTitle, putConfigInWorkspace } from '../store/workspace.js';
+import WorkspaceSection from './WorkspaceSection.jsx';
 import { applyLedger, loadConfigText, importInitialBook, readKarteTemplateFile, readLedgerFile, saveTemplate } from '../store/state.js';
+import { karteConfs } from '../excel/karteExport.js';
 import PrevSection from './PrevSection.jsx';
 import { diagnosticDump } from '../store/diagnose.js';
 import { APP_VERSION, BUILD_TIME } from '../version.js';
@@ -32,27 +41,72 @@ function FileButton({ label, accept, onFile, disabled, testId }) {
   );
 }
 
-export default function SettingsView({ state, update, config, setConfig, toast }) {
+export default function SettingsView({ state, update, config, setConfig, toast, flush }) {
   const [configErrors, setConfigErrors] = useState([]);
+  const [askWorkspace, setAskWorkspace] = useState(null); // 名前の違う設定：新しい業務として始めるか聞いている間の設定
   const [busy, setBusy] = useState(false);
   const s = state.session;
   const setSession = (k, v) => update((st) => ({ ...st, session: { ...st.session, [k]: v } }));
 
   const onConfig = async (file) => {
-    const r = await loadConfigText(await file.text(), config);
+    // まず確かめるだけ（業務の名前が違えば、どこに入れるかを聞いてから保存する）
+    const r = await loadConfigText(await file.text(), config, { save: false });
     setConfigErrors(r.errors);
+    setAskWorkspace(null);
     if (r.errors.length) {
       toast(config ? '設定ファイルに誤りがあるため、前の設定のまま使います' : '設定ファイルに誤りがあります');
       return;
     }
-    setConfig(r.config);
+    if (needsNewWorkspace(state, config, r.config)) return setAskWorkspace(r.config);
+    await loadHere(r.config);
+  };
+
+  // 今の業務に読み込む
+  const loadHere = async (next) => {
+    await idbPut('config', next);
+    setAskWorkspace(null);
+    setConfig(next);
     toast('設定ファイルを読み込みました');
+    rememberTitle(next.job?.title).catch(() => {}); // 業務の一覧に出す名前（画面を待たせない）
+  };
+
+  // 別の業務として使う（今の業務の入力内容はそのまま残す）→ 画面を読み込み直す
+  const loadAsNew = async (next) => {
+    try {
+      await flush(); // 待っている保存を、今の業務の置き場所に書き切ってから
+      await putConfigInWorkspace(next);
+      window.location.reload();
+    } catch (e) {
+      toast(e.message || '切り替えられませんでした');
+    }
   };
 
   const onTemplate = async (file) => {
     await saveTemplate(file.name, await file.arrayBuffer());
     update((st) => ({ ...st, templateName: file.name }));
     toast('野帳の原本を読み込みました');
+  };
+
+  // 入力表（Excel。1本1行。紙の野帳を写した表）を読み込んで、木にする（設定 entrySheet）
+  const [entryResult, setEntryResult] = useState(null); // { stats, errors }
+  const [rereadPlan, setRereadPlan] = useState(null); // 「備考を読み直す」で変わる木の一覧（確かめ中）
+  const onEntrySheet = async (file) => {
+    setBusy(true);
+    try {
+      const sheets = await readEntrySheets(await file.arrayBuffer(), config);
+      let r;
+      // 読み終わってから、その時点の最新の状態に足す（読んでいる間に届いた変更を上書きしないように）
+      await update((st) => {
+        r = importEntry(st, config, sheets);
+        return r.state;
+      }, { now: true });
+      setEntryResult({ stats: r.stats, errors: r.errors });
+      toast(r.stats.added.length ? `${r.stats.added.length}本を読み込みました` + (r.stats.check.length ? `（うち${r.stats.check.length}本は確かめてください）` : '') : '読み込む木がありませんでした');
+    } catch (e) {
+      toast(`入力表を読めませんでした：${e.message}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onLedger = async (file) => {
@@ -108,7 +162,7 @@ export default function SettingsView({ state, update, config, setConfig, toast }
   };
   const book = state.initialBookInfo;
 
-  // 確認用カルテの様式（設定に initialSurvey.karte があるときだけ）
+  // カルテの様式（設定に karte か initialSurvey.karte があるときだけ）
   const onKarteTemplate = async (file) => {
     setBusy(true);
     try {
@@ -140,6 +194,8 @@ export default function SettingsView({ state, update, config, setConfig, toast }
         <p className="hint">木を保存するとき、この日付と調査者をその木に記録します。</p>
       </div>
 
+      <WorkspaceSection flush={flush} toast={toast} />
+
       <ServerSection state={state} update={update} config={config} setConfig={setConfig} toast={toast} />
 
       <div className="sec">
@@ -154,6 +210,25 @@ export default function SettingsView({ state, update, config, setConfig, toast }
           )}
         </div>
         <FileButton label="設定ファイル（JSON）を読み込む" accept=".json,application/json" onFile={onConfig} testId="config-file" />
+        {askWorkspace && (
+          <div className="alert danger" role="alert" data-testid="workspace-ask">
+            <span>
+              読み込んだ設定の業務「{askWorkspace.job?.title || '（名前なし）'}」は、今の業務「{config?.job?.title || '（名前なし）'}」と違います。この端末には今の業務の木が
+              {state.trees.length}本あります。
+            </span>
+            <div className="acts">
+              <button type="button" className="btn" onClick={() => loadAsNew(askWorkspace)} data-testid="workspace-new">
+                別の業務として使う（今の業務の入力内容はそのまま残す）
+              </button>
+              <button type="button" className="btn" onClick={() => loadHere(askWorkspace)} data-testid="workspace-here">
+                今の業務の設定を入れ替える
+              </button>
+              <button type="button" className="btn" onClick={() => setAskWorkspace(null)}>
+                やめる
+              </button>
+            </div>
+          </div>
+        )}
         {configErrors.length > 0 && (
           <div className="alert danger" role="alert">
             <b>設定ファイルの誤り（{configErrors.length}件）</b>
@@ -179,6 +254,78 @@ export default function SettingsView({ state, update, config, setConfig, toast }
         </div>
         <FileButton label="野帳の原本（Excel）を読み込む" accept=".xlsx" onFile={onTemplate} testId="template-file" />
       </div>
+
+      {config?.entrySheet && (state.user?.role || 'surveyor') === 'surveyor' && (
+        <div className="sec" data-testid="entry-sheet-sec">
+          <h2>入力表（紙の野帳を写した Excel）</h2>
+          <FileButton label={busy ? '読み込み中…' : '入力表（Excel）を読み込む'} accept=".xlsx" onFile={onEntrySheet} disabled={busy} testId="entry-sheet-file" />
+          <p className="hint">
+            1本1行の入力表から木を作ります。すでにある番号の木は読み込みません（上書きしません）。備考の略記は寸法や特記事項に直します。読み取れなかった所がある木は「入力中」のままにするので、開いて確かめてから保存してください（一覧の「入力表で止まった木」で探せます）。
+          </p>
+          {/* 読み直し：設定に読み方を足した後、止まっている木の読めなかった所だけを今の設定で読み直す（src/core/entrySheet.js の rereadEntry） */}
+          {(() => {
+            const n = state.trees.filter((t) => !t.deleted && entryIssues(t, config).length).length;
+            if (!n && !rereadPlan) return null;
+            const open = () => {
+              const r = rereadEntry(state, config);
+              if (!r.changes.length) return toast('今の設定で新しく読める所はありませんでした');
+              setRereadPlan(r.changes);
+            };
+            const apply = async () => {
+              let r;
+              await update((cur) => {
+                r = rereadEntry(cur, config, Date.now()); // その時点の最新の状態で読み直す
+                return r.state;
+              }, { now: true });
+              setRereadPlan(null);
+              const nDone = r.changes.filter((c) => c.done).length;
+              toast(r.changes.length ? `${r.changes.length}本を読み直しました` + (nDone ? `（うち${nDone}本を入力済みにしました）` : '') : '今の設定で新しく読める所はありませんでした');
+            };
+            return rereadPlan ? (
+              <div className="alert info" data-testid="reread-plan">
+                <span>今の設定の読み方で、次の木の読めなかった所を読み直します（{rereadPlan.length}本）。すでに読めた項目・手で直した値は変えません。</span>
+                <ul className="hint" data-testid="reread-list">
+                  {rereadPlan.slice(0, 40).map((c) => (
+                    <li key={c.id}>
+                      {groupLabel(state.trees, c.group, config)} {toHalf(c.treeNo)}：{c.read.join('・')}
+                      {c.done ? ' → 入力済みにします' : c.left ? ` → まだ読めない所：${c.left}` : ' → 入力中のまま（ほかに足りない項目があります）'}
+                    </li>
+                  ))}
+                  {rereadPlan.length > 40 && <li>ほか{rereadPlan.length - 40}本</li>}
+                </ul>
+                <div className="acts">
+                  <button type="button" className="btn" onClick={() => setRereadPlan(null)}>
+                    やめる
+                  </button>
+                  <button type="button" className="btn fill" onClick={apply} data-testid="reread-apply">
+                    読み直す
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" className="btn" onClick={open} disabled={busy} data-testid="reread-open">
+                読めなかった所を、今の設定で読み直す（{n}本）
+              </button>
+            );
+          })()}
+          {entryResult && (
+            <div className="alert warn" data-testid="entry-sheet-result">
+              <span>
+                読み込んだ木：{entryResult.stats.added.length}本
+                {entryResult.stats.skipped.length > 0 && `／すでにあったので読み込まなかった木：${entryResult.stats.skipped.length}本（${entryResult.stats.skipped.slice(0, 10).join('・')}${entryResult.stats.skipped.length > 10 ? 'ほか' : ''}）`}
+              </span>
+              {entryResult.errors.map((e) => <span key={e}>{e}</span>)}
+              {entryResult.stats.check.length > 0 && <span>確かめる木（入力中のままにしました）：</span>}
+              {entryResult.stats.check.slice(0, 40).map((c) => (
+                <span key={`${c.sheet}|${c.treeNo}`}>
+                  ・{c.sheet} {c.treeNo}：{c.why.join('／')}
+                </span>
+              ))}
+              {entryResult.stats.check.length > 40 && <span>ほか{entryResult.stats.check.length - 40}本</span>}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="sec">
         <h2>台帳（樹木の一覧表）</h2>
@@ -235,9 +382,9 @@ export default function SettingsView({ state, update, config, setConfig, toast }
         </div>
       )}
 
-      {config?.initialSurvey?.karte && (
+      {karteConfs(config).length > 0 && (
         <div className="sec">
-          <h2>カルテの様式（確認用カルテ）</h2>
+          <h2>カルテの様式{config.initialSurvey?.karte ? '（確認用カルテ）' : ''}</h2>
           <div className="hint" data-testid="karte-template-status">
             {kt ? (
               <>
@@ -249,7 +396,7 @@ export default function SettingsView({ state, update, config, setConfig, toast }
           </div>
           {kt?.errors?.length > 0 && (
             <div className="alert warn" data-testid="karte-template-errors">
-              <span>様式が設定と違うため、確認用カルテを作れません。様式のシートが変わっていないか確かめてください。</span>
+              <span>様式が設定と違うため、カルテを作れません。様式のシートが変わっていないか確かめてください。</span>
               {kt.errors.map((e) => (
                 <span key={e}>・{e}</span>
               ))}
@@ -262,7 +409,11 @@ export default function SettingsView({ state, update, config, setConfig, toast }
             disabled={busy}
             testId="karte-template-file"
           />
-          <p className="hint">カルテを作るマクロの入ったブックなど、空のカルテの様式があるブックを選びます。「サーバーに置く」で調査者の端末にも渡し、詳しい診断の画面の「カルテで見る」で使えます（マクロは動かしません）。確認用カルテは「出力」から作ります。</p>
+          <p className="hint">
+            {config.initialSurvey?.karte
+              ? 'カルテを作るマクロの入ったブックなど、空のカルテの様式があるブックを選びます。「サーバーに置く」で調査者の端末にも渡し、詳しい診断の画面の「カルテで見る」で使えます（マクロは動かしません）。確認用カルテは「出力」から作ります。'
+              : '空のカルテの様式があるブックを選びます。カルテは「出力」から作ります（1本1シート）。「サーバーに置く」で調査者の端末にも渡せます。'}
+          </p>
         </div>
       )}
 
